@@ -180,24 +180,28 @@ Mekanisme sesungguhnya yang membuat update memory **tidak** merusak prefix
 cache bukan soal urutan antar-middleware itu — `MemoryMiddleware` punya
 parameter `add_cache_control: bool = False` sendiri (`deepagents` men-set
 `True` khusus untuk instance di stack utama), dan `wrap_model_call`-nya
-menandai **blok terakhir** system message (setelah kontennya sendiri
-disisipkan) dengan `cache_control` kalau flag itu aktif dan `request.model`
-adalah `ChatAnthropic` — independen dari apakah `AnthropicPromptCachingMiddleware`
-berjalan sebelum atau sesudahnya di list. `[code]`
-`deepagents/middleware/memory.py` baris 193, 206-208, 355-374; dipanggil
-dg `add_cache_control=True` di `deepagents/graph.py` baris 861-866. Komentar
-sumber di `deepagents/graph.py` baris 855-858 menyebut alasan berbeda untuk
-urutan **profil harness vs memory** (bukan caching vs memory): middleware
-ekstra profil disisipkan di antara middleware inti dan memory secara
-sengaja "supaya update memory (yang mengubah system prompt) tidak
+(lewat `modify_request`, method internal yang dipanggilnya langsung di
+baris pertama) menandai **blok terakhir** system message (setelah
+kontennya sendiri disisipkan) dengan `cache_control` kalau flag itu aktif
+dan `request.model` adalah `ChatAnthropic` — independen dari apakah
+`AnthropicPromptCachingMiddleware` berjalan sebelum atau sesudahnya di
+list. `[code]` `deepagents/middleware/memory.py` baris 193 (parameter
+`add_cache_control`), 342-374 (`modify_request`, penandaan blok terakhir),
+380, 394 (`wrap_model_call` memanggil `modify_request`); dipanggil dg
+`add_cache_control=True` di `deepagents/graph.py` baris 861-866. Komentar
+sumber di `deepagents/graph.py` baris 856-858 menyebut alasan berbeda
+untuk urutan **profil harness vs memory** (bukan caching vs memory):
+middleware ekstra profil disisipkan di antara middleware inti dan memory
+secara sengaja "supaya update memory (yang mengubah system prompt) tidak
 menginvalidasi prefix cache" milik konten profil — pola "stabil dulu,
 volatil belakangan" dari `## Pola` di atas, diterapkan ke posisi profil
 relatif terhadap memory, bukan ke posisi `AnthropicPromptCachingMiddleware`
-relatif terhadap memory seperti klaim awal di `../systems/deepagents.md`.
-`[code]` `deepagents/graph.py` baris 855-858 (komentar sumber, dikutip
-apa adanya). Detail ini dicatat sebagai koreksi eksplisit terhadap
-`../systems/deepagents.md` §2 di laporan task ini — bukan kontradiksi yang
-diusulkan ulang di sana, karena file itu tier-1 milik task lain.
+relatif terhadap memory seperti klaim awal `../systems/deepagents.md`
+sebelum dikoreksi. `[code]` `deepagents/graph.py` baris 856-858 (komentar
+sumber, dikutip apa adanya). Detail ini juga sudah dipakai memperbaiki
+`../systems/deepagents.md` §2 langsung (paragraf
+`AnthropicPromptCachingMiddleware`) di task ini — bukan cuma dicatat di
+sini, karena file itu tier-1 yang dibaca task-task lain sebagai otoritas.
 
 Sisi lain dari koin: `SummarizationMiddleware` (juga default, selalu
 terpasang) bekerja dengan menulis ulang segmen `messages` begitu token
@@ -239,16 +243,16 @@ sekali, dibanding mengandalkan kompaksi sebagai satu-satunya katup.
   `_tag_system_message`, `_tag_tools`.
 - `[code]` `deepagents/middleware/_prompt_caching.py` (venv sama) —
   `append_prompt_caching_middleware`, pemasangan otomatis tanpa syarat.
-- `[code]` `deepagents/middleware/memory.py` baris 193, 206-208, 355-374
-  (venv sama) — parameter `add_cache_control`, mekanisme
-  `MemoryMiddleware` menandai blok terakhir system message sendiri,
+- `[code]` `deepagents/middleware/memory.py` baris 193, 342-374, 380, 394
+  (venv sama) — parameter `add_cache_control`, `modify_request` (dipanggil
+  `wrap_model_call`) menandai blok terakhir system message sendiri,
   independen dari `AnthropicPromptCachingMiddleware`.
-- `[code]` `deepagents/graph.py` baris 855-866 (venv sama, dibaca ulang
+- `[code]` `deepagents/graph.py` baris 856-866 (venv sama, dibaca ulang
   langsung untuk task ini) — urutan konstruksi list middleware utama
   (`append_prompt_caching_middleware` sebelum `MemoryMiddleware`
   ditambahkan), komentar sumber soal posisi middleware profil vs memory;
-  dasar koreksi presisi atas `../systems/deepagents.md` §2 di `## Di
-  deepagents`.
+  dasar koreksi presisi atas `../systems/deepagents.md` §2 (diperbaiki
+  langsung di task ini, lihat `## Di deepagents`).
 - `[code]` `docs/background/aci.md`, repo `SWE-agent/SWE-agent`, dibaca via
   `raw.githubusercontent.com/SWE-agent/SWE-agent/main/docs/background/aci.md` —
   prinsip desain ACI: linter gate, file viewer 100-baris, search ringkas.

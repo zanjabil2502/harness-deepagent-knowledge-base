@@ -90,9 +90,16 @@ Mekanisme opsional:
   (no-op untuk model non-Anthropic) via `append_prompt_caching_middleware`;
   `BedrockPromptCachingMiddleware`/`FireworksPromptCachingMiddleware` ikut
   ditambahkan otomatis kalau `langchain-aws`/`langchain-fireworks` terpasang.
-  Ini trade-off compaction vs prompt-cache eksplisit: memory dipasang
-  *sebelum* tail prompt-caching supaya update memory tidak merusak prefix
-  cache. `[code]` — `deepagents/middleware/_prompt_caching.py`,
+  Ini trade-off compaction vs prompt-cache eksplisit:
+  `AnthropicPromptCachingMiddleware` ditambahkan ke stack **sebelum**
+  `MemoryMiddleware` (`deepagents/graph.py` baris 860 vs baris 861-870,
+  bukan urutan sebaliknya) — update memory tidak merusak prefix cache
+  bukan karena urutan middleware itu, tapi karena `MemoryMiddleware`
+  sendiri menandai blok terakhir system message dengan `cache_control`
+  lewat parameter `add_cache_control=True` (di-set `True` untuk instance
+  di stack utama), diterapkan hanya kalau model target `ChatAnthropic`.
+  `[code]` — `deepagents/middleware/_prompt_caching.py`,
+  `deepagents/middleware/memory.py` baris 193, 342-374,
   `deepagents/graph.py` baris 856-870.
 - **`PatchToolCallsMiddleware`** selalu ada di stack utama maupun subagent —
   menambal `ToolMessage` sintetis untuk tool call yang dangling/dibatalkan di
