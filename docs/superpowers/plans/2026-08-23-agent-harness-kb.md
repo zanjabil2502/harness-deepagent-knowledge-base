@@ -15,7 +15,7 @@
 Berlaku untuk **semua** task di bawah.
 
 - **Bahasa isi KB:** Indonesia. Istilah teknis dan identifier kode tetap bentuk aslinya.
-- **Label sumber wajib.** Setiap klaim faktual tentang sebuah sistem diberi label `[code]` (dibaca dari source), `[docs]` (dokumentasi resmi), atau `[inferred]` (disimpulkan dari perilaku produk closed). File tanpa label sama sekali = gagal validasi.
+- **Label sumber wajib.** Setiap klaim faktual tentang sebuah sistem diberi label `[code]` (dibaca dari source), `[docs]` (dokumentasi resmi), `[inferred]` (disimpulkan dari perilaku produk closed), atau `[ours]` (pola yang kita putuskan sendiri). File tanpa label sama sekali = gagal validasi. **Setiap `[ours]` wajib menyebut apa cara vanilla-nya dan kenapa kita menyimpang** — tanpa itu, penyimpangan menjadi tak terlihat dan tak bisa ditinjau ulang.
 - **`SKILL.md` maksimum 150 baris.** Kedalaman tinggal di `references/`.
 - **Tidak boleh ada link internal mati.** Divalidasi otomatis.
 - **Asumsi A1–A5 dari spec §13 berlaku:** cloud + on-prem; API key operator dengan kuota per user (BYOK opsional); Python + FastAPI; multi-user (`user_id`) dengan multi-tenant sebagai jalur migrasi; scope Python saja.
@@ -592,14 +592,88 @@ python3 tools/check_kb.py && git add references/scaffolds/ && git commit -m "doc
 
 ---
 
-### Task 11: Verifikasi akhir
+### Task 11: deepagents deep dive & audit kesesuaian
+
+Dikerjakan setelah 7 arketipe dan kelima bidang konsep selesai, sehingga bisa menjawab
+"untuk arketipe X, konstruksi deepagents yang benar itu apa" — bukan sekadar mendaftar API.
+Ini menjawab kekhawatiran inti: apakah cara kita memakai deepagents memang wajar,
+atau modifikasi asal yang kebetulan jalan.
+
+**Files:**
+- Create: `references/deepagents/api-reference.md`
+- Create: `references/deepagents/lifecycle.md`
+- Create: `references/deepagents/middleware.md`
+- Create: `references/deepagents/handlers.md`
+- Create: `references/deepagents/extension-points.md`
+- Create: `references/deepagents/per-archetype.md`
+- Create: `references/deepagents/conformance.md`
+- Modify: `tools/check_kb.py`
+
+**Interfaces:**
+- Consumes: `references/systems/deepagents.md` (Task 3), ketujuh file arketipe (Task 2), seluruh `concepts/` (Task 4-8).
+- Produces: aturan extension point dan divergence log yang mengikat `scaffolds/` — setiap penyimpangan di Task 10 harus sudah tercatat di `conformance.md`.
+
+- [ ] **Step 1: Tambahkan label `[ours]` ke validator**
+
+Modify `tools/check_kb.py`: ubah regex `LABEL` menjadi `re.compile(r"\[(code|docs|inferred|ours)\]")`. Jalankan `python3 tools/check_kb.py` dan pastikan tetap `OK: semua cek lulus` — perubahan ini melonggarkan, bukan mengetatkan, sehingga tidak boleh memunculkan kegagalan baru.
+
+- [ ] **Step 2: Tulis `api-reference.md`**
+
+Setiap entrypoint publik deepagents: nama, setiap parameter beserta tipe, nilai default, dan efeknya. Tandai parameter yang sering salah pakai. Sumber wajib `[code]` — dibaca dari source, bukan dari README. Sebutkan versi yang dibaca di `## Sumber`.
+
+- [ ] **Step 3: Tulis `lifecycle.md`**
+
+Alur satu turn dari input sampai output, tahap demi tahap: di mana prompt dirakit, kapan tool dipilih, kapan hasil tool masuk kembali, kapan state ditulis, kapan loop berhenti. Setiap tahap menyebut titik mana yang bisa diintervensi. Diagram alur teks wajib ada.
+
+- [ ] **Step 4: Tulis `middleware.md`**
+
+Tabel setiap middleware bawaan: nama, apa yang dilakukannya, di tahap lifecycle mana ia menyisip, urutan eksekusi, dan interaksi antar-middleware yang berbahaya (mana yang saling meniadakan jika urutannya terbalik). Tambahkan section cara menulis middleware sendiri dengan contoh minimal yang jalan.
+
+- [ ] **Step 5: Tulis `handlers.md`**
+
+Setiap handler/hook yang tersedia: apa yang bisa diintercept, apa yang bisa diubah, apa yang tidak. Sertakan pola penanganan error: tool gagal, model timeout, budget habis, dan interupsi manusia.
+
+- [ ] **Step 6: Tulis `extension-points.md`**
+
+Inventaris titik ekstensi resmi (middleware, backend, subagent, tool, state schema, handler). Wajib memuat aturan keras: **jangan menulis kode custom di lapisan yang sudah punya extension point**, disertai minimal tiga contoh anti-pattern konkret — apa yang orang biasa tulis sendiri padahal sudah tersedia, dan cara resminya.
+
+- [ ] **Step 7: Tulis `per-archetype.md`**
+
+Untuk masing-masing dari 7 arketipe: konstruksi deepagents yang benar — middleware apa, backend apa, subagent apa, batas loop apa, handler apa. Ini menyatukan Task 2 dan Task 11 menjadi jawaban yang bisa langsung dipakai.
+
+- [ ] **Step 8: Tulis `conformance.md`** — audit kesesuaian
+
+Bandingkan pola yang dipakai KB ini terhadap `langchain-ai/deepagents-quickstarts` (contoh resmi maintainer). Isi wajib:
+1. Tabel: pola yang kita pakai vs apakah pola itu muncul di quickstarts (`ya` / `tidak` / `varian`)
+2. **Divergence log** — untuk setiap `tidak`/`varian`: apa yang kita lakukan, cara vanilla-nya, alasan menyimpang, biaya jika penyimpangan itu salah
+3. Daftar semua klaim berlabel `[ours]` di seluruh KB beserta lokasinya, sehingga bisa ditinjau ulang sekaligus saat library matang
+
+Pola yang menyimpang tanpa alasan tertulis dihapus, bukan dibiarkan.
+
+- [ ] **Step 9: Verifikasi silang dengan recipes**
+
+Run:
+```bash
+cd references/recipes && uv run python 01_minimal_agent.py
+```
+Expected: masih jalan. Jika `api-reference.md` menyebut parameter yang ternyata tidak ada, kode yang jalan adalah otoritas — perbaiki dokumennya.
+
+- [ ] **Step 10: Jalankan validator dan commit**
+
+```bash
+python3 tools/check_kb.py && git add tools/check_kb.py references/deepagents/ && git commit -m "docs: deepagents deep dive (API, lifecycle, middleware, handler, extension point) + audit kesesuaian"
+```
+
+---
+
+### Task 12: Verifikasi akhir
 
 **Files:**
 - Modify: file mana pun yang gagal cek
 - Create: `README.md`
 
 **Interfaces:**
-- Consumes: seluruh keluaran Task 1–10.
+- Consumes: seluruh keluaran Task 1–11.
 - Produces: KB yang siap di-symlink ke `~/.claude/skills/`.
 
 - [ ] **Step 1: Cek cakupan spec**
@@ -610,9 +684,9 @@ Buka spec, telusuri §6 sampai §12 satu per satu, pastikan tiap keputusan punya
 
 Run:
 ```bash
-grep -roh '\[\(code\|docs\|inferred\)\]' references/ | sort | uniq -c
+grep -roh '\[\(code\|docs\|inferred\|ours\)\]' references/ | sort | uniq -c
 ```
-Expected: `[code]` adalah label terbanyak. Jika `[inferred]` mendominasi, KB berdiri di atas tebakan — kembali ke source.
+Expected: `[code]` adalah label terbanyak. Jika `[inferred]` mendominasi, KB berdiri di atas tebakan — kembali ke source. Setiap `[ours]` wajib punya baris pendamping di `references/deepagents/conformance.md`; yang tidak terdaftar di sana dihapus atau didaftarkan.
 
 - [ ] **Step 3: Cek tiap bidang punya minimal satu reference `[code]`**
 
