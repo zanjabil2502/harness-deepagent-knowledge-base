@@ -88,22 +88,30 @@ menyatakan tiga hal") — **skema/validator apa**, **berapa kali retry**,
 
 ### Hubungan dengan guardrail output — dua lapis berbeda, jangan digabung jadi satu
 
-[`guardrails.md`](guardrails.md) titik 4 (Output) memiliki **penegakan
-kebijakan** atas output: groundedness, wajib sitasi, kebocoran PII, scan
-secret. Structured output adalah lapis **berbeda dan lebih dasar**: apakah
-output **berbentuk** sesuai skema yang disepakati sama sekali, sebelum
-pertanyaan "apakah isinya benar/aman" relevan ditanyakan. Urutannya
-penting — output yang gagal validasi skema (mis. field `amount` bukan
-angka) tidak bisa dinilai groundedness-nya secara berarti, karena tidak
-ada struktur yang jelas untuk diperiksa. Praktis: validasi skema jalan
-**duluan** (retry sampai bentuknya valid atau menyerah dengan jalan keluar
-terdefinisi di atas), guardrail output (`RubricMiddleware` dkk.) jalan
-**sesudahnya**, atas output yang sudah pasti berbentuk benar. Dua lapis
-ini **tidak boleh digabung** jadi satu validator besar — kegagalan bentuk
-dan kegagalan kebijakan butuh strategi retry dan mode kegagalan yang
-berbeda (lihat `guardrails.md` §Pola: "tiap guardrail wajib menyatakan
-tiga hal" berlaku terpisah untuk tiap lapis, bukan sekali untuk gabungan
-keduanya).
+Tabel [`guardrails.md`](guardrails.md) titik 4 (Output) mencantumkan
+**"Validasi schema, groundedness, wajib sitasi"** (plus kebocoran PII dan
+scan secret di baris terpisah), semuanya ditegakkan `RubricMiddleware`.
+Kata "Validasi schema" di baris itu **bukan** mekanisme yang dijelaskan
+file ini — dua file punya "validasi schema" di judulnya masing-masing dan
+batasnya wajib eksplisit, bukan dibiarkan pembaca menebak: `RubricMiddleware`
+milik `guardrails.md` adalah **kriteria rubric self-eval** yang menilai
+output yang **sudah well-formed** (bagian dari penilaian kualitas bersama
+groundedness/sitasi — mis. "apakah field yang wajib ada semuanya relevan
+dan terisi bermakna", bukan "apakah JSON-nya valid"); file ini memiliki
+**apakah output well-formed sama sekali** — pertanyaan yang harus terjawab
+YA lebih dulu, di lapis sebelum rubric apa pun sempat mengevaluasi apa-apa,
+lewat `response_format`/`ToolStrategy`/`ProviderStrategy` (lihat `## Di
+deepagents`). Urutannya karena itu bukan cuma disarankan tapi struktural:
+output yang gagal validasi bentuk (mis. field `amount` bukan angka, atau
+`ToolStrategy` belum berhasil mem-parsenya sama sekali) tidak punya struktur
+untuk dinilai `RubricMiddleware` — validasi skema file ini jalan **duluan**
+(retry sampai bentuknya valid atau menyerah dengan jalan keluar terdefinisi
+di atas), rubric `guardrails.md` titik 4 jalan **sesudahnya**, atas output
+yang sudah pasti berbentuk benar. Dua lapis ini **tidak boleh digabung**
+jadi satu validator besar — kegagalan bentuk dan kegagalan kebijakan/kualitas
+butuh strategi retry dan mode kegagalan yang berbeda (lihat `guardrails.md`
+§Pola: "tiap guardrail wajib menyatakan tiga hal" berlaku terpisah untuk
+tiap lapis, bukan sekali untuk gabungan keduanya).
 
 ## Trade-off
 

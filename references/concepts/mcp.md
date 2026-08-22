@@ -27,10 +27,10 @@ dari kepatuhan nominal terhadap spesifikasi.
 MCP mendefinisikan protokol JSON-RPC antara **klien** (bagian dari harness
 agent) dan **server** (proses/endpoint yang mengekspos tool/resource/
 prompt) — bukan pustaka atau produk tunggal. Server MCP mengekspos tiga
-kategori kapabilitas utama: `tools` (fungsi yang bisa dipanggil model,
-setara `BaseTool` di LangChain), `resources` (konten yang bisa dibaca,
-mis. file/baris database), `prompts` (template prompt siap pakai). `[docs]`
-— MCP Specification, dikutip via WebFetch dari
+kategori kapabilitas utama: `tools` (fungsi yang bisa dipanggil model),
+`resources` (konten yang bisa dibaca, mis. file/baris database), `prompts`
+(template prompt siap pakai). `[docs]` — MCP Specification, dikutip via
+WebFetch dari
 `modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle`.
 
 ### Siklus hidup server: init → operasi → shutdown
@@ -171,12 +171,12 @@ Jalur integrasi yang tersedia lewat ekosistem `langchain` (paket terpisah,
 - **`MultiServerMCPClient`** (paket `langchain-mcp-adapters`) — dikonfigurasi
   lewat dict yang memetakan nama server ke parameter koneksi (`command`/
   `args`/`transport: "stdio"` atau `url`/`transport: "http"`). Memanggil
-  `await client.get_tools()` mengembalikan tool MCP yang sudah dikonversi
-  jadi `BaseTool` LangChain — bentuk yang sama dipakai `tools=[...]` pada
-  `create_deep_agent(...)`, jadi secara mekanis tool MCP masuk lewat jalur
-  "tool custom aditif" yang sama seperti dijelaskan
-  [`tool-design.md`](tool-design.md) §Di deepagents, tidak ada jalur
-  integrasi MCP khusus di `deepagents` sendiri.
+  `await client.get_tools()` mengembalikan objek tool yang bisa langsung
+  dipakai sebagai argumen `tools=[...]` pada `create_agent(...)` — bentuk
+  pemakaian yang sama dengan `tools=[...]` pada `create_deep_agent(...)`,
+  jadi secara mekanis tool MCP masuk lewat jalur "tool custom aditif" yang
+  sama seperti dijelaskan [`tool-design.md`](tool-design.md) §Di deepagents,
+  tidak ada jalur integrasi MCP khusus di `deepagents` sendiri.
 - Header runtime per-koneksi (mis. `"headers": {"Authorization": "Bearer
   TOKEN"}`) adalah jalur konkret untuk §Konfigurasi per user di atas —
   token per user disuntik di konfigurasi koneksi MCP, bukan hardcode di
