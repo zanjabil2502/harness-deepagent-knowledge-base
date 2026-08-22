@@ -60,13 +60,22 @@ opsional per request `[code]` — `litellm/router.py`
 LiteLLM proxy mendukung antrean prioritas berdasar level prioritas key —
 `priority` dikirim per panggilan, nilai lebih rendah berarti prioritas
 lebih tinggi `[docs]` — dikutip dari `docs.litellm.ai/docs/scheduler`.
-Bentuk yang sama berlaku untuk antrean turn di harness ini: field
-`priority` di baris `turns`, worker menarik dari antrean berurutan
-prioritas dulu baru FIFO dalam prioritas yang sama. Tidak ada mekanisme
-anti-starvation (aging) yang dispesifikasikan di sini secara default —
-YAGNI sampai ada bukti nyata prioritas rendah kelaparan; kalau dibutuhkan,
-itu penambahan lokal ke query "ambil turn berikutnya", bukan perubahan
-skema.
+
+**Skema `turns` yang sudah di-commit (`persistence-schema.md`) belum
+punya kolom ini** — hari ini antrean turn murni FIFO (worker menarik
+berurutan `created_at`, tidak ada jalur potong-antrean). Prioritas
+bentuk-LiteLLM di atas adalah rekomendasi maju, bukan sesuatu yang sudah
+terbangun: `[ours]` — vanilla-nya (dan yang berjalan di skema saat ini)
+adalah FIFO murni, cukup untuk beban yang seragam nilainya. Menambah
+kolom `priority INT` ke `turns` baru bermanfaat begitu ada kelas turn
+yang nilainya nyata berbeda (mis. turn interaktif vs job batch berbagi
+antrean yang sama) — buktinya harus nyata (antrean sungguh penuh dan
+turn bernilai tinggi sungguh tertunda), bukan diasumsikan sejak awal.
+Kalau kolom itu ditambah, worker menarik berurutan prioritas dulu baru
+FIFO dalam prioritas yang sama; mekanisme anti-starvation (aging) sengaja
+tidak ikut disiapkan sekarang — YAGNI sampai ada bukti nyata prioritas
+rendah kelaparan, dan kalau dibutuhkan itu penambahan lokal ke query
+"ambil turn berikutnya", bukan perubahan skema lagi.
 
 ### Reattach setelah client putus
 

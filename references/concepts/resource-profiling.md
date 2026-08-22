@@ -62,6 +62,34 @@ dibutuhkan — padahal yang sebenarnya kurang cuma kapasitas eksekusi kode.
 Ini argumen inti kenapa `serving-topology.md` memisahkan sinyal HPA per
 komponen alih-alih satu sinyal CPU untuk semuanya.
 
+### Mengukur dominasi fase di deployment nyata
+
+Contoh di atas ilustratif — angka sungguhan berbeda per workload
+(system prompt besar vs kecil, tool call berat vs ringan), jadi yang
+dibutuhkan bukan tabel di atas dipercaya mentah-mentah, tapi cara
+mengukurnya sendiri. Instrumentasi termurah: catat **span** (timestamp
+mulai + selesai) di tiap batas fase yang sudah ada di kode — bentuknya
+sama seperti yang sudah dipakai `tool_calls.started_at`/`completed_at`
+di `persistence-schema.md` (Task 4), diperluas ke fase lain yang belum
+punya baris tabel sendiri: `context_assembly_start`/`_end` (sebelum vs
+sesudah prompt dirakit, sebelum dikirim ke model),
+`llm_call_start`/`_end` (kirim request vs response/stream selesai),
+`checkpoint_write_start`/`_end` (sebelum vs sesudah `checkpointer.aput`).
+Emit tiap span sebagai metric berdurasi (mis. histogram Prometheus
+per-fase, label `phase=`), lalu baca hasilnya dengan cara yang sama
+seperti membaca breakdown di atas: jumlah durasi tiap `phase` dibagi
+total durasi turn memberi **porsi waktu** per fase; disandingkan dengan
+CPU-seconds pod yang tersampel selama window span yang sama (metric
+container standar, mis. `container_cpu_usage_seconds_total` dari
+cAdvisor/kube-state-metrics) memberi porsi **kerja CPU** per fase — dua
+angka yang berbeda dan keduanya dibutuhkan, karena fase yang makan waktu
+paling lama (LLM call) belum tentu fase yang makan CPU paling banyak
+(code exec). Fase dengan porsi waktu besar tapi CPU kecil adalah kandidat
+IO/memory-bound (harus di-scale lewat concurrency, `serving-topology.md`);
+fase dengan porsi CPU besar meski waktunya singkat adalah kandidat yang
+harus dipisah ke komponen tersendiri (Tool executor) supaya tidak
+menyeret seluruh pod ikut scale-out.
+
 ## Trade-off
 
 - **Kolokasi (satu pod, semua fase) vs pisah per bound** `[ours]` —
