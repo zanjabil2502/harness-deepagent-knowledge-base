@@ -92,10 +92,12 @@ tetap utuh.
   tool call yang nondeterministik — memanggil ulang API eksternal bisa
   menghasilkan nilai berbeda atau punya efek samping berbayar).
 - **Tree vs flat list untuk transcript**: tree menambah kerumitan query
-  (perlu jalan dari root ke leaf aktif) dibanding list, tapi flat list tidak
-  bisa merepresentasikan "user edit pesan lalu regenerate" tanpa menimpa
-  riwayat — kehilangan kemampuan itu sama dengan kehilangan data yang tidak
-  bisa dihitung ulang.
+  (perlu jalan dari root ke leaf aktif — resolusinya lewat pointer
+  `conversations.active_leaf_id` yang dipersist, bukan dihitung ulang tiap
+  render; lihat `persistence-schema.md`) dibanding list, tapi flat list
+  tidak bisa merepresentasikan "user edit pesan lalu regenerate" tanpa
+  menimpa riwayat — kehilangan kemampuan itu sama dengan kehilangan data
+  yang tidak bisa dihitung ulang.
 - **Tool call sebagai row terpisah vs field di message**: row terpisah butuh
   join tambahan untuk merender satu bubble pesan, tapi field JSON terkubur
   tidak bisa di-index/di-redact per baris dan menyulitkan retention selektif

@@ -93,9 +93,27 @@ CREATE INDEX messages_turn_id_idx ON messages (turn_id);
 
 COMMENT ON COLUMN messages.parent_id IS
   'NULL = root pesan di conversation. Edit pesan lama = INSERT baris baru '
-  'dengan parent_id sama dengan versi lama (bukan UPDATE) -> bercabang. '
-  '"Path aktif" = jalan dari root ke leaf terbaru yang dipilih user; '
-  'dihitung app-side, lihat session-state.md.';
+  'dengan parent_id sama dengan versi lama (bukan UPDATE) -> bercabang.';
+
+-- Path aktif DIPERSIST, bukan dihitung ulang dari timestamp. Heuristik naif
+-- "leaf dengan created_at terbesar se-conversation" salah begitu user
+-- switch balik ke cabang lama lalu melanjutkannya -- leaf cabang itu bukan
+-- max(created_at) global, tapi itulah yang seharusnya jadi path aktif.
+ALTER TABLE conversations
+    ADD COLUMN active_leaf_id UUID REFERENCES messages(id) ON DELETE SET NULL;
+
+COMMENT ON COLUMN conversations.active_leaf_id IS
+  'Pointer ke message yang jadi ujung path aktif yang sedang dilihat/'
+  'dilanjutkan user. Path aktif = jalan dari root sampai baris ini, '
+  'ditelusuri lewat parent_id (tidak perlu algoritma rekursif terpisah '
+  'untuk resolusi -- pointer inilah resolusinya). Diperbarui app di dua '
+  'momen saja, dalam transaksi yang sama dengan perubahan yang memicunya: '
+  '(1) fork -- INSERT pesan baru, lalu UPDATE conversations SET '
+  'active_leaf_id = <id pesan baru>; '
+  '(2) switch branch -- user pilih cabang lama, UPDATE active_leaf_id ke '
+  'leaf existing cabang itu (message tanpa child di cabang tsb, dicari '
+  'sekali saat switch, bukan dihitung ulang tiap render). Lihat '
+  'session-state.md untuk penjelasan kenapa ini dipersist, bukan dihitung.';
 
 -- ============================================================
 -- Tool call sebagai row transcript KELAS SATU
@@ -192,8 +210,30 @@ CREATE POLICY memory_entries_scope ON memory_entries
     USING (user_id = current_setting('app.current_user_id', true)::uuid)
     WITH CHECK (user_id = current_setting('app.current_user_id', true)::uuid);
 
--- Pola yang sama berlaku ke turns, compaction_events,
--- compaction_event_messages, dan artifacts/artifact_versions/
+ALTER TABLE turns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE turns FORCE ROW LEVEL SECURITY;
+CREATE POLICY turns_scope ON turns
+    USING (user_id = current_setting('app.current_user_id', true)::uuid)
+    WITH CHECK (user_id = current_setting('app.current_user_id', true)::uuid);
+
+ALTER TABLE compaction_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compaction_events FORCE ROW LEVEL SECURITY;
+CREATE POLICY compaction_events_scope ON compaction_events
+    USING (user_id = current_setting('app.current_user_id', true)::uuid)
+    WITH CHECK (user_id = current_setting('app.current_user_id', true)::uuid);
+
+-- compaction_event_messages discope lewat kolom user_id MILIKNYA SENDIRI
+-- (didenormalisasi saat insert), bukan lewat JOIN ke compaction_events/
+-- messages -- pilihan yang sama seperti alasan di Trade-off untuk junction
+-- table ini: USING lewat subquery JOIN tidak sargable dan lebih lambat di
+-- tabel besar.
+ALTER TABLE compaction_event_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE compaction_event_messages FORCE ROW LEVEL SECURITY;
+CREATE POLICY compaction_event_messages_scope ON compaction_event_messages
+    USING (user_id = current_setting('app.current_user_id', true)::uuid)
+    WITH CHECK (user_id = current_setting('app.current_user_id', true)::uuid);
+
+-- Pola yang sama berlaku ke artifacts/artifact_versions/
 -- message_artifact_refs (lihat artifacts-and-canvas.md) -- tiap tabel
 -- discope lewat kolom user_id miliknya sendiri, bukan lewat JOIN ke
 -- conversations. `current_setting(..., true)` (argumen kedua) supaya
@@ -233,6 +273,19 @@ database produk.
 
 ## Trade-off
 
+- **Pointer `active_leaf_id` yang dipersist vs algoritma resolusi
+  rekursif** — alternatif yang tidak dipilih: simpan tree apa adanya dan
+  hitung path aktif tiap kali dibutuhkan lewat aturan eksplisit per node
+  (mis. "di tiap titik cabang, anak dengan `created_at` terbesar menang,
+  rekursif dari root"). Itu menghindari kolom tambahan + kewajiban app
+  menjaganya tetap sinkron, tapi rekursif per-render lebih mahal untuk tree
+  dalam, dan "anak terbaru menang di tiap titik cabang" tetap bisa salah
+  kalau user mengedit dua cabang berbeda lalu balik ke yang pertama — aturan
+  itu butuh dilengkapi state "cabang mana yang terakhir dipilih" di tiap
+  titik, yang pada akhirnya adalah pointer per-node juga, hanya lebih rumit
+  dari satu pointer per-conversation. Kita pilih pointer tunggal
+  (`active_leaf_id`) karena resolusinya jadi trivial (satu kolom, satu
+  UPDATE per fork/switch) dan tidak ambigu.
 - **Junction table (`compaction_event_messages`) ikut punya `user_id`
   sendiri** meski bisa didapat lewat JOIN ke `messages`/`compaction_events`.
   `[ours]` — vanilla-nya: RLS lewat subquery (`message_id IN (SELECT id
