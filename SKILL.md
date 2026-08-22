@@ -48,23 +48,23 @@ Potongan utama untuk klasifikasi awal: **artefak × blast radius**.
 Hibrida normal dan dicatat eksplisit (mis. Cursor = Workspace Agent + In-App
 Copilot, Manus = General Task Agent + Computer-Use Agent).
 
-1. Workspace Agent
-2. Generative Builder
-3. General Task Agent
-4. Research/Analyst
-5. In-App Copilot
-6. Workflow Agent
-7. Computer-Use Agent
+1. [Workspace Agent](references/archetypes/01-workspace-agent.md)
+2. [Generative Builder](references/archetypes/02-generative-builder.md)
+3. [General Task Agent](references/archetypes/03-general-task-agent.md)
+4. [Research/Analyst](references/archetypes/04-research-agent.md)
+5. [In-App Copilot](references/archetypes/05-in-app-copilot.md)
+6. [Workflow Agent](references/archetypes/06-workflow-agent.md)
+7. [Computer-Use Agent](references/archetypes/07-computer-use-agent.md)
 
 ## 5 bidang `concepts/`
 
 Cakupan ditentukan bidang, bukan topik yang kebetulan terpikirkan.
 
-- **Cognition** — agent-loop, planning, delegation, context-engineering, memory, policy-as-data, skill-composition
-- **Interface** — tool-design, mcp, streaming-protocol, human-in-the-loop, structured-output, multilingual
-- **Data** — session-state, persistence-schema, artifacts-and-canvas, retention-and-deletion
-- **Runtime** — serving-topology, resource-profiling, isolation-and-scoping, sandboxing, queueing-and-backpressure, scaling
-- **Assurance** — observability, evaluation, cost-control, guardrails, security, replay-and-forensics
+- **[Cognition](references/concepts/)** — agent-loop, planning, delegation, context-engineering, memory, policy-as-data, skill-composition
+- **[Interface](references/concepts/)** — tool-design, mcp, streaming-protocol, human-in-the-loop, structured-output, multilingual
+- **[Data](references/concepts/)** — session-state, persistence-schema, artifacts-and-canvas, retention-and-deletion
+- **[Runtime](references/concepts/)** — serving-topology, resource-profiling, isolation-and-scoping, sandboxing, queueing-and-backpressure, scaling
+- **[Assurance](references/concepts/)** — observability, evaluation, cost-control, guardrails, security, replay-and-forensics
 
 ## Keluaran
 
