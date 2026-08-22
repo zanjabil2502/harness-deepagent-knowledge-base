@@ -46,10 +46,11 @@ generik, bukan API sempit satu produk.
 
 ## Sistem contoh
 
-- **Aider** `[docs]` — setiap edit otomatis di-commit ke git dengan
-  atribusi, dan sebelum edit, aider membangun "repo map" ringkas dari
-  seluruh codebase untuk memberi model konteks tanpa membaca semua file
-  utuh. Sumber: aider.chat/docs/faq.html.
+- **Aider** `[code]` — `GitRepo.commit()` mengimplementasikan logika
+  atribusi commit yang bercabang berdasar flag `aider_edits`: kalau
+  perubahan berasal dari Aider, author/committer commit ditandai beda
+  dari commit yang ditulis manusia, bukan cuma "auto-commit" generik.
+  Sumber: `aider/repo.py` (github.com/Aider-AI/aider).
 - **Cline** `[docs]` — punya dua mode eksplisit: Plan (eksplorasi repo,
   tanya klarifikasi, susun strategi) dan Act (eksekusi). Setiap file edit
   dan command terminal butuh approval user secara default, dengan opsi
@@ -110,7 +111,7 @@ generik, bukan API sempit satu produk.
 
 ## Sumber
 
-- Aider FAQ — `[docs]` — https://aider.chat/docs/faq.html
+- Aider `aider/repo.py` — `[code]` — https://github.com/Aider-AI/aider
 - Cline README — `[docs]` — https://github.com/cline/cline
 - OpenHands README — `[docs]` — https://github.com/All-Hands-AI/OpenHands
 - deepagents `graph.py`, `THREAT_MODEL.md`, `ARCHITECTURE.md` — `[code]` —

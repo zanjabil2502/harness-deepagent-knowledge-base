@@ -49,11 +49,15 @@ sudah ada milik pihak lain.
 
 ## Sistem contoh
 
-- **browser-use** `[docs]` — agent yang membuka halaman, mengklik tombol,
-  mengetik, dan mengisi form berdasarkan task bahasa alami; mendukung
-  penambahan custom tool lewat API tool kustom untuk memperluas
-  kapabilitas di luar aksi browser standar. Sumber:
-  github.com/browser-use/browser-use.
+- **browser-use** `[code]` — `Agent.run()` menjalankan loop step dengan
+  `max_steps` (default 500) dan pelacakan `consecutive_failures` terhadap
+  batas `max_failures` (default 5); saat batas kegagalan beruntun
+  tercapai, agent dipaksa memanggil tool `done` sebagai satu-satunya tool
+  yang tersedia, dan saat step budget hampir habis, sebuah pesan
+  "BUDGET WARNING" disuntikkan ke context sebelum step terakhir. Ini
+  mekanisme retry/self-correction di level loop yang nyata, bukan
+  deskripsi produk. Sumber: `browser_use/agent/service.py`
+  (github.com/browser-use/browser-use).
 - **OpenAI Operator** `[inferred]` — dari perilaku produk: loop
   screenshot-then-click di browser terisolasi, meminta konfirmasi
   eksplisit sebelum aksi berisiko seperti submit pembayaran.
@@ -94,12 +98,17 @@ sudah ada milik pihak lain.
   sumber: `test_hitl.py`.
 - **Loop verifikasi**: `[ours]` deepagents tidak punya konsep bawaan
   "verify setelah aksi" — kami menambahkan tool `verify_state` yang wajib
-  dipanggil setelah tiap tool aksi UI (dipaksa lewat instruksi system
-  prompt + `PatchToolCallsMiddleware` untuk menormalkan urutan tool call
-  yang tidak valid). Vanilla `create_deep_agent` mengasumsikan tool call
-  itu sendiri sudah membawa hasilnya (ToolMessage) tanpa fase verifikasi
-  terpisah; kami menyimpang karena computer-use tidak punya jaminan
-  bahwa hasil aksi = hasil yang terlihat.
+  dipanggil setelah tiap tool aksi UI, ditegakkan murni lewat konvensi
+  instruksi system prompt (bukan lewat middleware apa pun — deepagents
+  tidak punya middleware yang menegakkan urutan pemanggilan tool).
+  Vanilla `create_deep_agent` mengasumsikan tool call itu sendiri sudah
+  membawa hasilnya (ToolMessage) tanpa fase verifikasi terpisah; kami
+  menyimpang karena computer-use tidak punya jaminan bahwa hasil aksi =
+  hasil yang terlihat. `PatchToolCallsMiddleware` (dipakai di atas untuk
+  hal lain) tidak relevan di sini — perannya hanya menambal
+  `ToolMessage` sintetis untuk tool call yang dangling/dibatalkan/rusak
+  di riwayat pesan, bukan menegakkan urutan eksekusi tool. `[code]` —
+  sumber: `libs/deepagents/deepagents/middleware/patch_tool_calls.py`.
 - **Sandbox**: backend eksekusi browser idealnya berada di sandbox
   terisolasi yang sama levelnya dengan Generative Builder (02) — mis.
   di belakang backend keluarga sandbox (`DaytonaSandbox` atau setara) —
@@ -108,9 +117,10 @@ sudah ada milik pihak lain.
 
 ## Sumber
 
-- browser-use README — `[docs]` — https://github.com/browser-use/browser-use
-- deepagents `graph.py`, `test_hitl.py`, `libs/partners/daytona/README.md`
-  — `[code]` — Context7 `/langchain-ai/deepagents`,
-  https://github.com/langchain-ai/deepagents
+- browser-use `browser_use/agent/service.py` — `[code]` —
+  https://github.com/browser-use/browser-use
+- deepagents `graph.py`, `test_hitl.py`, `libs/partners/daytona/README.md`,
+  `middleware/patch_tool_calls.py` — `[code]` — Context7
+  `/langchain-ai/deepagents`, https://github.com/langchain-ai/deepagents
 - OpenAI Operator, Claude computer use — `[inferred]` — perilaku produk
   closed-source.

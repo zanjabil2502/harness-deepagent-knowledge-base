@@ -46,11 +46,14 @@ aplikasi saat run terjadi.
 
 ## Sistem contoh
 
-- **n8n** `[docs]` — mesin workflow berbasis node visual; AI Agent node
-  membungkus tool use, human approval, dan observability sebagai bagian
-  dari node yang bisa disusun di canvas, dan mendukung banyak provider
-  model (OpenAI, Anthropic, Google, model open-source) tanpa vendor
-  lock-in. Sumber: github.com/n8n-io/n8n.
+- **n8n** `[code]` — node AI Agent (`ToolsAgent` V3) menegakkan batas
+  iterasi lewat `checkMaxIterations()`, dipanggil di awal tiap eksekusi
+  agent: begitu `iterationCount` pada metadata response mencapai
+  `maxIterations`, fungsi ini melempar `NodeOperationError` dan
+  menghentikan run — batas loop yang benar-benar ditegakkan kode, bukan
+  cuma opsi UI. Sumber:
+  `packages/@n8n/nodes-langchain/nodes/agents/Agent/agents/ToolsAgent/V3/helpers/checkMaxIterations.ts`
+  (github.com/n8n-io/n8n).
 - **Zapier (AI agents/Zaps)** `[inferred]` — dari perilaku produk: trigger
   event memicu chain aksi lintas aplikasi, tanpa operator aktif di
   tengah eksekusi.
@@ -85,11 +88,16 @@ aplikasi saat run terjadi.
   Vanilla penggunaan deepagents di dokumentasi/contoh selalu berupa
   loop interaktif dipicu manusia; kami menyimpang karena arketipe ini
   butuh trigger non-manusia, yang berada di luar tanggung jawab library.
-- **Idempotency**: dilakukan di layer pemanggil (worker/queue) dengan
-  `checkpointer` LangGraph yang disuntikkan lewat parameter
-  `checkpointer` di `create_deep_agent` — checkpoint per thread_id yang
-  dideterminasi dari idempotency key event, bukan random. `[code]` —
-  sumber: `ARCHITECTURE.md`.
+- **Idempotency**: parameter `checkpointer` di `create_deep_agent` ada
+  persis untuk ini — aplikasi menyuntikkan checkpointer LangGraph-nya
+  sendiri, deepagents tidak membuatnya. `[code]` — sumber:
+  `ARCHITECTURE.md`. `[ours]` `ARCHITECTURE.md` hanya menyatakan bahwa
+  checkpointer disuntikkan aplikasi — tidak menyebutkan bagaimana
+  `thread_id` dibentuk. Rekomendasi kami: derivasi `thread_id` dari
+  idempotency key event (bukan random/session-generated seperti pola
+  umum di contoh interaktif deepagents), supaya retry event yang sama
+  jatuh ke checkpoint yang sama alih-alih membuat run baru. Ini pola
+  kami, bukan sesuatu yang dijamin/didokumentasikan library.
 - **Safety gate**: `interrupt_on` untuk aksi berisiko tinggi (mis.
   `send_email: True`) tetap dipasang meski tidak ada manusia real-time —
   interrupt di LangGraph berarti run berhenti dan menunggu approval
@@ -103,7 +111,8 @@ aplikasi saat run terjadi.
 
 ## Sumber
 
-- n8n README — `[docs]` — https://github.com/n8n-io/n8n
+- n8n `packages/@n8n/nodes-langchain/nodes/agents/Agent/agents/ToolsAgent/V3/helpers/checkMaxIterations.ts`
+  — `[code]` — https://github.com/n8n-io/n8n
 - deepagents `ARCHITECTURE.md`, `test_hitl.py` — `[code]` — Context7
   `/langchain-ai/deepagents`, https://github.com/langchain-ai/deepagents
 - Zapier, pola cron agent umum — `[inferred]` — perilaku produk/pola

@@ -46,12 +46,17 @@ pengawasan di latar.
 
 ## Sistem contoh
 
-- **Chatwoot Captain (Copilot)** `[docs]` — menyusun draft balasan
-  berdasar context percakapan yang bisa "diperbaiki" (improve/translate)
-  sebelum dikirim manusia; juga meringkas percakapan dan menarik data
-  historis pelanggan. Fokusnya pada saran untuk agent manusia di dalam
-  satu percakapan, bukan aksi otonom di backend tiket. Sumber:
-  chatwoot.com/captain.
+- **Chatwoot Captain (Copilot)** `[code]` — `Captain::ReplySuggestionService#perform`
+  cukup satu pemanggilan LLM (`make_api_call` dengan system prompt +
+  transkrip percakapan yang diformat), tanpa loop tool-calling dan tanpa
+  aksi otomatis — hasilnya dikembalikan sebagai draft untuk diedit/dikirim
+  manusia. Aksi yang benar-benar menyentuh state tiket (resolve, tambah
+  label, handoff) ada di tier terpisah (`enterprise/lib/captain/tools/`)
+  sebagai tool eksplisit, bukan bagian dari alur draft-balasan ini —
+  konfirmasi kode bahwa "draft dulu" dan "aksi lewat tool product" memang
+  dua jalur berbeda, bukan satu loop otonom. Sumber:
+  `lib/captain/reply_suggestion_service.rb`
+  (github.com/chatwoot/chatwoot).
 - **Notion AI** `[inferred]` — dari perilaku produk: menulis/mengedit
   blok in-place di dalam dokumen yang sedang dibuka, undo lewat Ctrl+Z
   standar Notion.
@@ -107,7 +112,8 @@ pengawasan di latar.
 
 ## Sumber
 
-- Chatwoot Captain — `[docs]` — https://www.chatwoot.com/captain
+- Chatwoot Captain `lib/captain/reply_suggestion_service.rb` — `[code]` —
+  https://github.com/chatwoot/chatwoot
 - deepagents `graph.py`, `ARCHITECTURE.md` — `[code]` — Context7
   `/langchain-ai/deepagents`, https://github.com/langchain-ai/deepagents
 - Notion AI, Figma AI, Salesforce Agentforce — `[inferred]` — perilaku

@@ -44,10 +44,14 @@ lewat lihat-klik-verifikasi.
 
 ## Sistem contoh
 
-- **bolt.new** `[docs]` — dijalankan di WebContainer berbasis browser milik
-  StackBlitz; model AI diberi kendali penuh atas filesystem, node server,
-  package manager, terminal, dan browser console dalam satu sandbox
-  in-browser. Sumber: dokumentasi bolt.new (github.com/stackblitz/bolt.new).
+- **bolt.diy** `[code]` — satu instance `WebContainer` di-boot per sesi
+  (`WebContainer.boot({coep: 'credentialless', workdirName, forwardPreviewErrors: true})`),
+  dan listener `webcontainer.on('preview-message', ...)` menangkap
+  uncaught exception/unhandled rejection dari iframe preview lalu
+  meneruskannya sebagai `actionAlert` ke UI — sandbox dan sinyal error
+  preview memang dikonfigurasi eksplisit di kode, bukan cuma diklaim di
+  marketing. Sumber: `app/lib/webcontainer/index.ts`
+  (github.com/stackblitz-labs/bolt.diy) — fork open-source dari bolt.new.
 - **v0 (Vercel)** `[inferred]` — dari perilaku produk: preview React/Next.js
   langsung per iterasi, artefak tunggal per percakapan.
 - **Lovable** `[inferred]` — dari perilaku produk: scaffold app penuh dari
@@ -97,7 +101,8 @@ lewat lihat-klik-verifikasi.
 
 ## Sumber
 
-- bolt.new — `[docs]` — https://github.com/stackblitz/bolt.new
+- bolt.diy `app/lib/webcontainer/index.ts` — `[code]` —
+  https://github.com/stackblitz-labs/bolt.diy
 - deepagents `libs/partners/daytona/README.md`, `libs/cli/README.md`,
   `middleware/filesystem.py`, `ARCHITECTURE.md` — `[code]` — Context7
   `/langchain-ai/deepagents`, https://github.com/langchain-ai/deepagents

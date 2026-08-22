@@ -47,12 +47,13 @@ adalah planning eksplisit + delegasi, bukan loop lihat-klik-verifikasi
 
 ## Sistem contoh
 
-- **CrewAI** `[docs]` — kerangka open-source yang memodelkan tim agent
-  lewat Agent (peran, tujuan, tool), Task (unit kerja dengan expected
-  output), dan Crew (kumpulan agent+task). Mode "Hierarchical Process"
-  secara otomatis menugaskan manager agent untuk mengoordinasikan
-  planning dan delegasi eksekusi antar agent spesialis. Sumber:
-  github.com/crewAIInc/crewAI.
+- **CrewAI** `[code]` — pada `Process.hierarchical`, `Crew` memaksa
+  `check_manager_llm()` (menolak jalan tanpa `manager_llm`/`manager_agent`
+  terset) lalu `_create_manager_agent()` men-set `allow_delegation = True`
+  pada manager dan **melarangnya punya tools sendiri** (`crew.py` melempar
+  exception kalau manager diberi tools) — delegasi dipaksa terjadi lewat
+  agent lain, bukan lewat manager mengerjakan sendiri. Sumber:
+  `lib/crewai/src/crewai/crew.py` (github.com/crewAIInc/crewAI).
 - **Manus** `[inferred]` — hibrida dengan Computer-Use Agent (07), lihat
   `README.md` matriks hibrida.
 - **Abacus DeepAgent** `[inferred]` — dari perilaku produk: menerima misi
@@ -102,7 +103,8 @@ adalah planning eksplisit + delegasi, bukan loop lihat-klik-verifikasi
 
 ## Sumber
 
-- CrewAI README — `[docs]` — https://github.com/crewAIInc/crewAI
+- CrewAI `lib/crewai/src/crewai/crew.py` — `[code]` —
+  https://github.com/crewAIInc/crewAI
 - deepagents `graph.py`, `middleware/subagents.py`, `ARCHITECTURE.md`,
   `examples/content-builder-agent/README.md` — `[code]` — Context7
   `/langchain-ai/deepagents`, https://github.com/langchain-ai/deepagents
