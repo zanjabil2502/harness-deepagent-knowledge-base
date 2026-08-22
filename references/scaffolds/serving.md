@@ -57,16 +57,18 @@ supaya migrasi ini adalah **ganti binding + manifest**, bukan rewrite
 
 ### Yang berubah: binding
 
-Hari ini `app/api/deps.py` mengikat `Orchestrator` ke `DeepAgentsOrchestrator`
-(in-process, `_base.md`). Begitu Tool executor (atau orchestrator itu
-sendiri) dipisah jadi service sendiri, satu-satunya berkas yang berubah
-adalah binding itu — implementasi baru yang **memenuhi Protocol yang sama**:
+Hari ini `app/api/deps.py`'s `build_orchestrator(model, checkpointer)`
+mengembalikan `DeepAgentsOrchestrator(...)` (in-process, `_base.md` §Binding).
+Begitu Tool executor (atau orchestrator itu sendiri) dipisah jadi service
+sendiri, satu-satunya yang berubah adalah **isi fungsi itu** — implementasi
+baru yang **memenuhi Protocol yang sama**:
 
 ```python
 """RemoteOrchestratorClient -- binding pengganti DeepAgentsOrchestrator SAAT
 tool executor/orchestrator dipisah jadi service sendiri. Implementasi
-Protocol Orchestrator yang SAMA (orchestrator/interface.py) -- routes/turns.py
-tidak berubah satu baris pun, cuma app/api/deps.py yang mengganti binding ini.
+Protocol Orchestrator yang SAMA (orchestrator/interface.py) -- return value
+build_orchestrator() (app/api/deps.py) diganti ke ini; main.py dan
+routes/turns.py tidak berubah satu baris pun.
 """
 from __future__ import annotations
 
@@ -105,11 +107,20 @@ class RemoteOrchestratorClient:
                 yield TurnEvent(**data)
 ```
 
-`app/api/routes/turns.py` **tidak berubah satu baris pun** — ia memanggil
-`request.app.state.orchestrator.run_turn(...)` lewat Protocol, tidak pernah
-tahu (atau perlu tahu) apakah implementasinya lokal atau network call. Ini
-persis syarat 1 modular monolith (`serving-topology.md`): panggilan lintas
-komponen lewat interface eksplisit, bukan pemanggilan langsung.
+`app/api/routes/turns.py` **tidak berubah satu baris pun** — ia menerima
+`orchestrator: Orchestrator = Depends(get_orchestrator)` (`_base.md`
+§Binding) dan memanggil `orchestrator.run_turn(...)` lewat Protocol, tidak
+pernah tahu (atau perlu tahu) apakah implementasinya lokal atau network
+call. `main.py` juga tidak berubah — pemanggilnya tetap
+`build_orchestrator(model, checkpointer)`, cuma isi fungsi itu di
+`deps.py` yang beda. Ini persis syarat 1 modular monolith
+(`serving-topology.md`): panggilan lintas komponen lewat interface
+eksplisit, bukan pemanggilan langsung. Catatan jujur: `model`/`checkpointer`
+yang diteruskan ke `build_orchestrator` jadi parameter yang tidak dipakai
+`RemoteOrchestratorClient` — dua parameter mati yang sengaja dibiarkan
+alih-alih mengubah signature, supaya `main.py` benar-benar nol-baris-ubah;
+kalau itu mengganggu, membersihkan signature-nya tetap migrasi satu file
+yang sama (`deps.py`), bukan penyebaran ke file lain.
 
 ### Yang berubah: manifest
 

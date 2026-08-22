@@ -17,7 +17,7 @@ app/
 ├── main.py                         # App factory + lifespan (startup/shutdown)
 ├── config.py                       # Konfigurasi env (lihat §Config & secrets)
 ├── api/
-│   ├── deps.py                     # Binding: implementasi Orchestrator mana yang dipakai
+│   ├── deps.py                     # build_orchestrator()/get_orchestrator() -- satu titik binding
 │   ├── middleware/
 │   │   └── scope.py                # ScopeMiddleware -- user_id dari auth -> Scope
 │   └── routes/
@@ -38,6 +38,7 @@ k8s/
 ├── deployment.yaml
 └── service.yaml
 pyproject.toml
+uv.lock
 ```
 
 Tidak ada folder `executor/`/`retrieval/` terpisah — alasannya di section
@@ -111,9 +112,10 @@ class TurnEvent:
 class Orchestrator(Protocol):
     """Kontrak orchestrator. Implementasi konkret ada di
     deepagents_orchestrator.py; app/api/routes/turns.py hanya bergantung pada
-    Protocol ini -- mengganti implementasi (proses lokal hari ini, network
-    call ke service terpisah nanti, lihat serving.md §Migrasi) berarti ganti
-    binding di satu titik (app/api/deps.py), bukan menulis ulang routes.
+    Protocol ini lewat Depends(get_orchestrator) -- mengganti implementasi
+    (proses lokal hari ini, network call ke service terpisah nanti, lihat
+    serving.md §Migrasi) berarti ganti body build_orchestrator() di satu
+    titik (app/api/deps.py), bukan menulis ulang routes.
     """
 
     async def run_turn(
@@ -208,6 +210,50 @@ Generative Builder, Computer-Use Agent) mengganti backend ini secara
 eksplisit di delta masing-masing, bukan mewarisi kemampuan eksekusi kode
 secara diam-diam dari baseline.
 
+### Binding: `app/api/deps.py`
+
+`Orchestrator` adalah Protocol — sesuatu harus memutuskan implementasi
+konkret mana yang dipakai, dan route (`api/routes/turns.py`) harus
+menerimanya lewat `Depends(...)`, bukan menjangkau `request.app.state`
+langsung. `deps.py` adalah titik tunggal itu:
+
+```python
+"""Binding point -- satu-satunya file yang berubah saat migrasi modular
+monolith -> microservice (serving.md §Yang berubah: binding). main.py
+lifespan tetap merakit resource bersama (model, checkpointer); fungsi di
+bawah ini adalah titik tunggal yang memutuskan implementasi Orchestrator
+konkret mana yang dipakai.
+"""
+from __future__ import annotations
+
+from fastapi import Request
+
+from app.orchestrator.deepagents_orchestrator import DeepAgentsOrchestrator
+from app.orchestrator.interface import Orchestrator
+
+
+def build_orchestrator(model, checkpointer) -> Orchestrator:
+    """Dipanggil sekali dari main.py lifespan. Migrasi ke service terpisah
+    -- ganti isi fungsi ini untuk return RemoteOrchestratorClient(...)
+    (lihat serving.md §Migrasi); pemanggilnya di main.py tidak berubah.
+    """
+    return DeepAgentsOrchestrator(model=model, checkpointer=checkpointer)
+
+
+def get_orchestrator(request: Request) -> Orchestrator:
+    """Dependency FastAPI -- routes memanggil ini lewat
+    Depends(get_orchestrator), tidak pernah membaca request.app.state
+    langsung."""
+    return request.app.state.orchestrator
+```
+
+`main.py` lifespan memanggil `build_orchestrator(model, checkpointer)`
+(bukan mengonstruksi `DeepAgentsOrchestrator(...)` langsung) dan menaruh
+hasilnya di `app.state.orchestrator`; route mengambilnya lewat
+`Depends(get_orchestrator)`. Migrasi ke service terpisah (`serving.md`
+§Migrasi) berarti mengganti isi `build_orchestrator()` — satu fungsi, satu
+file — bukan menelusuri `main.py`/`turns.py`.
+
 ## FastAPI async-first
 
 Seluruh I/O (LLM call, checkpoint write, query Postgres) memakai `async`/
@@ -235,13 +281,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from langchain_anthropic import ChatAnthropic
 
+from app.api.deps import build_orchestrator
 from app.api.middleware.scope import ScopeMiddleware
 from app.api.routes import health, turns
 from app.db.checkpointer import build_checkpointer
 from app.db.session import close_pool, init_pool
 from app.lifecycle.drain import DrainState
 from app.observability.otel import setup_otel
-from app.orchestrator.deepagents_orchestrator import DeepAgentsOrchestrator
 
 DRAIN_TIMEOUT_S = float(os.environ.get("DRAIN_TIMEOUT_S", "25"))
 
@@ -253,7 +299,7 @@ async def lifespan(app: FastAPI):
 
     async with build_checkpointer(os.environ["CHECKPOINTER_DATABASE_URL"]) as checkpointer:
         model = ChatAnthropic(model_name="claude-sonnet-4-6")
-        app.state.orchestrator = DeepAgentsOrchestrator(model=model, checkpointer=checkpointer)
+        app.state.orchestrator = build_orchestrator(model, checkpointer)
         app.state.drain = DrainState()
 
         yield  # <-- app melayani traffic di sini
@@ -461,9 +507,12 @@ from __future__ import annotations
 import json
 from uuid import uuid4
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+from app.api.deps import get_orchestrator
+from app.orchestrator.interface import Orchestrator
 
 router = APIRouter(prefix="/turns")
 
@@ -488,9 +537,14 @@ async def create_turn(body: CreateTurnRequest, request: Request) -> dict:
 
 
 @router.get("/{turn_id}/events")
-async def stream_turn(turn_id: str, thread_id: str, message: str, request: Request):
+async def stream_turn(
+    turn_id: str,
+    thread_id: str,
+    message: str,
+    request: Request,
+    orchestrator: Orchestrator = Depends(get_orchestrator),
+):
     scope = request.state.scope
-    orchestrator = request.app.state.orchestrator
     drain = request.app.state.drain
 
     async def event_source():
