@@ -154,6 +154,76 @@ yang bawaan (ini yang diinginkan); mengirim **subclass** dengan nama kelas
 berbeda **tidak** mengganti, dan hasilnya dua filesystem middleware aktif.
 Lihat [`extension-points.md`](extension-points.md) anti-pattern #1.
 
+## Exclusion: identitas slot, dua lintasan, dan fase verify
+
+Tiga perilaku yang tidak terlihat dari signature `create_deep_agent`, tapi
+menentukan apakah `HarnessProfile.excluded_middleware` benar-benar mengikat.
+
+### Aturan identitas slot — satu prinsip, dua perilaku
+
+`deepagents` mencocokkan middleware lewat **identitas persis**, bukan
+pewarisan. Entri class dicocokkan dengan tipe persis, entri string dengan
+`AgentMiddleware.name`.
+
+`[code]` — `_excluded_middleware.py:90` (`_apply_excluded_middleware`),
+docstring-nya menyatakan: *"Class entries match on exact type (not
+`isinstance`), mirroring the slot-identity semantics of `_merge_middleware`
+so a subclass introduced by the caller is preserved when the profile excludes
+the base class."*
+
+Ini aturan yang **sama** dengan yang mengatur penggantian middleware bawaan
+lewat parameter `middleware=` (`graph.py:201`, `_apply_custom_middleware`) —
+dan itulah sebabnya anti-pattern #1 di
+[`extension-points.md`](extension-points.md) terjadi: subclass yang di-rename
+diam-diam **tidak** menggantikan middleware bawaan, karena namanya berbeda.
+
+Dua perilaku yang tampak tak berhubungan — exclusion melewatkan subclass,
+custom middleware gagal menggantikan — adalah konsekuensi dari satu aturan.
+Kalau kamu mengandalkan pewarisan untuk salah satunya, kamu salah di
+dua-duanya.
+
+### Filter dijalankan dua kali per stack
+
+Exclusion tidak bisa dilewati dengan menyisipkan middleware lewat parameter
+`middleware=`. Saringan berjalan **sebelum dan sesudah** middleware custom
+disisipkan:
+
+```
+_apply_excluded_middleware(...)    # graph.py:877
+_apply_custom_middleware(...)      # graph.py:883 — user menyisipkan di sini
+_apply_excluded_middleware(...)    # graph.py:884 — disaring lagi
+```
+
+`[code]` — `graph.py:877-889`. Pola yang sama untuk tool: `_ToolExclusionMiddleware`
+sengaja di-append **paling akhir**, dengan alasan tertulis di source
+(`graph.py:890-893`): *"Tool exclusion runs after custom middleware so excluded
+tool names are stripped last and cannot be restored by a custom
+`wrap_model_call`."*
+
+### Fase verify: salah ketik gagal keras, bukan senyap
+
+Exclusion bukan satu fungsi tapi **protokol tiga fase**, dijalankan berulang
+di empat scope (main, subagent deklaratif, GP subagent):
+
+| Fase | Fungsi | Perannya |
+|---|---|---|
+| 1 | `_validate_excluded_middleware_config` (`_excluded_middleware.py:23`) | Tolak entri yang menargetkan scaffolding wajib (`_REQUIRED_MIDDLEWARE`, `graph.py:238-265`) → `ValueError` |
+| 2 | `_apply_excluded_middleware` (`:90`) | Saring satu stack, **catat apa yang kena** ke set akumulator bersama |
+| 3 | `_verify_excluded_middleware_coverage` (`:168`) | Setelah semua stack disaring, pastikan tiap entri kena di **suatu tempat** |
+
+`[code]` — 15 titik panggil di `graph.py` (`:607` validate main; `:688,693,704,710`
+subagent; `:769,779` GP subagent; `:877,884,903` main).
+
+Fase 3 ada karena set `matched_classes`/`matched_names` **dibagi lintas semua
+pemanggilan** `_apply`, bukan dicek per-stack. Docstring-nya menyatakan alasan
+kedua sisi: *"An entry that matched nothing is almost always a typo or stale
+profile"*, dan *"Per-stack checking would be too strict — a profile
+legitimately targets middleware only one stack carries."*
+
+Konsekuensi praktis: `excluded_middleware=["FilesytemMiddleware"]` (salah ketik)
+melempar `ValueError` saat konstruksi. Tanpa fase ketiga itu akan jadi no-op
+senyap yang baru ketahuan di produksi.
+
 ## Menulis middleware sendiri
 
 Kontrak: subclass `langchain.agents.middleware.AgentMiddleware`, override
