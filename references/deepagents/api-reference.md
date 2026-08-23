@@ -12,7 +12,7 @@ ditulis di kolom efek.
 ## `create_deep_agent(...)`
 
 `[code]` — `deepagents/graph.py` baris 268-288 (signature), 289-579
-(docstring), 629-993 (implementasi).
+(docstring), 580-944 (implementasi).
 
 Mengembalikan `CompiledStateGraph`, sudah dibungkus
 `.with_config({"recursion_limit": 9_999, "metadata": {...}})`.

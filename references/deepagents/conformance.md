@@ -171,9 +171,11 @@ Untuk penyimpangan per-arketipe (D-01…D-07) sumbernya adalah label
   dokumentasi/contoh selalu berupa loop interaktif dipicu manusia"*
   (`references/archetypes/06-workflow-agent.md:82`).
 - **Temuan audit**: klaim itu **terlalu kuat**.
-  `examples/async-subagent-server/server.py` memanggil `_agent.ainvoke(...)`
-  dari `_execute_run`, sebuah task `asyncio.ensure_future` yang dipicu
-  endpoint HTTP `POST /threads/{id}/runs` — tanpa manusia di loop.
+  `examples/async-subagent-server/server.py` memanggil
+  `await _agent.ainvoke(...)` di baris **174**, dari dalam `_execute_run`
+  (baris 169) yang di-dispatch sebagai task `asyncio.ensure_future` di baris
+  **287** di bawah endpoint HTTP `POST /threads/{thread_id}/runs`
+  (baris **234**) — tanpa manusia di loop.
   `examples/ralph_mode/` berjalan tanpa pengawasan. Contoh `deploy-*` adalah
   layanan ter-deploy, bukan REPL.
 - **Kesimpulan**: pemakaian non-interaktif **punya preseden resmi**.
@@ -437,7 +439,7 @@ Ditemukan saat audit, di luar file yang boleh disentuh task ini:
 | Lokasi | Isu | Perbaikan | Status |
 |---|---|---|---|
 | `archetypes/01-workspace-agent.md`, `scaffolds/deltas/01-workspace-agent.md`, `per-archetype.md` §01 | Klaim "vanilla hampir selalu menyertakan subagent" tidak benar (D-01) | Diganti dengan fakta 5-dari-10 beserta lokasi tiap call site; label diturunkan `[ours]` → `[code]` di ketiga tempat | **selesai** |
-| `archetypes/06-workflow-agent.md` | Klaim "vanilla selalu loop interaktif dipicu manusia" terlalu kuat (D-06) | Diganti: `async-subagent-server/server.py:155` dan `ralph_mode` disebut sebagai preseden non-interaktif; `[ours]` dipersempit ke pembagian tanggung jawab trigger/antrian, yang memang tetap milik kami | **selesai** |
+| `archetypes/06-workflow-agent.md` | Klaim "vanilla selalu loop interaktif dipicu manusia" terlalu kuat (D-06) | Diganti: `async-subagent-server/server.py` baris 174 (`ainvoke`), 169 (`_execute_run`), 287 (dispatch), 234 (endpoint) dan `ralph_mode` disebut sebagai preseden non-interaktif; `[ours]` dipersempit ke pembagian tanggung jawab trigger/antrian, yang memang tetap milik kami | **selesai** |
 | `archetypes/01-workspace-agent.md` | Daftar tool `FilesystemMiddleware` menyertakan `delete` — **benar**; daftar di `systems/deepagents.md` justru yang kurang lengkap (tanpa `delete`) | Tambahkan `delete` ke daftar tool di `systems/deepagents.md` | terbuka |
 | `recipes/03_subagents.py` docstring | "mengembalikan `messages` akhirnya sebagai `ToolMessage` ringkas" — longgar dengan cara yang sama seperti koreksi di `systems/deepagents.md` | Ganti dengan "teks `AIMessage` non-kosong terakhir, atau `structured_response` ter-JSON" | terbuka |
 | `archetypes/03-general-task-agent.md:95` | Menyebut `recursion_limit` sebagai satu-satunya batas vanilla; `ModelCallLimitMiddleware` dan `ToolCallLimitMiddleware` tidak disebut | Tambahkan keduanya (D-03 tetap berdiri, alasannya justru menguat) | terbuka |

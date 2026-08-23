@@ -85,10 +85,13 @@ aplikasi saat run terjadi.
   node di dalam graph LangGraph yang lebih besar (atau di belakang
   worker antrian) yang dipicu event eksternal — deepagents menangani
   "apa yang dilakukan LLM saat dipanggil", bukan "kapan dipanggil".
-  Pemakaian non-interaktif **punya preseden resmi**:
-  `examples/async-subagent-server/server.py:155` memanggil `_agent.ainvoke(...)`
-  dari `_execute_run`, sebuah task `asyncio.ensure_future` yang dipicu
-  endpoint HTTP `POST /threads/{id}/runs` — tanpa manusia di loop; dan
+  Pemakaian non-interaktif **punya preseden resmi**: di
+  `examples/async-subagent-server/server.py`, agent dibangun di baris 155
+  (`_agent = create_deep_agent(`) lalu dipanggil di baris **174**
+  (`result = await _agent.ainvoke(...)`) dari dalam `_execute_run` (baris 169),
+  yang di-dispatch sebagai task `asyncio.ensure_future` di baris **287** di
+  bawah endpoint HTTP `POST /threads/{thread_id}/runs` (baris **234**) —
+  tanpa manusia di loop; dan
   `examples/ralph_mode/` berjalan tanpa pengawasan sama sekali. Yang tetap
   milik kami di sini bukan "boleh dipakai non-interaktif", melainkan pembagian
   tanggung jawabnya: trigger, antrian, dan penjadwalan kami taruh di luar
