@@ -67,8 +67,10 @@ baru yang **memenuhi Protocol yang sama**:
 """RemoteOrchestratorClient -- binding pengganti DeepAgentsOrchestrator SAAT
 tool executor/orchestrator dipisah jadi service sendiri. Implementasi
 Protocol Orchestrator yang SAMA (orchestrator/interface.py) -- return value
-build_orchestrator() (app/api/deps.py) diganti ke ini; main.py dan
-routes/turns.py tidak berubah satu baris pun.
+build_orchestrator() (app/api/deps.py) diganti ke ini. routes/turns.py
+tidak berubah satu baris pun; main.py lifespan dapat dua baris tambahan
+untuk buka/tutup httpx.AsyncClient yang dibutuhkan kelas ini (lihat
+paragraf setelah blok ini).
 """
 from __future__ import annotations
 
@@ -111,16 +113,41 @@ class RemoteOrchestratorClient:
 `orchestrator: Orchestrator = Depends(get_orchestrator)` (`_base.md`
 §Binding) dan memanggil `orchestrator.run_turn(...)` lewat Protocol, tidak
 pernah tahu (atau perlu tahu) apakah implementasinya lokal atau network
-call. `main.py` juga tidak berubah — pemanggilnya tetap
-`build_orchestrator(model, checkpointer)`, cuma isi fungsi itu di
-`deps.py` yang beda. Ini persis syarat 1 modular monolith
-(`serving-topology.md`): panggilan lintas komponen lewat interface
-eksplisit, bukan pemanggilan langsung. Catatan jujur: `model`/`checkpointer`
-yang diteruskan ke `build_orchestrator` jadi parameter yang tidak dipakai
-`RemoteOrchestratorClient` — dua parameter mati yang sengaja dibiarkan
-alih-alih mengubah signature, supaya `main.py` benar-benar nol-baris-ubah;
-kalau itu mengganggu, membersihkan signature-nya tetap migrasi satu file
-yang sama (`deps.py`), bukan penyebaran ke file lain.
+call. Ini persis syarat 1 modular monolith (`serving-topology.md`):
+panggilan lintas komponen lewat interface eksplisit, bukan pemanggilan
+langsung.
+
+**Klaim satu-file berlaku untuk *keputusan implementasi*, bukan untuk
+seluruh migrasi.** `RemoteOrchestratorClient` butuh `base_url` (config
+baru, `ORCHESTRATOR_SERVICE_URL` lewat `os.environ`, pola yang sama
+dengan `APP_DATABASE_URL`) dan `client: httpx.AsyncClient` — yang
+terakhir ini tidak boleh dikonstruksi di dalam `build_orchestrator()`: ia
+butuh siklus hidup buka/tutup eksplisit seperti pool checkpointer/DB
+`_base.md` (`init_pool`/`close_pool`, `async with build_checkpointer(...)`),
+kalau tidak jadi koneksi yang tidak pernah ditutup rapi saat shutdown —
+persis kontradiksi yang dihindari `_base.md` untuk tiap resource lain.
+Jadi migrasi ke remote menyentuh **dua file**: `deps.py`
+(`build_orchestrator()` melebar menerima `http_client`/`base_url`, return
+`RemoteOrchestratorClient(...)`) dan `main.py` lifespan (buka
+`httpx.AsyncClient()` sebelum memanggil `build_orchestrator`, tutup
+setelah drain):
+
+```python
+client = httpx.AsyncClient()
+app.state.orchestrator = build_orchestrator(
+    model, checkpointer, http_client=client, base_url=os.environ["ORCHESTRATOR_SERVICE_URL"]
+)
+...
+await app.state.drain.wait_empty(timeout=DRAIN_TIMEOUT_S)
+await client.aclose()  # setelah drain, sebelum proses keluar -- urutan sama seperti close_pool()
+```
+
+Yang tetap satu titik adalah **keputusan implementasi mana yang dipakai**
+— itu klaim asli syarat 1 modular monolith, dan itu yang bertahan; sumber
+daya baru yang datang bersama implementasi baru (di sini: koneksi
+jaringan) selalu butuh baris lifecycle di `main.py`, sama seperti resource
+lain di scaffold ini — bukan pengecualian yang membuat klaim satu-file
+menutupi kebocoran koneksi.
 
 ### Yang berubah: manifest
 
