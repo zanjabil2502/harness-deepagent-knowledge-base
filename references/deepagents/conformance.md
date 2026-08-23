@@ -542,7 +542,7 @@ tidak muncul di `grep`, sehingga nomor 1 dan 17 sengaja kosong.
 | 30 | `concepts/guardrails.md:31` | Kerangka enam titik guardrail dari spec proyek | di luar `deepagents` |
 | 31-37 | `concepts/skill-composition.md:34,96,167,190,199,210,217` | Lapisan resolusi manifest skill **sebelum** `deepagents`; pemisahan intent/ekspresi | berdampingan dengan `SkillsMiddleware`, tidak menggantikannya |
 | 38-40 | `concepts/multilingual.md:58,160,223` | Titik terkunci bahasa di pipeline intent/ekspresi | di luar `deepagents` |
-| 41-45 | `concepts/persistence-schema.md:37,291,334,339,348` | Tabel `users` lokal; RLS tanpa subquery; penamaan; jalur migrasi `user_id`→`tenant_id` | di luar `deepagents` |
+| 41-45 | `concepts/persistence-schema.md:37,294,337,342,351` | Tabel `users` lokal; RLS tanpa subquery; penamaan; jalur migrasi `user_id`→`tenant_id` | di luar `deepagents` |
 | 46-48 | `concepts/policy-as-data.md:160,170,182` | Skema policy-as-data di atas yang sudah data-shaped di `deepagents` | eksplisit menyatakan bagian mana yang **bukan** `[ours]` — model penulisan yang benar |
 | 49 | `concepts/queueing-and-backpressure.md:68` | Skema antrian | di luar `deepagents` |
 | 50 | `concepts/resource-profiling.md:95` | Kolokasi fase vs pisah per bound | di luar `deepagents` |
@@ -550,6 +550,7 @@ tidak muncul di `grep`, sehingga nomor 1 dan 17 sengaja kosong.
 | 52 | `concepts/serving-topology.md:167` | Monolith dulu, split belakangan | di luar `deepagents` |
 | 53 | `concepts/streaming-protocol.md:142` | Granularitas stream per unit | di luar `deepagents` |
 | 54 | `concepts/guardrails.md:94` | Fail-deferred wajib dipasangkan timeout + kebijakan saat habis (vanilla: `await` tanpa batas, OpenWorker `inbox.py:362-371`) | di luar `deepagents` |
+| 55 | `concepts/isolation-and-scoping.md:121` | Audit katalog RLS tidak cukup; bukti isolasi harus query lintas user sebagai role aplikasi non-superuser (vanilla: periksa `relrowsecurity`/`relforcerowsecurity` lalu nyatakan cukup) | di luar `deepagents` |
 
 Bacaan roster ini: dari 51 klaim, **12** benar-benar menyangkut cara memakai
 `deepagents` (arketipe 02-07, `_base.md:56,77,160`, `sandboxing.md:129`) dan

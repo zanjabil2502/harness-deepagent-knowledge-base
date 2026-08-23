@@ -105,6 +105,42 @@ fail-safe-di-kasus-umum:
   transaksi — tapi aplikasi tetap wajib memanggilnya di **setiap**
   transaksi baru, tidak sekali per koneksi.
 
+### Prasyarat yang membatalkan semuanya: aplikasi tidak boleh konek sebagai superuser
+
+`FORCE ROW LEVEL SECURITY` membuat policy berlaku untuk **owner tabel**. Ia
+**tidak** berlaku untuk superuser maupun role ber-`BYPASSRLS` — keduanya
+melewati policy sepenuhnya. `[docs]` PostgreSQL: *"Superusers and roles with
+the BYPASSRLS attribute always bypass the row security system."*
+
+Konsekuensinya keras: aplikasi yang konek sebagai `postgres` punya RLS yang
+menyala, ter-`FORCE`, punya policy — dan **melindungi nol baris**.
+
+Yang membuat ini berbahaya bukan kesalahannya, tapi **kesenyapannya**: audit
+katalog tetap hijau. `relrowsecurity = t`, `relforcerowsecurity = t`,
+`policies > 0` semuanya benar, dan tak satu pun mengukur apakah role yang
+dipakai aplikasi tunduk pada policy itu. `[ours]` Cara vanilla-nya adalah
+memeriksa katalog seperti di atas dan menyatakannya cukup; kami menyimpang
+karena pemeriksaan itu lolos pada konfigurasi yang tidak melindungi apa pun.
+
+**Yang harus dilakukan:**
+
+```sql
+CREATE ROLE app_rw LOGIN PASSWORD '...' NOBYPASSRLS;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_rw;
+-- lalu tegakkan sebagai invarian, bukan sebagai catatan:
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='app_rw' AND (rolsuper OR rolbypassrls)) THEN
+    RAISE EXCEPTION 'app_rw dapat melewati RLS';
+  END IF;
+END $$;
+```
+
+**Satu-satunya bukti yang sah** adalah menjalankan query lintas user **sebagai
+role aplikasi** dan melihatnya mengembalikan nol baris — bukan membaca katalog.
+Ini ditemukan saat KB ini dipakai membangun project nyata: tes isolasi yang
+dijalankan sebagai `postgres` lulus tanpa membuktikan apa pun, dan baru gagal
+(dengan benar) setelah dipindah ke role non-superuser.
+
 ## Trade-off
 
 - **RLS vs `WHERE` manual** — `WHERE` manual lebih mudah ditelusuri secara

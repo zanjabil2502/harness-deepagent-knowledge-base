@@ -188,6 +188,9 @@ CREATE INDEX memory_entries_user_idx ON memory_entries (user_id, updated_at DESC
 
 ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE conversations FORCE ROW LEVEL SECURITY;  -- berlaku juga untuk owner tabel
+-- CATATAN: FORCE tidak berlaku untuk superuser / BYPASSRLS. Aplikasi WAJIB
+-- konek sebagai role non-superuser -- lihat isolation-and-scoping.md
+-- Prasyarat yang membatalkan semuanya. Konek sebagai `postgres` = RLS nol efek.
 CREATE POLICY conversations_scope ON conversations
     USING (user_id = current_setting('app.current_user_id', true)::uuid)
     WITH CHECK (user_id = current_setting('app.current_user_id', true)::uuid);
