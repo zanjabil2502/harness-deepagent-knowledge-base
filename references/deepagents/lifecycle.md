@@ -6,7 +6,7 @@ tahap demi tahap, dan di mana tiap tahap bisa diintervensi secara resmi.
 `create_deep_agent` tidak membangun graph-nya sendiri: ia merakit stack
 middleware lalu memanggil `langchain.agents.create_agent(...)`. Jadi
 lifecycle-nya adalah lifecycle `create_agent`, dengan node middleware yang
-dirakit `deepagents`. `[code]` — `deepagents/graph.py` baris 971-993;
+dirakit `deepagents`. `[code]` — `deepagents/graph.py` baris 922-944;
 `langchain/agents/factory.py` baris 1543-1830 (perakitan node dan edge).
 
 ## Diagram alur

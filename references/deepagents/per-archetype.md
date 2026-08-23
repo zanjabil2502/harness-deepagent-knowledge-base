@@ -33,8 +33,10 @@ tercatat di [`conformance.md`](conformance.md).
 **Middleware**: cukup stack default. Tambahkan `TodoListMiddleware()` hanya
 kalau tugas repo-nya multi-langkah panjang; tidak wajib.
 
-**Subagent**: tidak dipakai sebagai default (`[ours]`, lihat
-[`conformance.md`](conformance.md) D-01).
+**Subagent**: tidak dipakai sebagai default — bukan penyimpangan; 5 dari 10
+pemanggilan `create_deep_agent` di `examples/` maintainer juga tanpa subagent
+sinkron. `[code]` — repo `langchain-ai/deepagents` commit `23b83ad`, lihat
+[`conformance.md`](conformance.md) D-01.
 
 **Gate**: `interrupt_on={"execute": True, "write_file": True, "edit_file": True,
 "delete": True}` + `checkpointer` wajib (tanpa checkpointer interrupt tidak
@@ -211,7 +213,7 @@ register_harness_profile(
 kalau tidak, `ValueError`. `FilesystemMiddleware` sendiri tidak bisa dibuang
 (`excluded_middleware` menolaknya). `[code]` —
 `deepagents/middleware/filesystem.py` baris 1670-1673;
-`deepagents/graph.py` baris 287-314.
+`deepagents/graph.py` baris 238-265.
 
 Arketipe ini juga satu-satunya yang wajar mematikan tool `task`:
 `GeneralPurposeSubagentProfile(enabled=False)` + tanpa subagent sinkron.

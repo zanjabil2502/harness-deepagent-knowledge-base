@@ -11,7 +11,7 @@ ditulis di kolom efek.
 
 ## `create_deep_agent(...)`
 
-`[code]` — `deepagents/graph.py` baris 317-337 (signature), 338-628
+`[code]` — `deepagents/graph.py` baris 268-288 (signature), 289-579
 (docstring), 629-993 (implementasi).
 
 Mengembalikan `CompiledStateGraph`, sudah dibungkus
@@ -46,7 +46,7 @@ Mengembalikan `CompiledStateGraph`, sudah dibungkus
 
 ## `DeepAgentState`
 
-`[code]` — `deepagents/graph.py` baris 119-122.
+`[code]` — `deepagents/graph.py` baris 70-73.
 
 `AgentState` dengan satu perbedaan: field `messages` di-annotate
 `DeltaChannel(_messages_delta_reducer, snapshot_frequency=50)` sehingga
@@ -141,9 +141,23 @@ menghilangkan tool `task`, pakai
 `general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)` dan
 jangan kirim subagent sinkron — bukan `excluded_middleware`.
 
+`HarnessProfileConfig` adalah varian **deklaratif** dari `HarnessProfile`,
+untuk profil yang dimuat dari YAML/JSON. Bedanya satu: `excluded_middleware`
+hanya menerima **string** nama, tidak menerima kelas — karena file konfigurasi
+tidak bisa mengimpor. `register_harness_profile` menerima keduanya dan
+mengonversi `HarnessProfileConfig` ke `HarnessProfile` saat registrasi, jadi
+tidak ada langkah konversi manual. `HarnessProfileConfig.from_harness_profile`
+melakukan arah sebaliknya, memakai `serialized_name` sebuah middleware kalau
+ada supaya round-trip ke file konfigurasi stabil. `[code]` —
+`deepagents/profiles/harness/harness_profiles.py` baris 192-330 (kelas), 439 (`from_harness_profile`).
+
 `register_provider_profile(key, profile)` mengatur fase **konstruksi model**,
 ortogonal terhadap `HarnessProfile` yang mengatur perilaku runtime setelah
 model jadi.
+
+Cakupan file ini terhadap `deepagents.__all__` (19 nama): **18 tercakup**.
+Yang tidak: `__version__`, sebuah konstanta string versi tanpa parameter —
+di luar lingkup referensi parameter.
 
 ## Sumber
 

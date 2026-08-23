@@ -85,9 +85,16 @@ aplikasi saat run terjadi.
   node di dalam graph LangGraph yang lebih besar (atau di belakang
   worker antrian) yang dipicu event eksternal — deepagents menangani
   "apa yang dilakukan LLM saat dipanggil", bukan "kapan dipanggil".
-  Vanilla penggunaan deepagents di dokumentasi/contoh selalu berupa
-  loop interaktif dipicu manusia; kami menyimpang karena arketipe ini
-  butuh trigger non-manusia, yang berada di luar tanggung jawab library.
+  Pemakaian non-interaktif **punya preseden resmi**:
+  `examples/async-subagent-server/server.py:155` memanggil `_agent.ainvoke(...)`
+  dari `_execute_run`, sebuah task `asyncio.ensure_future` yang dipicu
+  endpoint HTTP `POST /threads/{id}/runs` — tanpa manusia di loop; dan
+  `examples/ralph_mode/` berjalan tanpa pengawasan sama sekali. Yang tetap
+  milik kami di sini bukan "boleh dipakai non-interaktif", melainkan pembagian
+  tanggung jawabnya: trigger, antrian, dan penjadwalan kami taruh di luar
+  `deepagents` karena library tidak menyediakannya. `[code]` — repo
+  `langchain-ai/deepagents` commit `23b83ad`;
+  lihat `../deepagents/conformance.md` D-06.
 - **Idempotency**: parameter `checkpointer` di `create_deep_agent` ada
   persis untuk ini — aplikasi menyuntikkan checkpointer LangGraph-nya
   sendiri, deepagents tidak membuatnya. `[code]` — sumber:

@@ -43,8 +43,9 @@ pendek yang menjelaskan diff-nya.
   thread" terpisah yang perlu dipertahankan di luar repo itu sendiri; repo
   git ITU SENDIRI adalah state durable-nya, di luar kendali aplikasi.
 - **Delegation/subagent** — `_base` tidak memasangnya juga, jadi tidak ada
-  yang dibuang secara literal, tapi dinyatakan eksplisit di sini karena
-  vanilla contoh `deepagents` hampir selalu menyertakan subagent (`[ours]`
-  archetype 01): arketipe ini sengaja tetap flat, subagent cuma ditambah
-  kalau ada subtugas panjang yang butuh context terisolasi (mis. jalankan
-  test suite besar di latar) — bukan default.
+  yang dibuang secara literal, tapi dinyatakan eksplisit di sini: arketipe
+  ini sengaja tetap flat. Ini **bukan** penyimpangan dari vanilla — 5 dari
+  10 pemanggilan `create_deep_agent` di `examples/` repo maintainer juga
+  tanpa subagent sinkron (`[code]` archetype 01, `../../deepagents/conformance.md`
+  D-01). Subagent cuma ditambah kalau ada subtugas panjang yang butuh
+  context terisolasi (mis. jalankan test suite besar di latar) — bukan default.

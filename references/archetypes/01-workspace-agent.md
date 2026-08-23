@@ -101,13 +101,21 @@ generik, bukan API sempit satu produk.
   aplikasi>` lewat parameter `checkpointer` — deepagents tidak membuat
   checkpointer sendiri, aplikasi yang menyuntikkannya. `[code]` — sumber:
   `ARCHITECTURE.md` (langchain-ai/deepagents).
-- **Subagent**: tidak dipakai sebagai default. `[ours]` Vanilla contoh
-  deepagents (`content-builder-agent`, `deep_research`) hampir selalu
-  menyertakan minimal satu subagent. Kami menyimpang untuk arketipe ini
-  karena unit kerjanya (satu repo, satu sesi) jarang butuh isolasi
-  context lintas subtugas; tambahkan `SubAgentMiddleware` hanya kalau ada
+- **Subagent**: tidak dipakai sebagai default — dan ini **bukan**
+  penyimpangan. Dari 10 pemanggilan `create_deep_agent` di
+  `examples/` repo maintainer, **5 tidak mengirim subagent sinkron sama
+  sekali**: `text-to-sql-agent/agent.py:45` (`subagents=[]`, dengan komentar
+  "No subagents needed"), `llm-wiki/helpers.py:633`,
+  `better-harness/better_harness/agent.py:206` dan `:611`, serta
+  `async-subagent-server/server.py:155`. Nuansanya: subagent
+  `general-purpose` tetap ditambahkan otomatis di semuanya, jadi tool `task`
+  tetap ada kecuali dimatikan lewat
+  `GeneralPurposeSubagentProfile(enabled=False)`. Untuk arketipe ini unit
+  kerjanya (satu repo, satu sesi) jarang butuh isolasi context lintas
+  subtugas; tambahkan subagent lewat `subagents=[...]` hanya kalau ada
   subtugas panjang yang perlu context terpisah (mis. jalankan & analisis
-  test suite besar di latar).
+  test suite besar di latar). `[code]` — repo `langchain-ai/deepagents`
+  commit `23b83ad`; lihat `../deepagents/conformance.md` D-01.
 
 ## Sumber
 

@@ -188,7 +188,7 @@ agent utama — filter yang sama juga dipakai saat mengirim state parent
 **ke** subagent. `[code]` —
 `deepagents/middleware/subagents.py` baris 251-268 (`_EXCLUDED_STATE_KEYS`),
 474-512 (`_return_command_with_state_update`), 529-540
-(`_validate_and_prepare_state`); `deepagents/graph.py` baris 943-947.
+(`_validate_and_prepare_state`); `deepagents/graph.py` baris 894-898.
 
 ## 5. State & resume
 

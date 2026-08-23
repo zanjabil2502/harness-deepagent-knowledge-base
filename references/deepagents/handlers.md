@@ -36,7 +36,7 @@ Dua jalur, keduanya berujung ke `HumanInTheLoopMiddleware`:
 
 Keduanya digabung `_merge_fs_interrupt_on`; entri user menang per nama tool.
 Kalau gabungannya kosong, middleware-nya **tidak dipasang sama sekali**.
-`[code]` — `deepagents/graph.py` baris 231-247, 920-925;
+`[code]` — `deepagents/graph.py` baris 182-198, 871-876;
 `deepagents/middleware/_fs_interrupt.py`.
 
 ### Bentuk `InterruptOnConfig`

@@ -22,12 +22,12 @@ bawah. Kalau ada barisnya, pakai itu.
 | 2 | **Backend** | implementasi `BackendProtocol` (atau `SandboxBackendProtocol` untuk `execute`), dipasang lewat `backend=` | ke mana file dibaca/ditulis dan di mana shell berjalan | `deepagents/backends/protocol.py:378,840` |
 | 3 | **Composite backend** | `CompositeBackend(default=..., routes={prefix: backend})` | sebagian path ephemeral, sebagian durable/ter-scope | `deepagents/backends/composite.py:180` |
 | 4 | **Subagent** | `SubAgent` / `CompiledSubAgent` / `AsyncSubAgent` lewat `subagents=` | isolasi context per subtugas, tool surface berbeda, model berbeda | `deepagents/middleware/subagents.py:36,166` |
-| 5 | **Tool** | fungsi/`BaseTool` lewat `tools=` | kemampuan baru yang dipanggil model | `deepagents/graph.py:319` |
-| 6 | **State schema** | `state_schema` pada middleware (disarankan) atau `create_deep_agent(state_schema=)` (global) | field state tambahan lintas turn; `PrivateStateAttr` untuk yang tidak boleh menyeberang ke subagent | `deepagents/middleware/_state.py:14`, `graph.py:330` |
-| 7 | **Handler / hook** | `interrupt_on`, `permissions`, `InterruptOnConfig.when` | jeda approval manusia dan aturan izin filesystem | `deepagents/middleware/_fs_interrupt.py`, `graph.py:326,328` |
+| 5 | **Tool** | fungsi/`BaseTool` lewat `tools=` | kemampuan baru yang dipanggil model | `deepagents/graph.py:270` |
+| 6 | **State schema** | `state_schema` pada middleware (disarankan) atau `create_deep_agent(state_schema=)` (global) | field state tambahan lintas turn; `PrivateStateAttr` untuk yang tidak boleh menyeberang ke subagent | `deepagents/middleware/_state.py:14`, `graph.py:281` |
+| 7 | **Handler / hook** | `interrupt_on`, `permissions`, `InterruptOnConfig.when` | jeda approval manusia dan aturan izin filesystem | `deepagents/middleware/_fs_interrupt.py`, `graph.py:277,279` |
 | 8 | **Harness profile** | `register_harness_profile(key, HarnessProfile(...))` | buang tool bawaan, timpa deskripsi tool, tambah middleware ke **semua** stack (main + GP subagent + subagent deklaratif), atur base/suffix prompt per model | `deepagents/profiles/harness/harness_profiles.py:483,977` |
 | 9 | **Provider profile** | `register_provider_profile(key, ProviderProfile(...))` | mengubah cara model dikonstruksi per provider | `deepagents/profiles/provider/provider_profiles.py:38` |
-| 10 | **Graph config** | `.with_config({...})` / `invoke(config=...)` | `recursion_limit`, `thread_id`, metadata, callback | `deepagents/graph.py:984-993` |
+| 10 | **Graph config** | `.with_config({...})` / `invoke(config=...)` | `recursion_limit`, `thread_id`, metadata, callback | `deepagents/graph.py:935-944` |
 | 11 | **Skill** | direktori `SKILL.md` lewat `skills=` | instruksi berjenjang (progressive disclosure) tanpa membengkakkan system prompt | `deepagents/middleware/skills.py:764` |
 | 12 | **Memory** | file `AGENTS.md` lewat `memory=` | konteks persisten yang selalu masuk system prompt | `deepagents/middleware/memory.py:178` |
 
@@ -86,7 +86,7 @@ include a `FilesystemMiddleware(tools=...)` instance here."*
 Untuk menyembunyikan tool dari **semua** stack sekaligus, pakai
 `HarnessProfile(excluded_tools=frozenset({"execute", "delete"}))`.
 
-`[code]` — `deepagents/graph.py` baris 250-284 (`_apply_custom_middleware`);
+`[code]` — `deepagents/graph.py` baris 201-235 (`_apply_custom_middleware`);
 `deepagents/middleware/subagents.py` baris 62-66;
 `deepagents/middleware/filesystem.py` baris 1714-1744.
 
@@ -165,9 +165,14 @@ agent = create_deep_agent(
 )
 ```
 
-`.with_config({"recursion_limit": N})` persis pola yang dipakai maintainer di
-`examples/better-harness/better_harness/agent.py:225` dan
-`libs/code/deepagents_code/agent.py:3110`.
+Keduanya adalah pola maintainer, dalam dua varian yang setara.
+`libs/code/deepagents_code/agent.py:3110` memakai
+`.with_config({**config, "recursion_limit": effective_recursion_limit})` pada
+agent yang baru dibangun; `examples/better-harness/better_harness/agent.py:225`
+memakai varian per-panggilan
+`agent.invoke(..., config={"recursion_limit": experiment.better_agent_max_turns})`.
+Pakai `.with_config` kalau batasnya melekat pada agent, `config=` kalau
+berbeda tiap invokasi.
 
 Pengecualian yang **memang** loop luar: pola Ralph (`examples/ralph_mode/`) —
 tiap iterasi sengaja mulai dari **thread baru dengan context kosong**, dan
@@ -175,7 +180,7 @@ filesystem yang jadi memori antar-iterasi. Itu bukan pembatas langkah, itu
 strategi context. Loop luar yang hanya "membatasi jumlah langkah" tidak punya
 alasan seperti itu.
 
-`[code]` — `deepagents/graph.py` baris 984-993;
+`[code]` — `deepagents/graph.py` baris 935-944;
 `langchain/agents/middleware/model_call_limit.py:126`;
 repo `langchain-ai/deepagents` commit `23b83ad`.
 
@@ -254,7 +259,7 @@ menghilangkan tool `task`, pakai
 `general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)` +
 tidak mengirim subagent sinkron.
 
-`[code]` — `deepagents/graph.py` baris 287-314;
+`[code]` — `deepagents/graph.py` baris 238-265;
 `deepagents/profiles/harness/harness_profiles.py` baris 483-700 (field `HarnessProfile`), 977-1026 (`register_harness_profile`).
 
 ### 6. Menyimpan file agent lewat modul storage sendiri

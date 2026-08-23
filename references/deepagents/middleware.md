@@ -9,7 +9,7 @@ Untuk tahapan lifecycle-nya sendiri lihat [`lifecycle.md`](lifecycle.md).
 ## Urutan stack yang dirakit `create_deep_agent`
 
 Verifikasi runtime (`[code]`, dengan menyadap `create_agent` yang dipanggil
-`deepagents/graph.py` baris 971):
+`deepagents/graph.py` baris 922):
 
 ```
 minimal   : FilesystemMiddleware, SubAgentMiddleware, SummarizationMiddleware,
@@ -29,7 +29,7 @@ skills+memory+interrupt_on:
 ```
 
 Struktur formalnya: **base stack** → *middleware user* → **tail stack**.
-`[code]` — `deepagents/graph.py` baris 866-925 (perakitan), 410-455
+`[code]` — `deepagents/graph.py` baris 817-876 (perakitan), 361-406
 (docstring urutan resmi).
 
 | Slot | Isi | Syarat |
@@ -48,7 +48,7 @@ Struktur formalnya: **base stack** → *middleware user* → **tail stack**.
 | tail | `HumanInTheLoopMiddleware` | `interrupt_on` gabungan tidak kosong |
 
 Catatan: `_ToolExclusionMiddleware` di-`append` **setelah** merge middleware
-user (`graph.py` baris 941-942), jadi urutan efektifnya adalah paling akhir —
+user (`graph.py` baris 892-893), jadi urutan efektifnya adalah paling akhir —
 lebih belakang daripada posisi tabel di atas. Komentar source-nya eksplisit:
 "so excluded tool names are stripped last and cannot be restored by a custom
 `wrap_model_call`".
@@ -100,7 +100,7 @@ yang ditambahkan `extra_middleware` profil.
 
 Urutan terpasang: `AnthropicPromptCachingMiddleware` **lalu**
 `MemoryMiddleware`. Ini disengaja — komentar source
-(`graph.py` baris 905-907): profil dan caching ditaruh sebelum memory
+(`graph.py` baris 856-858): profil dan caching ditaruh sebelum memory
 "so that memory updates (which change the system prompt) don't invalidate
 the Anthropic prompt cache prefix". Membalik urutannya (mis. dengan menaruh
 `MemoryMiddleware()` sendiri lewat `middleware=[...]`, yang akan mendarat

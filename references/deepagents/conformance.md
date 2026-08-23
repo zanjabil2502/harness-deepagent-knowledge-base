@@ -48,7 +48,7 @@ Kolom **CODE** = `libs/code/deepagents_code/` (CLI resmi).
 | P-08 | `CompositeBackend(default=..., routes={...})` | tidak | ya | ya | `nvidia_deep_agent`, `llm-wiki`. |
 | P-09 | `StoreBackend(namespace=lambda rt: ...)` | tidak | **tidak** | tidak | Hanya ada di docstring/dokumentasi, **tidak** di satu pun contoh maintainer. → **D-08** |
 | P-10 | `LocalShellBackend(root_dir=...)` | tidak | **tidak** | varian | Contoh memakai `LangSmithSandbox`/Modal/`FilesystemBackend`; CLI memakai sandbox terkelola. → **D-09** |
-| P-11 | backend sandbox (`DaytonaSandbox` dsb.) | tidak | varian | ya | `llm-wiki` memakai `LangSmithSandbox`; `DaytonaSandbox` hanya di README `libs/partners/daytona`. |
+| P-11 | backend sandbox (`DaytonaSandbox` dsb.) | tidak | varian | ya | `llm-wiki` memakai `LangSmithSandbox`; `DaytonaSandbox` hanya di README `libs/partners/daytona`. → **D-17** |
 | P-12 | `permissions=[FilesystemPermission(...)]` | tidak | ya | ya | `llm-wiki/helpers.py` baris 548-565, 633-638. |
 | P-13 | `interrupt_on={...}` | tidak | varian | ya | Di `examples/` hanya muncul **sebagai baris komentar** (`nvidia_deep_agent/src/agent.py:85,98`); pemakaian nyata ada di CLI. → **D-10** |
 | P-14 | `checkpointer=` disuntik aplikasi | tidak | ya | ya | `async-subagent-server/supervisor.py` (`MemorySaver`). |
@@ -61,16 +61,24 @@ Kolom **CODE** = `libs/code/deepagents_code/` (CLI resmi).
 | P-21 | `response_format=` pada `create_deep_agent` | tidak | **tidak** | tidak | Ada di signature dan didokumentasikan untuk `SubAgent`, tapi nol contoh. → **D-13** |
 | P-22 | `state_schema=` kustom | tidak | **tidak** | varian | CLI memakai `state_schema=` pada `create_agent` (bukan `create_deep_agent`) di `reliable_rubric.py`, `goal_rubric.py`. → **D-14** |
 | P-23 | `HarnessProfile` / `register_harness_profile` | tidak | **tidak** | tidak | Hanya dipakai `deepagents` untuk profil bawaannya sendiri. → **D-15** |
-| P-24 | `agent.json` untuk deploy | tidak | ya | — | `deploy-coding-agent`, `deploy-content-writer`, `deploy-gtm-agent` — semuanya hanya `{name, description, runtime.model.model_id}`. Kunci `backend.sandbox_config` ada di skema tapi tidak di satu pun `agent.json` contoh. → **D-16** |
+| P-24 | `agent.json` untuk deploy | tidak | ya | — | **Empat** di level proyek (`deploy-coding-agent`, `deploy-content-writer`, `deploy-gtm-agent`, `deploy-mcp-docs-agent`) plus **satu** di level subagent (`deploy-gtm-agent/subagents/market-researcher/`). Tiga yang pertama berisi `{name, runtime}` saja; hanya `deploy-gtm-agent` yang punya `description`; yang level-subagent berisi `{description, model_id}` tanpa `runtime`. **Nol** di antaranya memakai kunci `backend`. → **D-16** |
 | P-25 | Loop luar di atas `invoke` | tidak | varian | tidak | `ralph_mode` melakukannya, tapi dengan **thread baru tiap iterasi** dan filesystem sebagai memori — strategi context, bukan pembatas langkah. |
 | P-26 | Subagent dimuat dari file konfigurasi | tidak | varian | ya | `content-builder-agent` melakukannya lewat helper YAML kustom, dengan komentar eksplisit bahwa "`deepagents` doesn't natively load subagents from files". Preseden resmi bahwa loader konfigurasi sendiri itu wajar. |
 | P-27 | `RubricMiddleware` | tidak | tidak | ya | KB ini menyebutnya sebagai opsional non-default; sesuai. |
 
 ## Divergence log
 
-Setiap baris `tidak`/`varian` di atas. Untuk penyimpangan per-arketipe
-(D-01…D-07) sumbernya adalah label `[ours]` yang sudah ada di
-`references/archetypes/`.
+Sembilan belas entri, mencakup setiap baris `tidak` dan sebagian besar
+`varian`. **Empat baris `varian` sengaja tidak punya entri sendiri** —
+P-05, P-25, dan P-26 karena alasannya sudah tuntas di kolom Catatan
+barisnya dan tidak ada keputusan kami yang perlu dipertanggungjawabkan
+(ketiganya adalah pola maintainer yang kita ikuti apa adanya); P-11
+dirujuk ke D-17. Tidak ada pola yang perlu dihapus: tidak satu pun
+`tidak`/`varian` berdiri tanpa alasan tertulis, entah di entri D-xx atau
+di kolom Catatan.
+
+Untuk penyimpangan per-arketipe (D-01…D-07) sumbernya adalah label
+`[ours]` yang sudah ada di `references/archetypes/`.
 
 ### D-01 — Arketipe 01 tanpa subagent — **PREMIS SALAH, harus dikoreksi**
 
@@ -231,13 +239,25 @@ Setiap baris `tidak`/`varian` di atas. Untuk penyimpangan per-arketipe
 - **Alasan menyimpang**: contoh maintainer semuanya single-tenant lokal
   (CLI, notebook, skrip). KB ini menargetkan layanan multi-user, dan
   `namespace` adalah **satu-satunya** *hook* scoping per-user yang resmi.
-- **Biaya kalau salah**: pola yang tidak teruji lapangan. Risiko konkretnya
-  ada di bentuk `namespace`: `scaffolds/_base.md:160` sengaja tidak memakai
-  `rt.server_info.user.identity` (yang dipakai dokumentasi) melainkan
-  `user_id` dari `Scope` aplikasi. Kalau asumsi itu meleset, seluruh isolasi
-  per-user runtuh diam-diam — file user A terbaca user B tanpa error.
-  Ini penyimpangan dengan biaya kegagalan tertinggi di seluruh KB dan layak
-  ditinjau ulang begitu ada contoh maintainer yang multi-tenant.
+- **Biaya kalau salah** — dan di sini penting membedakan risiko yang nyata
+  dari yang tidak. Di level API **tidak ada** yang bisa gagal diam-diam:
+  `namespace` adalah parameter keyword-only **wajib** bertipe
+  `Callable[[Runtime[Any]], tuple[str, ...]]`
+  (`backends/store.py:41,99-104`), lupa mengisinya adalah `TypeError` saat
+  konstruksi, dan komponen namespace divalidasi terhadap
+  `_NAMESPACE_COMPONENT_RE` sehingga nilai berbentuk aneh ditolak. Sisa
+  eksposurnya ada dua, keduanya di luar jangkauan library:
+  (a) **kebenaran `scope.user_id` milik aplikasi sendiri** —
+  `scaffolds/_base.md:160` sengaja memakai `user_id` dari `Scope` hasil
+  `ScopeMiddleware`, bukan `rt.server_info.user.identity` seperti contoh
+  dokumentasi; kalau `Scope` salah diisi (mis. header tidak tervalidasi),
+  `namespace` akan mengembalikan tuple yang **valid** untuk user yang
+  **salah**, dan tidak ada lapisan di bawahnya yang bisa menangkap itu;
+  (b) **nol contoh maintainer yang multi-tenant**, jadi pola ini tidak
+  punya bukti lapangan sama sekali. Gabungan keduanya membuat ini
+  penyimpangan dengan biaya kegagalan tertinggi di seluruh KB. Yang
+  menutupnya: uji isolasi end-to-end di lapisan aplikasi (dua user, satu
+  path, pastikan tidak saling terbaca), bukan pembacaan ulang API.
 
 ### D-09 — `LocalShellBackend` untuk arketipe 01
 
@@ -414,17 +434,18 @@ di `references/recipes/` lalu sebuah recipe yang mengkonstruksi
 
 Ditemukan saat audit, di luar file yang boleh disentuh task ini:
 
-| Lokasi | Isu | Perbaikan |
-|---|---|---|
-| `archetypes/01-workspace-agent.md:104`, `scaffolds/deltas/01-workspace-agent.md:47` | Klaim "vanilla hampir selalu menyertakan subagent" tidak benar (D-01) | Ganti dengan fakta 5-dari-10, turunkan label ke `[code]` |
-| `archetypes/06-workflow-agent.md:82` | Klaim "vanilla selalu loop interaktif dipicu manusia" terlalu kuat (D-06) | Sebut `async-subagent-server/server.py` dan `ralph_mode` sebagai preseden non-interaktif |
-| `archetypes/01-workspace-agent.md` | Daftar tool `FilesystemMiddleware` menyertakan `delete` — **benar**; daftar di `systems/deepagents.md` justru yang kurang lengkap (tanpa `delete`) | Tambahkan `delete` ke daftar tool di `systems/deepagents.md` |
-| `recipes/03_subagents.py` docstring | "mengembalikan `messages` akhirnya sebagai `ToolMessage` ringkas" — longgar dengan cara yang sama seperti koreksi di `systems/deepagents.md` | Ganti dengan "teks `AIMessage` non-kosong terakhir, atau `structured_response` ter-JSON" |
-| `archetypes/03-general-task-agent.md:95` | Menyebut `recursion_limit` sebagai satu-satunya batas vanilla; `ModelCallLimitMiddleware` dan `ToolCallLimitMiddleware` tidak disebut | Tambahkan keduanya (D-03 tetap berdiri, alasannya justru menguat) |
+| Lokasi | Isu | Perbaikan | Status |
+|---|---|---|---|
+| `archetypes/01-workspace-agent.md`, `scaffolds/deltas/01-workspace-agent.md`, `per-archetype.md` §01 | Klaim "vanilla hampir selalu menyertakan subagent" tidak benar (D-01) | Diganti dengan fakta 5-dari-10 beserta lokasi tiap call site; label diturunkan `[ours]` → `[code]` di ketiga tempat | **selesai** |
+| `archetypes/06-workflow-agent.md` | Klaim "vanilla selalu loop interaktif dipicu manusia" terlalu kuat (D-06) | Diganti: `async-subagent-server/server.py:155` dan `ralph_mode` disebut sebagai preseden non-interaktif; `[ours]` dipersempit ke pembagian tanggung jawab trigger/antrian, yang memang tetap milik kami | **selesai** |
+| `archetypes/01-workspace-agent.md` | Daftar tool `FilesystemMiddleware` menyertakan `delete` — **benar**; daftar di `systems/deepagents.md` justru yang kurang lengkap (tanpa `delete`) | Tambahkan `delete` ke daftar tool di `systems/deepagents.md` | terbuka |
+| `recipes/03_subagents.py` docstring | "mengembalikan `messages` akhirnya sebagai `ToolMessage` ringkas" — longgar dengan cara yang sama seperti koreksi di `systems/deepagents.md` | Ganti dengan "teks `AIMessage` non-kosong terakhir, atau `structured_response` ter-JSON" | terbuka |
+| `archetypes/03-general-task-agent.md:95` | Menyebut `recursion_limit` sebagai satu-satunya batas vanilla; `ModelCallLimitMiddleware` dan `ToolCallLimitMiddleware` tidak disebut | Tambahkan keduanya (D-03 tetap berdiri, alasannya justru menguat) | terbuka |
 
-Kelimanya bersifat akurasi, bukan struktur. Tidak ada pola KB yang perlu
-**dihapus** — setiap `tidak`/`varian` di tabel punya alasan tertulis di
-divergence log ini.
+Dua yang pertama sudah dikerjakan; tiga sisanya bersifat akurasi, bukan
+struktur, dan tetap terbuka. Tidak ada pola KB yang perlu **dihapus** —
+setiap `tidak`/`varian` di tabel punya alasan tertulis, entah di entri
+D-xx atau di kolom Catatan barisnya.
 
 ## Roster `[ours]`
 
@@ -436,31 +457,36 @@ grep -rn '\[ours\]' references/ --include='*.md'
 
 Hasilnya **74 baris** pada saat task ini selesai, terbagi tiga:
 
-- **53** di luar `references/deepagents/` — inilah klaim yang sesungguhnya,
-  didaftar lengkap di tabel bawah.
-- **11** di `references/deepagents/per-archetype.md` — semuanya **penunjuk**
+- **51** di luar `references/deepagents/` — inilah klaim yang sesungguhnya,
+  didaftar lengkap di tabel bawah. (Sebelum fix round 1 jumlahnya 53; dua
+  dicabut karena D-01 terbukti bukan penyimpangan.)
+- **10** di `references/deepagents/per-archetype.md` — semuanya **penunjuk**
   ke entri D-xx di file ini, bukan klaim baru.
-- **10** di file ini sendiri — seluruhnya meta (judul bagian, penjelasan,
-  dan perintah `grep` di atas).
+- **13** di file ini sendiri — seluruhnya meta (judul bagian, penjelasan,
+  kesimpulan, dan perintah `grep` di atas).
 
 Angka ini harus dicek ulang setiap kali KB berubah: `grep` di atas wajib
 mengembalikan tepat himpunan yang didaftar roster ini.
 
+Kolom `#` adalah indeks stabil dari audit pertama, bukan hitungan berjalan —
+baris bertanda `—` adalah klaim yang **dicabut** di fix round 1 dan sudah
+tidak muncul di `grep`, sehingga nomor 1 dan 17 sengaja kosong.
+
 | # | Lokasi | Inti klaim | Divergensi |
 |---|---|---|---|
-| 1 | `archetypes/01-workspace-agent.md:104` | Arketipe 01 tanpa subagent | D-01 (premis salah) |
+| — | `archetypes/01-workspace-agent.md` | Arketipe 01 tanpa subagent | D-01 — **dicabut**, premis salah; kini `[code]` |
 | 2 | `archetypes/02-generative-builder.md:94` | Gate hanya di publish/deploy | D-02 |
 | 3 | `archetypes/03-general-task-agent.md:95` | Guard pengulangan tool-call | D-03 |
 | 4 | `archetypes/04-research-agent.md:95` | Validasi provenance sitasi | D-04 |
 | 5 | `archetypes/05-in-app-copilot.md:94` | Tool `undo_*` alih-alih `interrupt_on` | D-05 |
-| 6 | `archetypes/06-workflow-agent.md:82` | Loop shape event-driven | D-06 (terlalu kuat) |
+| 6 | `archetypes/06-workflow-agent.md:82` | Pembagian tanggung jawab trigger/antrian di luar `deepagents` | D-06 (dipersempit; klaim "selalu interaktif" dicabut) |
 | 7 | `archetypes/06-workflow-agent.md:94` | `thread_id` dari idempotency key | D-06b |
 | 8 | `archetypes/06-workflow-agent.md:106` | Kill switch di luar library | D-06c |
 | 9 | `archetypes/07-computer-use-agent.md:99` | Verifikasi lewat konvensi prompt | D-07 |
 | 10 | `archetypes/README.md:53` | Deployment dipisah dari taksonomi arketipe | taksonomi, bukan `deepagents` |
 | 11 | `systems/INDEX.md:78` | Meta: kenapa label `[ours]` ada | meta |
 | 12-16 | `scaffolds/_base.md:56,77,160,450,493` | Protocol `Orchestrator`; `namespace` dari `Scope` aplikasi bukan `rt.server_info.user.identity`; `AsyncConnectionPool`; eksekusi turn inline di generator SSE | **:160 → D-08 (risiko tertinggi)**; sisanya arsitektur aplikasi, di luar `deepagents` |
-| 17 | `scaffolds/deltas/01-workspace-agent.md:47` | Turunan dari #1 | D-01 |
+| — | `scaffolds/deltas/01-workspace-agent.md` | Turunan D-01 | **dicabut**, kini `[code]` |
 | 18-19 | `scaffolds/deltas/02-generative-builder.md:23,35` | Turunan dari #2 | D-02 |
 | 20 | `scaffolds/deltas/03-general-task-agent.md:22` | Turunan dari #3 | D-03 |
 | 21 | `scaffolds/deltas/04-research-agent.md:44` | Turunan dari #4 | D-04 |
@@ -480,8 +506,9 @@ mengembalikan tepat himpunan yang didaftar roster ini.
 | 52 | `concepts/serving-topology.md:167` | Monolith dulu, split belakangan | di luar `deepagents` |
 | 53 | `concepts/streaming-protocol.md:142` | Granularitas stream per unit | di luar `deepagents` |
 
-Bacaan roster ini: dari 53 klaim, **12** benar-benar menyangkut cara memakai
-`deepagents` (#1-#9, #12-16 baris :160, #51) dan tercatat di divergence log.
+Bacaan roster ini: dari 51 klaim, **12** benar-benar menyangkut cara memakai
+`deepagents` (arketipe 02-07, `_base.md:56,77,160`, `sandboxing.md:129`) dan
+tercatat di divergence log.
 Sisanya adalah keputusan arsitektur aplikasi di lapisan **di atas**
 `deepagents` — bukan penyimpangan dari library, dan bukan sesuatu yang bisa
 diaudit terhadap contoh maintainer.
@@ -513,3 +540,28 @@ lengkapnya ada di [`api-reference.md`](api-reference.md) §Sumber.
 
 Perintah audit yang dijalankan tercatat di
 `.superpowers/sdd/2026-08-23-agent-harness-kb/task-11-report.md`.
+
+## Kesimpulan
+
+Pertanyaan di kepala file ini: **apakah cara KB ini memakai `deepagents` wajar,
+atau modifikasi asal yang kebetulan jalan?**
+
+**Wajar.** 27 pola diaudit. Terhadap contoh maintainer yang masih hidup
+(`deepagents/examples/`): 14 cocok, 4 varian, 9 tidak muncul. Terhadap CLI
+resmi (`libs/code/`): 17 cocok, 3 varian, 6 tidak muncul, 1 tidak berlaku.
+Sembilan belas entri divergence log ditulis; **setiap** baris `tidak`/`varian`
+punya alasan tertulis, dan **nol pola dihapus** karena menyimpang tanpa alasan.
+Tidak ditemukan satu pun tempat di mana KB ini menulis kode custom di lapisan
+yang sudah punya extension point — kekhawatiran yang memicu audit ini.
+
+Yang tidak wajar justru ditemukan di arah sebaliknya: **dua klaim "vanilla"
+milik KB ini sendiri terbukti salah** (D-01 dan D-06), keduanya membuat
+perilaku maintainer terlihat lebih seragam daripada kenyataannya. Keduanya
+sudah diperbaiki di file sumbernya.
+
+Kesimpulan ini punya tiga batas yang sudah dinyatakan di kepala file:
+`deepagents-quickstarts` sudah diarsipkan sehingga perbandingan terhadapnya
+nyaris tak bermakna; `deepagents` masih muda sehingga sebagian permukaannya
+belum punya praktik komunitas; dan dua belas dari 51 klaim `[ours]` adalah
+penilaian kami, bukan kanon. Yang paling perlu ditinjau ulang saat library
+matang tercantum di akhir §Roster.
