@@ -51,7 +51,7 @@ def check_links(errs):
     if REF.is_dir():
         files += sorted(REF.rglob("*.md"))
     for f in files:
-        if not f.exists() or ".git" in f.parts:
+        if not f.exists() or ".venv" in f.parts:
             continue
         for m in LINK.finditer(f.read_text(encoding="utf-8")):
             target = (f.parent / m.group(1).strip()).resolve()

@@ -432,22 +432,23 @@ Yang akan menuntaskannya sepenuhnya: `uv add deepagents-cli langchain-daytona`
 di `references/recipes/` lalu sebuah recipe yang mengkonstruksi
 `DaytonaSandbox` dan mem-parse sebuah `agent.json`.
 
-## Residu yang tercatat, belum diperbaiki
+## Residu yang tercatat
 
-Ditemukan saat audit, di luar file yang boleh disentuh task ini:
+Ditemukan saat audit, awalnya di luar file yang boleh disentuh task itu;
+kelimanya diperbaiki di fix wave berikutnya (2026-08-23, lihat kolom Status):
 
 | Lokasi | Isu | Perbaikan | Status |
 |---|---|---|---|
 | `archetypes/01-workspace-agent.md`, `scaffolds/deltas/01-workspace-agent.md`, `per-archetype.md` §01 | Klaim "vanilla hampir selalu menyertakan subagent" tidak benar (D-01) | Diganti dengan fakta 5-dari-10 beserta lokasi tiap call site; label diturunkan `[ours]` → `[code]` di ketiga tempat | **selesai** |
 | `archetypes/06-workflow-agent.md` | Klaim "vanilla selalu loop interaktif dipicu manusia" terlalu kuat (D-06) | Diganti: `async-subagent-server/server.py` baris 174 (`ainvoke`), 169 (`_execute_run`), 287 (dispatch), 234 (endpoint) dan `ralph_mode` disebut sebagai preseden non-interaktif; `[ours]` dipersempit ke pembagian tanggung jawab trigger/antrian, yang memang tetap milik kami | **selesai** |
-| `archetypes/01-workspace-agent.md` | Daftar tool `FilesystemMiddleware` menyertakan `delete` — **benar**; daftar di `systems/deepagents.md` justru yang kurang lengkap (tanpa `delete`) | Tambahkan `delete` ke daftar tool di `systems/deepagents.md` | terbuka |
-| `recipes/03_subagents.py` docstring | "mengembalikan `messages` akhirnya sebagai `ToolMessage` ringkas" — longgar dengan cara yang sama seperti koreksi di `systems/deepagents.md` | Ganti dengan "teks `AIMessage` non-kosong terakhir, atau `structured_response` ter-JSON" | terbuka |
-| `archetypes/03-general-task-agent.md:95` | Menyebut `recursion_limit` sebagai satu-satunya batas vanilla; `ModelCallLimitMiddleware` dan `ToolCallLimitMiddleware` tidak disebut | Tambahkan keduanya (D-03 tetap berdiri, alasannya justru menguat) | terbuka |
+| `archetypes/01-workspace-agent.md` | Daftar tool `FilesystemMiddleware` menyertakan `delete` — **benar**; daftar di `systems/deepagents.md` justru yang kurang lengkap (tanpa `delete`) | Tambahkan `delete` ke daftar tool di `systems/deepagents.md` | **selesai** |
+| `recipes/03_subagents.py` docstring | "mengembalikan `messages` akhirnya sebagai `ToolMessage` ringkas" — longgar dengan cara yang sama seperti koreksi di `systems/deepagents.md` | Ganti dengan "teks `AIMessage` non-kosong terakhir, atau `structured_response` ter-JSON" | **selesai** |
+| `archetypes/03-general-task-agent.md:95` | Menyebut `recursion_limit` sebagai satu-satunya batas vanilla; `ModelCallLimitMiddleware` dan `ToolCallLimitMiddleware` tidak disebut | Tambahkan keduanya (D-03 tetap berdiri, alasannya justru menguat) | **selesai** |
 
-Dua yang pertama sudah dikerjakan; tiga sisanya bersifat akurasi, bukan
-struktur, dan tetap terbuka. Tidak ada pola KB yang perlu **dihapus** —
-setiap `tidak`/`varian` di tabel punya alasan tertulis, entah di entri
-D-xx atau di kolom Catatan barisnya.
+Kelima baris di atas sudah dikerjakan (fix wave lanjutan, 2026-08-23) —
+semuanya bersifat akurasi, bukan struktur. Tidak ada pola KB yang perlu
+**dihapus** — setiap `tidak`/`varian` di tabel punya alasan tertulis, entah
+di entri D-xx atau di kolom Catatan barisnya.
 
 ## Roster `[ours]`
 
@@ -482,11 +483,11 @@ tidak muncul di `grep`, sehingga nomor 1 dan 17 sengaja kosong.
 | 4 | `archetypes/04-research-agent.md:95` | Validasi provenance sitasi | D-04 |
 | 5 | `archetypes/05-in-app-copilot.md:94` | Tool `undo_*` alih-alih `interrupt_on` | D-05 |
 | 6 | `archetypes/06-workflow-agent.md:82` | Pembagian tanggung jawab trigger/antrian di luar `deepagents` | D-06 (dipersempit; klaim "selalu interaktif" dicabut) |
-| 7 | `archetypes/06-workflow-agent.md:94` | `thread_id` dari idempotency key | D-06b |
-| 8 | `archetypes/06-workflow-agent.md:106` | Kill switch di luar library | D-06c |
+| 7 | `archetypes/06-workflow-agent.md:104` | `thread_id` dari idempotency key | D-06b |
+| 8 | `archetypes/06-workflow-agent.md:116` | Kill switch di luar library | D-06c |
 | 9 | `archetypes/07-computer-use-agent.md:99` | Verifikasi lewat konvensi prompt | D-07 |
 | 10 | `archetypes/README.md:53` | Deployment dipisah dari taksonomi arketipe | taksonomi, bukan `deepagents` |
-| 11 | `systems/INDEX.md:78` | Meta: kenapa label `[ours]` ada | meta |
+| 11 | `systems/INDEX.md:89` | Meta: kenapa label `[ours]` ada | meta |
 | 12-16 | `scaffolds/_base.md:56,77,160,450,493` | Protocol `Orchestrator`; `namespace` dari `Scope` aplikasi bukan `rt.server_info.user.identity`; `AsyncConnectionPool`; eksekusi turn inline di generator SSE | **:160 → D-08 (risiko tertinggi)**; sisanya arsitektur aplikasi, di luar `deepagents` |
 | — | `scaffolds/deltas/01-workspace-agent.md` | Turunan D-01 | **dicabut**, kini `[code]` |
 | 18-19 | `scaffolds/deltas/02-generative-builder.md:23,35` | Turunan dari #2 | D-02 |
@@ -504,7 +505,7 @@ tidak muncul di `grep`, sehingga nomor 1 dan 17 sengaja kosong.
 | 46-48 | `concepts/policy-as-data.md:160,170,182` | Skema policy-as-data di atas yang sudah data-shaped di `deepagents` | eksplisit menyatakan bagian mana yang **bukan** `[ours]` — model penulisan yang benar |
 | 49 | `concepts/queueing-and-backpressure.md:68` | Skema antrian | di luar `deepagents` |
 | 50 | `concepts/resource-profiling.md:95` | Kolokasi fase vs pisah per bound | di luar `deepagents` |
-| 51 | `concepts/sandboxing.md:129` | Kebijakan sandbox bukan paksaan SDK Daytona | terkait D-17 |
+| 51 | `concepts/sandboxing.md:140` | Kebijakan sandbox bukan paksaan SDK Daytona | terkait D-17 |
 | 52 | `concepts/serving-topology.md:167` | Monolith dulu, split belakangan | di luar `deepagents` |
 | 53 | `concepts/streaming-protocol.md:142` | Granularitas stream per unit | di luar `deepagents` |
 

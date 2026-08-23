@@ -21,10 +21,14 @@ lengkap: [`../../archetypes/03-general-task-agent.md`](../../archetypes/03-gener
 - **Loop budget & kill switch**: middleware kustom deteksi tool-call
   berulang identik N kali berturut-turut → paksa berhenti. `[ours]`
   archetype 03: `deepagents` tidak punya "no-progress detector" bawaan —
-  vanilla-nya cuma `recursion_limit` generik LangGraph (9999,
-  `../../concepts/guardrails.md` peringatan titik 5) dan `interrupt_on` per
-  tool, keduanya cukup mencegah loop tak berhenti secara sintaksis tapi
-  tidak cukup mendeteksi agent yang secara semantik berputar di tempat.
+  vanilla-nya `recursion_limit` generik LangGraph (9999,
+  `../../concepts/guardrails.md` peringatan titik 5), `interrupt_on` per
+  tool, dan `ModelCallLimitMiddleware`/`ToolCallLimitMiddleware`
+  (`langchain.agents.middleware`, bukan milik `deepagents`) — ketiganya
+  cukup mencegah loop tak berhenti secara sintaksis (atau kelebihan
+  budget) tapi tidak satu pun mendeteksi *pengulangan*, jadi tidak cukup
+  untuk agent yang secara semantik berputar di tempat sebelum budgetnya
+  habis.
 
 ## Ganti
 

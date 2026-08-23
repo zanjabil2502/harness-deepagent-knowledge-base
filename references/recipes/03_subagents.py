@@ -3,9 +3,11 @@
 Mendemokan: `subagents=[SubAgent, ...]` pada `create_deep_agent` — sebuah
 subagent deklaratif dengan `tools` yang lebih sempit dari agent utama
 (hanya `web_search_stub`, tanpa akses filesystem luas), dipanggil lewat tool
-`task` yang dibangun otomatis oleh `SubAgentMiddleware`. Subagent
-mengembalikan `messages` akhirnya sebagai `ToolMessage` ringkas ke agent
-utama, bukan seluruh transkrip kerjanya.
+`task` yang dibangun otomatis oleh `SubAgentMiddleware`. Isi `ToolMessage`
+yang kembali ke agent utama adalah teks `AIMessage` non-kosong terakhir dari
+subagent, atau `structured_response` yang di-serialize ke JSON kalau field
+itu diisi — bukan `messages` state akhir subagent disalin mentah, dan bukan
+seluruh transkrip kerjanya.
 
 Arketipe yang terbantu: Research/Analyst (04) — pola subagent riset dengan
 tool pencarian sempit persis seperti yang dirujuk

@@ -9,10 +9,10 @@ mengontrol browser lewat CDP (screenshot + DOM). Dipilih sebagai eksemplar
 ## Arketipe
 
 **Computer-Use Agent (07)** murni: loop lihat→klik→verifikasi, tool sempit
-tapi dalam (27 action terdaftar, lihat sumbu 3), paling rapuh terhadap
+tapi dalam (26 action terdaftar, lihat sumbu 3), paling rapuh terhadap
 konten halaman tak terpercaya (lihat sumbu 6, `sensitive_data`). `[code]` —
 `browser_use/tools/service.py` (jumlah `@self.registry.action(...)`
-dikonfirmasi via grep = 27).
+dikonfirmasi via grep -c = 26).
 
 ## 1. Loop shape
 
@@ -57,14 +57,18 @@ baris 1-40.
 ## 3. Tool surface
 
 **Sedikit tool, sempit tapi dalam** — persis pola yang diprediksi archetype
-07: `Tools.registry` (`browser_use/tools/service.py`) mendaftarkan **27**
+07: `Tools.registry` (`browser_use/tools/service.py`) mendaftarkan **26**
 action lewat decorator `@self.registry.action("<deskripsi>")`, di antaranya
 `go_back`, `wait` (tunggu N detik), `find_text`/scroll-to-text (dikonfirmasi
 lewat nama fungsi `find_text` dan deskripsi *"Scroll to text."*) — action
 lain (klik-by-index, input-text, ekstraksi konten) ada di modul yang sama
 tapi tidak semua nama fungsi terverifikasi lewat grep. `[code]` —
-`browser_use/tools/service.py` (hitung decorator via grep = 27; 3 nama
-fungsi dikonfirmasi langsung: `go_back`, `wait`, `find_text`).
+`browser_use/tools/service.py` (hitung `@self.registry.action(` via grep -c
+= 26; grep tanpa jangkar `@self.` mengembalikan 27 karena ikut menghitung
+wrapper publik generik `self.registry.action(description, **kwargs)` baris
+2097, yang bukan pendaftaran action bawaan melainkan jalur registrasi
+eksternal; 3 nama fungsi dikonfirmasi langsung: `go_back`, `wait`,
+`find_text`).
 
 ## 4. Delegation
 
@@ -147,7 +151,9 @@ Repo `browser-use/browser-use` dikloning shallow (`git clone --depth 1`)
 - `browser_use/filesystem/file_system.py` — baris 1-40
   (`UNSUPPORTED_BINARY_EXTENSIONS`, import)
 - `browser_use/tools/service.py` — hitung decorator `@self.registry.action(`
-  via `grep -c` = 27; nama fungsi `go_back`, `wait`, `find_text`
+  via `grep -c` = 26 (grep tanpa jangkar `@self.` mengembalikan 27 karena
+  ikut menghitung wrapper publik generik `self.registry.action(description,
+  **kwargs)` baris 2097); nama fungsi `go_back`, `wait`, `find_text`
   dikonfirmasi via `grep -A1`
 - `browser_use/skills/__init__.py`, `browser_use/skills/browser_use.py` —
   baris 1-30
@@ -157,8 +163,8 @@ Repo `browser-use/browser-use` dikloning shallow (`git clone --depth 1`)
 
 Catatan kejujuran: `agent/service.py` adalah file 4166 baris, mayoritas
 tidak dibaca — klaim di file ini dibatasi pada baris yang benar-benar
-dikutip. Daftar lengkap 27 action di `tools/service.py` **tidak**
+dikutip. Daftar lengkap 26 action di `tools/service.py` **tidak**
 diverifikasi satu-satu (hanya 3 nama fungsi dikonfirmasi); klaim "tool
-sempit tapi dalam" bertumpu pada jumlah total (27) dan pola nama yang
+sempit tapi dalam" bertumpu pada jumlah total (26) dan pola nama yang
 terlihat, bukan audit fungsi tiap action. `browser_use/sandbox/sandbox.py`
 disebut lewat listing saja, mekanisme isolasi persis tidak diverifikasi.

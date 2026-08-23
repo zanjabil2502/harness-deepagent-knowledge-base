@@ -23,6 +23,11 @@ perilaku produk closed-source), atau `[ours]` (keputusan desain proyek ini
 sendiri, selalu menyebut alternatif vanilla-nya dan alasan menyimpang —
 didaftar lengkap di
 [`references/deepagents/conformance.md`](references/deepagents/conformance.md)).
+Sebagian kecil `[code]` mengutip bagian lain KB ini (mis. `systems/deepagents.md`)
+alih-alih source langsung — itu sah selama bagian yang dikutip *sendiri*
+source-verified: `[code]` di situ berarti "transitif dari klaim yang sudah
+dibaca dari source di tempat lain", bukan pelonggaran definisi. Angka di
+bawah menghitung label apa adanya, termasuk sitasi transitif itu.
 
 ## Instalasi
 
@@ -147,9 +152,9 @@ dari source, bukan ditebak):
 grep -roh '\[\(code\|docs\|inferred\|ours\)\]' references/ | sort | uniq -c
 ```
 
-Per verifikasi terakhir (task 12), dihitung dari file `.md` yang di-track
-git di `references/`: `[code]` 592, `[docs]` 115, `[inferred]` 114,
-`[ours]` 74 — `[code]` dominan jelas (lebih dari 2,5× label terbanyak
+Per verifikasi terakhir (fix wave final review, 2026-08-23), dihitung dari
+file `.md` yang di-track git di `references/`: `[code]` 594, `[docs]` 115,
+`[inferred]` 114, `[ours]` 74 — `[code]` dominan jelas (lebih dari 2,5× label terbanyak
 berikutnya). Perintah di atas (tanpa `--include`) bisa menghitung sedikit
 lebih tinggi kalau `references/recipes/.venv/` ada secara lokal (dependency
 terinstal untuk recipe, di-`.gitignore`, bukan bagian isi KB) — lihat

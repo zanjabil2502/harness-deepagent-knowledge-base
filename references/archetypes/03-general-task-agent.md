@@ -93,13 +93,20 @@ adalah planning eksplisit + delegasi, bukan loop lihat-klik-verifikasi
   system prompt tiap sesi. `[code]` — sumber: `ARCHITECTURE.md`,
   `examples/content-builder-agent/README.md`.
 - **Loop budget & kill switch**: `[ours]` deepagents tidak memberi
-  "no-progress detector" bawaan — yang tersedia hanya `recursion_limit`
-  generik dari LangGraph dan `interrupt_on` per tool. Kami menyimpang
-  dengan menambah middleware kustom (deteksi tool-call berulang identik
-  N kali berturut-turut → paksa berhenti) karena vanilla stack cukup
-  untuk mencegah loop tak berhenti secara sintaksis (recursion limit),
-  tapi tidak cukup untuk mendeteksi agent yang secara semantik berputar
-  di tempat.
+  "no-progress detector" bawaan — yang tersedia adalah `recursion_limit`
+  generik dari LangGraph, `interrupt_on` per tool, dan (dari
+  `langchain.agents.middleware`, bukan milik `deepagents`)
+  `ModelCallLimitMiddleware`/`ToolCallLimitMiddleware` untuk batas
+  *hitungan* panggilan model/tool per thread atau per run. `[code]` —
+  `langchain/agents/middleware/model_call_limit.py`,
+  `tool_call_limit.py`; lihat juga
+  [`../concepts/guardrails.md`](../concepts/guardrails.md) titik 5. Kami
+  tetap menyimpang dengan menambah middleware kustom (deteksi tool-call
+  berulang identik N kali berturut-turut → paksa berhenti) karena tidak
+  satu pun dari ketiganya mendeteksi *pengulangan* — `recursion_limit` dan
+  kedua middleware limit itu hanya menghitung, mencegah loop tak berhenti
+  secara sintaksis, tapi tidak mendeteksi agent yang secara semantik
+  berputar di tempat sebelum budgetnya habis.
 
 ## Sumber
 

@@ -12,6 +12,17 @@ untuk pemisahan intent/ekspresi dan lokalisasi (lihat
 lain lewat model dasarnya". Ketiadaan desain itu sendiri adalah temuan —
 lihat catatan di bawah tabel.
 
+## Tier 1 — SDK dasar KB ini
+
+Bukan agent produk, jadi di luar hitungan "sembilan T2" dan catatan
+multilingual di bawah — tapi diberi grid 7 sumbu penuh (§Sumber-nya lebih
+dalam dari T2 mana pun: paket terinstal, bukan repo yang dikloning sekali)
+karena inilah SDK yang dipakai membangun tiap arketipe di KB ini.
+
+| Nama | Arketipe | Tier | Ciri khas | Multilingual | Label sumber |
+|---|---|---|---|---|---|
+| [deepagents](deepagents.md) | Bukan satu arketipe — SDK harness dipakai membangun arketipe apa pun (lihat §Arketipe file-nya) | T1 | Middleware-stack (filesystem, subagent, summarization, prompt-cache) di atas LangChain/LangGraph; default stack paling dekat General Task Agent (03), tiap axis bisa digeser lewat parameter `create_deep_agent(...)` | Tidak berlaku — SDK, bukan agent produk dengan permukaan bahasa sendiri | `[code]` mayoritas |
+
 ## Tier 2 — bedah 7 sumbu
 
 | Nama | Arketipe | Tier | Ciri khas | Multilingual | Label sumber |
@@ -23,7 +34,7 @@ lihat catatan di bawah tabel.
 | [LiteLLM](litellm.md) | Bukan agent — infrastruktur gateway/routing | T2 | Bukan agent-loop; retry+cooldown lintas-deployment; `routing_strategy` algoritmik (5+ strategi); >25 provider guardrail sebagai plugin registry deklaratif | Tidak ada | `[code]` mayoritas |
 | [Letta](letta.md) | Workspace Agent (01) | T2 | Repo asli diarsipkan, source pindah ke `letta-code`; memori kini git-backed per-agent (`~/.letta/agents/<id>/memory/`, repo git sungguhan) di atas memory-block API lama; default permission mode `"unrestricted"` | Tidak ada | `[code]` mayoritas |
 | [Dify](dify.md) | Platform: In-App Copilot (05) / Workflow Agent (06) tergantung tipe app | T2 | Dua runner loop terpisah (`FunctionCallAgentRunner` tool-calling vs `CotAgentRunner` teks-ReAct), batas 99 iterasi; node `human_input` sebagai primitif HITL di DAG; workflow lain bisa dipublikasikan jadi tool (`workflow_as_tool`) | Ada — i18n UI + email (`web/i18n`, `email_i18n.py`), lebih luas dari sistem lain di grid tapi tetap string-level, bukan pipeline intent/ekspresi | `[code]` mayoritas |
-| [browser-use](browser-use.md) | Computer-Use Agent (07) | T2 | 27 tool sempit; loop 3-fase (screenshot+DOM → LLM → aksi); dua batas independen (`max_steps=500`, `max_failures=5` berturut-turut); warning eksplisit prompt-injection→eksfiltrasi `sensitive_data` saat `allowed_domains` tak dikunci | Tidak ada | `[code]` mayoritas |
+| [browser-use](browser-use.md) | Computer-Use Agent (07) | T2 | 26 tool sempit; loop 3-fase (screenshot+DOM → LLM → aksi); dua batas independen (`max_steps=500`, `max_failures=5` berturut-turut); warning eksplisit prompt-injection→eksfiltrasi `sensitive_data` saat `allowed_domains` tak dikunci | Tidak ada | `[code]` mayoritas |
 | [Claude Code](claude-code.md) | Workspace Agent (01) | T2 | Closed-source — seluruh file `[docs]`/`[inferred]`; contoh utama KB untuk sumbu 7 "prosa + judgment model" **termasuk kelemahannya**: cap 1.536 karakter/skill (dilusi terukur), tidak ada kode intent netral (keterikatan bahasa) | Tidak diketahui (closed; tidak ditemukan halaman docs soal pipeline intent/ekspresi terpisah) | `[docs]`/`[inferred]` murni |
 
 ## Tier 3 — indeks

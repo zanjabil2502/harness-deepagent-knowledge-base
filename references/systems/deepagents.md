@@ -113,8 +113,13 @@ Sedikit tool luas, bukan banyak tool sempit — by design. Tool bawaan `execute`
 tetap satu nama meski implementasinya berubah total tergantung backend, `[code]`
 per docstring `create_deep_agent`:
 
-- `ls`, `read_file`, `write_file`, `edit_file`, `glob`, `grep` — dari
-  `FilesystemMiddleware`, selalu ada.
+- `ls`, `read_file`, `write_file`, `edit_file`, `delete`, `glob`, `grep` —
+  dari `FilesystemMiddleware`, selalu ada. `delete` masuk `_FS_TOOL_ORDER`
+  (`deepagents/middleware/filesystem.py` baris 1348) dan digate oleh
+  `_supports_delete` (`deepagents/backends/protocol.py` baris 939-954,
+  `type(backend).delete is not BackendProtocol.delete`) — tapi ketiga
+  backend bawaan (`FilesystemBackend`, `StateBackend`, `StoreBackend`)
+  meng-override `delete`, jadi tool ini selalu ada di praktik.
 - `execute` — hanya muncul jika `backend` yang dipasang mengimplementasi
   `SandboxBackendProtocol`; untuk backend non-sandbox, `FilesystemMiddleware`
   memfilternya keluar sama sekali (bukan tool yang mengembalikan error, tool
@@ -317,23 +322,29 @@ classifier di source yang dibaca (lihat daftar file lengkap di `## Sumber`).
 
 ## Middleware bawaan
 
+Urutan baris di tabel ini mengikuti urutan pemasangan sesungguhnya
+(base stack → *middleware user* → tail stack), bukan urutan sembarang:
+
 | Middleware | Titik penegakan | Kapan dipakai |
 |---|---|---|
-| `FilesystemMiddleware` | Selalu, main + tiap subagent | Wajib — sumber tool `ls/read_file/write_file/edit_file/glob/grep(/execute)`, penegak `permissions`, eviction tool result besar |
+| `SkillsMiddleware` | Main + subagent yang deklarasikan `skills=` | Muat progressive-disclosure skill ke system prompt |
+| `FilesystemMiddleware` | Selalu, main + tiap subagent | Wajib — sumber tool `ls/read_file/write_file/edit_file/delete/glob/grep(/execute)`, penegak `permissions`, eviction tool result besar |
 | `SubAgentMiddleware` | Main agent (jika ada subagent inline) | Wajib jika ada `SubAgent`/`CompiledSubAgent` — sumber tool `task` |
 | `create_summarization_middleware` (→ `SummarizationMiddleware`) | Selalu, main + tiap subagent | Kompaksi otomatis saat token lampaui threshold berbasis profil model |
 | `PatchToolCallsMiddleware` | Selalu, main + tiap subagent | Tambal `ToolMessage` dangling di riwayat pesan |
 | `AsyncSubAgentMiddleware` | Main agent, hanya jika ada `AsyncSubAgent` | Tool background start/check/update/cancel/list |
-| `SkillsMiddleware` | Main + subagent yang deklarasikan `skills=` | Muat progressive-disclosure skill ke system prompt |
-| `MemoryMiddleware` | Main agent, hanya jika `memory=[...]` diisi | Suntik isi `AGENTS.md` ke system prompt |
-| `AnthropicPromptCachingMiddleware` (+Bedrock/Fireworks kondisional) | Selalu, tail stack | Cache prompt provider-spesifik, no-op di provider lain |
-| `HumanInTheLoopMiddleware` (langchain) | Main/subagent, hanya jika `interrupt_on` gabungan tidak kosong | Jeda approval manusia sebelum tool tereksekusi |
+| *(middleware user, `middleware=[...]`, disisipkan di sini)* | — | — |
 | `_ToolExclusionMiddleware` (privat) | Tail stack, hanya jika profil punya `excluded_tools` | Menyaring nama tool hasil middleware manapun sebelum dikirim ke model |
+| `AnthropicPromptCachingMiddleware` (+Bedrock/Fireworks kondisional) | Selalu, tail stack | Cache prompt provider-spesifik, no-op di provider lain |
+| `MemoryMiddleware` | Main agent, hanya jika `memory=[...]` diisi | Suntik isi `AGENTS.md` ke system prompt |
+| `HumanInTheLoopMiddleware` (langchain) | Main/subagent, hanya jika `interrupt_on` gabungan tidak kosong | Jeda approval manusia sebelum tool tereksekusi |
 | `RubricMiddleware` | Tidak di stack default — pasang manual via `middleware=[...]` | Iterasi ulang jawaban terhadap rubric sampai lolos atau `max_iterations` |
 | `TodoListMiddleware` (langchain, **bukan** milik `deepagents`) | Tidak di stack default — pasang manual | Planning eksplisit (tool `write_todos`) untuk task multi-langkah |
 
 `[code]` — `deepagents/graph.py` baris 361-402 (urutan resmi base+tail stack
-di docstring parameter `middleware`), tiap file middleware terkait.
+di docstring parameter `middleware`; urutan tabel di atas dikoreksi untuk
+cocok persis, lihat juga [`../deepagents/middleware.md`](../deepagents/middleware.md)
+untuk tabel slot base/tail yang sama), tiap file middleware terkait.
 
 ## Backend filesystem
 
