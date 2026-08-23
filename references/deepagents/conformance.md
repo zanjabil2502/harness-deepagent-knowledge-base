@@ -528,7 +528,7 @@ tidak muncul di `grep`, sehingga nomor 1 dan 17 sengaja kosong.
 | 8 | `archetypes/06-workflow-agent.md:116` | Kill switch di luar library | D-06c |
 | 9 | `archetypes/07-computer-use-agent.md:99` | Verifikasi lewat konvensi prompt | D-07 |
 | 10 | `archetypes/README.md:53` | Deployment dipisah dari taksonomi arketipe | taksonomi, bukan `deepagents` |
-| 11 | `systems/INDEX.md:90` | Meta: kenapa label `[ours]` ada | meta |
+| 11 | `systems/INDEX.md:93` | Meta: kenapa label `[ours]` ada | meta |
 | 12-16 | `scaffolds/_base.md:56,77,160,450,493` | Protocol `Orchestrator`; `namespace` dari `Scope` aplikasi bukan `rt.server_info.user.identity`; `AsyncConnectionPool`; eksekusi turn inline di generator SSE | **:160 → D-08 (risiko tertinggi)**; sisanya arsitektur aplikasi, di luar `deepagents` |
 | — | `scaffolds/deltas/01-workspace-agent.md` | Turunan D-01 | **dicabut**, kini `[code]` |
 | 18-19 | `scaffolds/deltas/02-generative-builder.md:23,35` | Turunan dari #2 | D-02 |
