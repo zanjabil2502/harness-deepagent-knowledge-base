@@ -40,6 +40,7 @@ Setiap tahap di atas mendarat di sini:
 | Blueprint (kontrak, keluaran #1) | [blueprint-template.md](references/blueprint-template.md) |
 | Config deepagents — API lengkap | [deepagents/api-reference.md](references/deepagents/api-reference.md) |
 | Config deepagents — kesesuaian vs vanilla | [deepagents/conformance.md](references/deepagents/conformance.md) |
+| Internal deepagents — apa memanggil apa | [graphify-out/GRAPH_REPORT.md](graphify-out/GRAPH_REPORT.md) |
 | Scaffold base (keluaran #2, lapis 1) | [scaffolds/_base.md](references/scaffolds/_base.md) |
 | Scaffold delta per arketipe (lapis 2) | [scaffolds/deltas/](references/scaffolds/deltas/) |
 | Scaffold serving/deploy (lapis 3) | [scaffolds/serving.md](references/scaffolds/serving.md) |
