@@ -23,7 +23,7 @@ FRAMES = {
     ],
 }
 EXEMPT = {"README.md", "_template.md", "INDEX.md"}
-LABEL = re.compile(r"\[(code|docs|inferred)\]")
+LABEL = re.compile(r"\[(code|docs|inferred|ours)\]")
 LINK = re.compile(r"\]\((?!https?:|mailto:)([^)#]+)")
 SKILL_MAX_LINES = 150
 

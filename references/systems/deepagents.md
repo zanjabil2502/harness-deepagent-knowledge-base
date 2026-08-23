@@ -167,13 +167,28 @@ menyediakan subagent bernama sama, atau profil harness men-set
 `general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)`.
 `[code]` — `deepagents/graph.py` baris 745-814.
 
-**Hasil kembali ke pemanggil**: subagent (`SubAgent`/`CompiledSubAgent`)
-mengembalikan `messages` state akhirnya sebagai isi `ToolMessage` dari tool
-`task` — ringkasan bersih, bukan seluruh transkrip kerja subagent. State
-privat subagent (field bertanda `PrivateStateAttr` di middleware manapun,
+**Hasil kembali ke pemanggil**: isi `ToolMessage` dari tool `task` **bukan**
+seluruh `messages` state akhir subagent. `_return_command_with_state_update`
+memilih salah satu dari dua: kalau `structured_response` hasil subagent tidak
+`None`, nilainya diserialkan ke JSON (`model_dump_json()` untuk Pydantic,
+`json.dumps(dataclasses.asdict(...))` untuk dataclass, `json.dumps(...)`
+selain itu) dan itulah isi `ToolMessage`-nya; kalau `None`, kode berjalan
+mundur dari pesan terakhir dan memakai teks `AIMessage` **non-kosong**
+pertama yang ditemukan (walk-back ini ada karena Anthropic kadang menutup
+dengan `AIMessage` `end_turn` kosong). Hasilnya tetap seperti yang
+diharapkan — ringkasan bersih, bukan transkrip kerja subagent — tapi
+mekanismenya seleksi satu pesan, bukan penyalinan state pesan.
+
+Di luar `messages`, key state lain yang dikembalikan subagent **memang**
+di-merge ke state agent utama, kecuali `_EXCLUDED_STATE_KEYS`
+(`messages`, `todos`, `structured_response`) dan field privat. State privat
+subagent (field bertanda `PrivateStateAttr` di middleware manapun,
 dikumpulkan lewat `private_state_field_names`) tidak bocor kembali ke state
-agent utama. `[code]` — `deepagents/middleware/subagents.py`,
-`deepagents/graph.py` baris 894-898.
+agent utama — filter yang sama juga dipakai saat mengirim state parent
+**ke** subagent. `[code]` —
+`deepagents/middleware/subagents.py` baris 251-268 (`_EXCLUDED_STATE_KEYS`),
+474-512 (`_return_command_with_state_update`), 529-540
+(`_validate_and_prepare_state`); `deepagents/graph.py` baris 943-947.
 
 ## 5. State & resume
 
