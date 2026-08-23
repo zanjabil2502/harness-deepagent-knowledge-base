@@ -148,6 +148,26 @@ Keluaran sukses: `OK: semua cek lulus`, exit code 0. Jalankan ini setelah
 menambah atau mengedit file apa pun di `references/`, `SKILL.md`, atau
 `README.md`.
 
+## Graph source deepagents (opsional)
+
+KB ini berisi penilaian — mana yang idiomatik, mana anti-pattern. Untuk
+**kelengkapan** (apa yang ada, apa memanggil apa, apa yang kena kalau X
+berubah), turunkan graph dari source-nya:
+
+```bash
+# graphify melewati apa pun di dalam .venv, jadi salin dulu ke path biasa
+cp -r references/recipes/.venv/lib/python3.13/site-packages/deepagents /tmp/deepagents-src
+graphify /tmp/deepagents-src
+```
+
+Korpus code-only → ekstraksi murni AST, nol token LLM, nol API key. Keluaran
+di `graphify-out/` (git-ignored: ~3,7 MB, turunan, dan memuat path absolut
+mesin). Regenerate setelah `deepagents` naik versi, lalu diff hasilnya untuk
+melihat apa yang berubah.
+
+Graph tidak bisa bilang mana yang **benar** — hanya mana yang **ada**.
+Verdict idiomatik tetap dari `references/deepagents/conformance.md`.
+
 Untuk mengecek dominasi label `[code]` (mayoritas klaim KB harus dibaca
 dari source, bukan ditebak):
 

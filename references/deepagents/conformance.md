@@ -241,6 +241,36 @@ Untuk penyimpangan per-arketipe (D-01…D-07) sumbernya adalah label
 - **Alasan menyimpang**: contoh maintainer semuanya single-tenant lokal
   (CLI, notebook, skrip). KB ini menargetkan layanan multi-user, dan
   `namespace` adalah **satu-satunya** *hook* scoping per-user yang resmi.
+- **Yang sebenarnya diisolasi — lebih luas dari "file user"**. `[code]`
+  `BackendProtocol` (`backends/protocol.py:378`) mendeklarasikan 18 metode
+  (`ls`/`read`/`grep`/`glob`/`write`/`edit`/`delete`/`upload_files`/`download_files`,
+  masing-masing plus varian async), dan konsumennya **bukan hanya tool file**.
+  Diverifikasi dengan membaca pemanggilan di `middleware/`:
+
+  | Middleware | Metode backend yang dipanggil | Yang mendarat di backend |
+  |---|---|---|
+  | `filesystem.py` | `ls read grep glob write edit delete` (+async) | file kerja user |
+  | `summarization.py:1102,1155,1218,1233` | `upload_files download_files write edit` (+async) | **ringkasan percakapan & media inline yang di-offload** |
+  | `_message_eviction.py:134,154` | `write awrite` | **isi tool message yang dibuang dari konteks** |
+  | `memory.py:295,329` | `download_files adownload_files` | **file memory lintas sesi** |
+  | `skills.py:613,639,679,705` | `ls als download_files adownload_files` | **skill yang terlihat oleh agent** |
+
+  Empat dari lima konsumen itu bukan tool file — mereka fitur lain yang
+  kebetulan butuh tempat menaruh byte. Konsekuensinya dua arah:
+
+  **Risiko lebih besar dari yang terlihat.** `namespace` yang salah tidak
+  membocorkan file saja; ia membocorkan ringkasan percakapan user lain,
+  potongan transkrip yang di-offload saat eviction, memory-nya, dan daftar
+  skill-nya. Membaca `filesystem.py` saja akan melewatkan seluruh kelas
+  kebocoran ini — inilah alasan `extension-points.md` menempatkan backend,
+  bukan `create_deep_agent`, sebagai titik ekstensi utama.
+
+  **Tapi juga proteksi lebih besar.** Karena kelimanya lewat protokol yang
+  sama, satu `namespace` yang benar mengunci kelimanya sekaligus — dan karena
+  parameter itu wajib serta agent dirakit per turn
+  (`scaffolds/_base.md:183-185`), tidak ada jalur di mana salah satunya
+  ter-scope dan yang lain tidak. Ini kekuatan desain yang tidak tertangkap
+  saat entri ini pertama ditulis.
 - **Biaya kalau salah** — dan di sini penting membedakan risiko yang nyata
   dari yang tidak. Di level API **tidak ada** yang bisa gagal diam-diam:
   `namespace` adalah parameter keyword-only **wajib** bertipe
