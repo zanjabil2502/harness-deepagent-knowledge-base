@@ -230,9 +230,20 @@ Untuk penyimpangan per-arketipe (D-01…D-07) sumbernya adalah label
 
 ### D-08 — `StoreBackend(namespace=...)` sebagai pola isolasi per-user
 
-- **Yang kita lakukan**: `CompositeBackend` + `StoreBackend(namespace=lambda
-  rt: (user_id, ...))` untuk file durable ter-scope per user
-  (`scaffolds/_base.md`, recipe `04_custom_backend.py`, arketipe 03/06).
+- **Yang kita lakukan**: `StoreBackend(namespace=lambda rt: (user_id, ...))`
+  untuk file durable ter-scope per user. **Dua komposisi berbeda dipakai di KB
+  ini, dan perilaku artefaknya tidak sama** — lihat
+  [`middleware.md`](middleware.md) §`artifacts_root`:
+  - `scaffolds/_base.md:157-168` dan arketipe 03/06 memakai `StoreBackend`
+    **polos**. `artifacts_root` jatuh ke cabang `"/"`
+    (`middleware/summarization.py:598`), sehingga `/conversation_history/`,
+    media-nya, dan `/large_tool_results/` **semuanya** mendarat di dalam
+    namespace user. Isolasi penuh, tanpa konfigurasi tambahan. `[code]`
+  - recipe `04_custom_backend.py` memakai `CompositeBackend(default=StateBackend(),
+    routes={"/memories/": StoreBackend(namespace=...)})`. Di sini `/memories/`
+    durable dan ter-scope, tapi `/conversation_history/` **tidak cocok route mana
+    pun** sehingga jatuh ke `StateBackend` — ephemeral. Bukan kebocoran
+    (`StateBackend` per-thread), tapi ringkasan percakapan tidak persist. `[code]`
 - **Vanilla**: pola ini **hanya ada di docstring** — `FilesystemMiddleware`
   (`middleware/filesystem.py:1602-1614`) dan `StoreBackend.__init__`
   (`backends/store.py:110-117`) mencontohkannya, tapi **nol** contoh

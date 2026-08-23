@@ -224,6 +224,51 @@ Konsekuensi praktis: `excluded_middleware=["FilesytemMiddleware"]` (salah ketik)
 melempar `ValueError` saat konstruksi. Tanpa fase ketiga itu akan jadi no-op
 senyap yang baru ketahuan di produksi.
 
+## `artifacts_root`: ke mana middleware menulis, dan siapa yang menentukannya
+
+Dua middleware bawaan menulis ke backend tanpa diminta — dan ke **tiga** prefix,
+bukan satu. Ini tidak terlihat dari signature `create_deep_agent` mana pun.
+
+```python
+artifacts_root = backend.artifacts_root if isinstance(backend, CompositeBackend) else "/"
+_root = artifacts_root.rstrip("/")
+self._history_path_prefix       = f"{_root}/conversation_history"
+self._large_tool_results_prefix = f"{_root}/large_tool_results"
+self._media_prefix              = f"{self._history_path_prefix}/media"
+```
+
+`[code]` — `middleware/summarization.py:598-603`.
+
+| Prefix | Isinya | Ditulis oleh |
+|---|---|---|
+| `<root>/conversation_history/` | Ringkasan percakapan, satu file `.md` per sesi | `_DeepAgentsSummarizationMiddleware` (`summarization.py:1179` `_offload_to_backend`) |
+| `<root>/conversation_history/media/` | Gambar inline yang di-offload dari pesan | `summarization.py:1044` (`_offload_inline_media`) |
+| `<root>/large_tool_results/` | Output tool yang terlalu besar untuk konteks | `summarization.py:601` |
+
+`FilesystemMiddleware` menulis ke direktori **yang sama** lewat jalur eviction
+pesan — `[code]` `middleware/filesystem.py:1705` (prefix), `:3324,3350`
+(penulisan). Jadi dua middleware berbeda berbagi satu ruang nama artefak.
+
+### Aturan yang menentukan isolasi
+
+`artifacts_root` **berperilaku berbeda tergantung jenis backend**, dan ini
+menentukan apakah artefak di atas ter-scope per user:
+
+| Backend | `artifacts_root` | Akibatnya |
+|---|---|---|
+| Backend polos (`StoreBackend`, `FilesystemBackend`, …) | `"/"` — cabang `else` di `:598` | Artefak mendarat di root backend itu. Untuk `StoreBackend(namespace=...)` berarti **di dalam namespace user** → ikut ter-scope otomatis |
+| `CompositeBackend` | `self.artifacts_root`, default `"/"` (`backends/composite.py:212,235`) | Artefak mengikuti aturan `routes`. Kalau `/conversation_history/` dan `/large_tool_results/` **tidak** di-route eksplisit, keduanya jatuh ke `default` |
+
+Konsekuensi yang mudah terlewat: menyusun
+`CompositeBackend(default=StateBackend(), routes={"/memories/": StoreBackend(namespace=...)})`
+membuat `/memories/` durable dan ter-scope, tapi **ringkasan percakapan tetap
+jatuh ke `StateBackend`** — ephemeral, hilang tiap turn. Backend sudah
+di-namespace tidak berarti seluruh artefak ikut ter-namespace; yang menentukan
+adalah apakah `routes` menutupi prefix-prefix di atas.
+
+Lihat [`conformance.md`](conformance.md) §D-08 untuk implikasi isolasi
+multi-user-nya.
+
 ## Menulis middleware sendiri
 
 Kontrak: subclass `langchain.agents.middleware.AgentMiddleware`, override

@@ -25,6 +25,13 @@ from langchain_anthropic import ChatAnthropic
 from langgraph.store.memory import InMemoryStore
 
 from deepagents import create_deep_agent
+# CATATAN artefak middleware: CompositeBackend menetapkan artifacts_root (default
+# "/"), dan middleware bawaan menulis ke <root>/conversation_history/,
+# .../media/, serta <root>/large_tool_results/ (summarization.py:598-603).
+# Route di bawah hanya menutupi /memories/, jadi ringkasan percakapan jatuh ke
+# default=StateBackend() -- ephemeral, tidak persist. Untuk membuatnya durable,
+# tambahkan "/conversation_history/" (dan "/large_tool_results/") ke routes.
+# Lihat references/deepagents/middleware.md #artifacts_root.
 from deepagents.backends import CompositeBackend, StateBackend, StoreBackend
 
 
