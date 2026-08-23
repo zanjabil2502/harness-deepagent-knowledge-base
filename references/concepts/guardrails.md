@@ -65,6 +65,46 @@ kegagalan. Mode kegagalan sengaja tidak seragam:
 | 6 | Sistem | Pin versi model | Parameter `model` eksplisit ke `create_deep_agent(model=...)`, bukan alias mengambang (`"latest"`) | Fail-closed implisit — model/alias yang tak dikenal gagal saat konstruksi agent, bukan diam-diam terselesaikan ke versi lain saat runtime |
 | 6 | Sistem | Kebijakan fallback model | `ModelFallbackMiddleware(primary, *fallbacks)` | **Fail-open by design** (tujuannya availability) — tapi wajib berpasangan dg audit log per keputusan gerbang (model mana yang sebenarnya menjawab), kalau tidak "jawaban dari fallback yang lebih lemah" jadi tak tertelusuri |
 
+### Mode kegagalan ketiga: fail-deferred
+
+Tabel di atas memakai dua mode — fail-open dan fail-closed. Ada yang ketiga, dan
+ia baru masuk akal ketika gerbangnya berupa **persetujuan manusia** dan tidak ada
+manusia yang sedang menunggu: **jangan lolos, jangan tolak, suspend**.
+
+OpenWorker mengimplementasikannya sebagai approver yang ditukar per mode sesi.
+Sesi unattended memakai `inbox_approver`, yang docstring-nya menyatakan perilakunya
+sendiri — *"routes a permission request to the Inbox and suspends until resolved"*.
+`[code]` `andrewyng/openworker` @ `141d02a`, `coworker/inbox.py:387-406`; `await
+store.wait(item.id)` di `:362-371` **tanpa timeout**. Lihat
+[`../systems/openworker.md`](../systems/openworker.md) §6.
+
+Yang membuatnya bukan sekadar fail-closed yang sopan: permintaannya **durable dan
+idempoten**. Item inbox menyimpan `tool_call_id` dan pembuatannya idempoten atas
+`(session_id, tool_call_id)` (`inbox.py:77,142`), sehingga proses yang mati saat
+menunggu kehilangan coroutine-nya tetapi tidak kehilangan permintaannya — run yang
+dijalankan ulang membangkitkan prompt yang sama, bukan duplikat. `[code]`
+
+**Biayanya jujur dan tidak boleh disembunyikan**: run yang suspend menahan resource
+tanpa batas waktu. Di produk single-operator desktop itu dapat diterima — hanya ada
+satu run, milik orang yang akan kembali. **Di layanan multi-user itu kebocoran
+resource**, dan run terjadwal yang menunggu persetujuan adalah kejadian normal,
+bukan pengecualian.
+
+Karena itu fail-deferred hanya boleh dipakai di sini bila dipasangkan dengan dua hal
+yang OpenWorker tidak butuh: `[ours]`
+
+1. **Timeout pada penantian**, bukan `await` telanjang — jadi run tidak menggantung
+   selamanya. Cara vanilla-nya adalah `await` tanpa batas seperti di
+   `inbox.py:362-371`; kita menyimpang karena satu run menggantung di layanan
+   multi-user menahan slot orchestrator yang dihitung HPA
+   ([`serving-topology.md`](serving-topology.md) §sinyal in-flight turns).
+2. **Kebijakan eksplisit saat timeout habis** — turun ke fail-closed (batalkan run,
+   catat alasan) atau fail-open terkendali. Memilih "biarkan menggantung" adalah
+   memilih mode kegagalan tanpa menyatakannya, yang dilarang aturan tiga-hal di atas.
+
+Antrean permintaan yang menunggu itu sendiri punya backpressure; lihat
+[`queueing-and-backpressure.md`](queueing-and-backpressure.md).
+
 ### Bertingkat: deterministik dulu, model-based cuma kalau perlu
 
 Guardrail model-based (Llama Guard, rail self-check NeMo, validator LLM-based

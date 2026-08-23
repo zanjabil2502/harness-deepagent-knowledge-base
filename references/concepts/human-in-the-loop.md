@@ -64,6 +64,42 @@ nama tool (lihat `## Di deepagents`), granularitas tool itu sendiri yang
 harus disesuaikan supaya klasifikasi reversibilitas/blast-radius bisa
 ditegakkan tanpa membaca isi argumen di dalam gerbang.
 
+### Approver sebagai strategi yang ditukar, bukan cabang di dalam engine
+
+Gerbang persetujuan punya satu masalah yang jarang ditulis: **mode sesi berubah**.
+Sesi yang dimulai attended bisa ditinggal; automation terjadwal berjalan tanpa
+siapa pun menunggu. Kalau logika "tanya siapa" hidup sebagai `if` di dalam loop
+agent, tiap mode baru menambah cabang di jalur terpanas.
+
+OpenWorker memisahkannya: permission engine-nya satu, yang ditukar adalah
+**approver**-nya. Sesi attended memakai prompt inline; sesi unattended memakai
+`inbox_approver(store, session_id)`. `[code]` `andrewyng/openworker` @ `141d02a`,
+`coworker/inbox.py:387`; rutingnya diuji eksplisit di
+`tests/test_unattended.py:22-60` dengan komentar *"an unattended session uses the
+inbox approver, so consequential actions park in the Inbox instead of prompting
+inline."*
+
+Bentuk kembaliannya tetap satu enum apa pun approver-nya — `ApprovalOutcome`
+dengan `ONCE`, `ALWAYS_TOOL`, `ALWAYS_COMMAND`, `READONLY_SESSION`, `DENY`
+(`coworker/engine.py:31-37`). `[code]` Itu yang membuat penukaran aman: engine
+tidak perlu tahu dari permukaan mana jawaban datang.
+
+### Transisi attended ↔ unattended butuh rekonsiliasi
+
+Konsekuensi yang mudah terlewat: kalau persetujuan dapat dijawab dari permukaan
+lain selagi operator pergi, ia kembali tanpa tahu **apa yang sudah disetujui atas
+namanya**.
+
+OpenWorker menjawabnya dengan `reconcile_on_resume` (`coworker/inbox.py:374-380`):
+saat operator kembali ke kendali attended, item yang masih pending dimunculkan
+inline **dan** disertai rekap yang sudah terjawab selama ia pergi, dengan prinsip
+yang dinyatakan di docstring-nya — *"Single source of truth: every item already has
+one authoritative resolution."* `[code]`
+
+Satu resolusi otoritatif per item adalah bagian yang penting. Tanpa itu, permukaan
+kedua (Slack, inbox, TUI) menjadi jalur persetujuan paralel yang bisa berbeda
+jawaban untuk permintaan yang sama.
+
 ### Merekam keputusan sebagai data, bukan cuma efek sampingnya
 
 Satu keputusan approval punya empat bentuk mungkin — **approve** (jalankan

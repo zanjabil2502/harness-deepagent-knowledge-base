@@ -528,7 +528,7 @@ tidak muncul di `grep`, sehingga nomor 1 dan 17 sengaja kosong.
 | 8 | `archetypes/06-workflow-agent.md:116` | Kill switch di luar library | D-06c |
 | 9 | `archetypes/07-computer-use-agent.md:99` | Verifikasi lewat konvensi prompt | D-07 |
 | 10 | `archetypes/README.md:53` | Deployment dipisah dari taksonomi arketipe | taksonomi, bukan `deepagents` |
-| 11 | `systems/INDEX.md:89` | Meta: kenapa label `[ours]` ada | meta |
+| 11 | `systems/INDEX.md:90` | Meta: kenapa label `[ours]` ada | meta |
 | 12-16 | `scaffolds/_base.md:56,77,160,450,493` | Protocol `Orchestrator`; `namespace` dari `Scope` aplikasi bukan `rt.server_info.user.identity`; `AsyncConnectionPool`; eksekusi turn inline di generator SSE | **:160 → D-08 (risiko tertinggi)**; sisanya arsitektur aplikasi, di luar `deepagents` |
 | — | `scaffolds/deltas/01-workspace-agent.md` | Turunan D-01 | **dicabut**, kini `[code]` |
 | 18-19 | `scaffolds/deltas/02-generative-builder.md:23,35` | Turunan dari #2 | D-02 |
@@ -549,6 +549,7 @@ tidak muncul di `grep`, sehingga nomor 1 dan 17 sengaja kosong.
 | 51 | `concepts/sandboxing.md:140` | Kebijakan sandbox bukan paksaan SDK Daytona | terkait D-17 |
 | 52 | `concepts/serving-topology.md:167` | Monolith dulu, split belakangan | di luar `deepagents` |
 | 53 | `concepts/streaming-protocol.md:142` | Granularitas stream per unit | di luar `deepagents` |
+| 54 | `concepts/guardrails.md:94` | Fail-deferred wajib dipasangkan timeout + kebijakan saat habis (vanilla: `await` tanpa batas, OpenWorker `inbox.py:362-371`) | di luar `deepagents` |
 
 Bacaan roster ini: dari 51 klaim, **12** benar-benar menyangkut cara memakai
 `deepagents` (arketipe 02-07, `_base.md:56,77,160`, `sandboxing.md:129`) dan
