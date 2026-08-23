@@ -158,6 +158,15 @@ bukan proses terpisah bawaan.
   bukan cuma "porsi wajarnya" — memperkuat argumen kenapa fase ini butuh
   provisioning terpisah dari fase IO-bound. Detail isolasi lengkap di
   `sandboxing.md`.
+
+  > **Catatan repo (2026-08-23):** `All-Hands-AI/OpenHands` sudah
+  > di-redirect ke `OpenHands/OpenHands` ("Agent Canvas"); agent coding
+  > aslinya pindah ke `OpenHands/software-agent-sdk`. Path
+  > `openhands/core/config/sandbox_config.py` dan
+  > `openhands/runtime/impl/docker/docker_runtime.py` di atas tidak lagi
+  > ada di struktur repo saat ini — klaim ini tetap berlaku untuk commit
+  > `db37f350` / PR `#6616` yang disitasi, sebagai snapshot historis.
+  > Lihat [`../systems/openhands.md`](../systems/openhands.md).
 - `[docs]` KEDA — mekanisme scaling per sinyal kustom yang jadi alasan
   pemisahan komponen berguna secara praktis, dikutip via WebFetch dari
   `keda.sh/docs/latest/concepts/scaling-deployments/`. Detail lengkap di

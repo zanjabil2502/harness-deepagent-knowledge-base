@@ -65,6 +65,17 @@ membatasinya. Ini contoh konkret defect class yang harus dijaga di seluruh
 KB: nama "container isolation" tidak otomatis berarti kemampuan isolasi
 yang dibayangkan — harus dicek konfigurasi sebenarnya.
 
+> **Catatan repo (2026-08-23):** `All-Hands-AI/OpenHands` sudah di-redirect
+> ke `OpenHands/OpenHands`, yang isinya berganti total jadi "Agent Canvas";
+> agent coding aslinya pindah ke repo terpisah `OpenHands/software-agent-sdk`.
+> Path `openhands/core/config/sandbox_config.py` dan
+> `openhands/runtime/impl/docker/docker_runtime.py` yang dikutip di atas
+> tidak lagi ada di struktur repo saat ini — klaimnya tetap berlaku untuk
+> commit `db37f350` / PR `#6616` yang disitasi (snapshot historis, bukan
+> path yang bisa ditelusuri hari ini). Lihat
+> [`../systems/openhands.md`](../systems/openhands.md) untuk pivot repo ini
+> secara lengkap.
+
 ### E2B dan Daytona: microVM, dua model penentuan resource yang berbeda
 
 Keduanya microVM-class isolation per sandbox — kernel terpisah, bukan
