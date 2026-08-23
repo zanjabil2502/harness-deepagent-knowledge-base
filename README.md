@@ -134,8 +134,11 @@ Aturan:
 
 `tools/check_kb.py` adalah gerbang struktural KB — mengecek tiap file
 arketipe/concept/system punya section wajib (frame-nya masing-masing) dan
-minimal satu label sumber, tidak ada link internal mati, dan `SKILL.md`
-tetap tipis (≤150 baris). Jalankan dari root repo:
+minimal satu label sumber, tidak ada link internal mati, `SKILL.md` tetap
+tipis (≤150 baris), dan **tiap `[ours]` terdaftar di roster
+`references/deepagents/conformance.md`** — dicek dua arah, sehingga klaim
+`[ours]` baru yang belum didaftarkan maupun nomor baris roster yang sudah
+basi sama-sama gagal. Jalankan dari root repo:
 
 ```bash
 python3 tools/check_kb.py
