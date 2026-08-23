@@ -60,13 +60,13 @@ def main() -> int:
 
     if not os.environ.get("ANTHROPIC_API_KEY"):
         print(
-            "ANTHROPIC_API_KEY tidak diset — invokasi live dilewati. "
-            "Konstruksi agent dengan CompositeBackend+StoreBackend berhasil "
-            "tanpa exception."
+            "Konstruksi terverifikasi — CompositeBackend+StoreBackend terpasang "
+            "tanpa exception. Live call bersifat opsional: set "
+            "ANTHROPIC_API_KEY kalau ingin melihat satu giliran nyata."
         )
         return 0
 
-    print("ANTHROPIC_API_KEY ditemukan — menjalankan satu giliran nyata...")
+    print("ANTHROPIC_API_KEY ada — menjalankan satu giliran nyata (opsional)...")
     result = agent.invoke({"messages": [{"role": "user", "content": "Balas dengan satu kata: 'ok'."}]})
     print("Respons model:", result["messages"][-1].content)
     return 0
