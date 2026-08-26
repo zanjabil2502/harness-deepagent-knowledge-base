@@ -839,7 +839,7 @@ arketipe (`../archetypes/*.md`) untuk keputusan konkret per delta.
 ## Gerbang production-readiness
 
 Checklist 9 syarat ada **satu-satunya** di
-[`../blueprint-template.md`](../blueprint-template.md#checklist-production-readiness)
+[`../blueprint-template.md`](../blueprint-template.md#production-readiness-checklist)
 — tidak disalin di sini supaya tidak ada dua salinan yang bisa saling
 berbeda begitu spec §12 berubah. **Scaffold ini belum boleh dinyatakan
 selesai sebelum seluruh sembilan item di sana tercentang.**

@@ -174,7 +174,7 @@ the deployment topology.
 
 **6. The mandatory gate** — before the scaffold counts as finished, satisfy
 the **production-readiness checklist** in
-[`references/blueprint-template.md`](references/blueprint-template.md#checklist-production-readiness)
+[`references/blueprint-template.md`](references/blueprint-template.md#production-readiness-checklist)
 (tracing, an eval harness, budget guards, retry/idempotency, a context
 overflow policy, secrets management, a human gate + audit log, prompt/policy
 versioning, a kill switch & sandbox).
