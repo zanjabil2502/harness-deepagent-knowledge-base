@@ -1,138 +1,142 @@
 # OpenWorker
 
-> Label tiap klaim: [code] / [docs] / [inferred]
+> Label every claim: [code] / [docs] / [inferred]
 
-Tier **T2**. Sumber dibaca dari `git clone --depth 1` repo `andrewyng/openworker`
-pada commit `141d02a` (2026-08-22), 257 file Python / 75.493 baris. Repo berstatus
-**open beta** menurut README-nya sendiri. `[code]`
+Tier **T2**. Source read from a `git clone --depth 1` of the
+`andrewyng/openworker` repo at commit `141d02a` (2026-08-22), 257 Python files /
+75,493 lines. The repo is in **open beta** according to its own README. `[code]`
 
-## Arketipe
+## Archetype
 
-**General Task Agent (03)** sebagai inti, tapi hibrida **empat arah** — paling
-banyak dari semua sistem di indeks ini. Artefaknya dokumen/spreadsheet/laporan
-sebagai file jadi (**Generative Builder 02**), sekaligus bertindak di objek SaaS
-lewat 25+ konektor (**In-App Copilot 05**), menyentuh terminal dan file lokal
-(**Workspace Agent 01**), dan punya automation terjadwal yang berjalan tanpa
-ditunggu (**Workflow Agent 06**).
+**General Task Agent (03)** at its core, but a **four-way** hybrid — the most of
+any system in this index. Its artifacts are documents/spreadsheets/reports as
+finished files (**Generative Builder 02**), it acts on SaaS objects through 25+
+connectors (**In-App Copilot 05**), it touches the terminal and local files
+(**Workspace Agent 01**), and it has scheduled automation running unattended
+(**Workflow Agent 06**).
 
-Blast radius: mesin operator **plus** data SaaS yang dia sambungkan. Kendali
-manusia: approval per aksi konsekuensial. Antarmuka: desktop GUI, mention Slack,
-dan penjadwal. **Single-operator** — README menyebutnya eksplisit: *"designed for
-a single operator"*. `[docs]` README
+Blast radius: the operator's machine **plus** the SaaS data it connects to. Human
+control: approval per consequential action. Interface: a desktop GUI, Slack
+mentions, and a scheduler. **Single-operator** — the README states it explicitly:
+*"designed for a single operator"*. `[docs]` README
 
 ## 1. Loop shape
 
-`TurnEngine` (`coworker/engine.py:65`) menjalankan `while True` (`:356`) dengan
-pembatas iterasi di puncak loop (`:357`); saat terlampaui ia memancarkan status
-`max_iterations_exceeded` (`:360`). Model yang memutuskan berhenti secara normal;
-pembatas hanya jaring pengaman. `[code]`
+`TurnEngine` (`coworker/engine.py:65`) runs a `while True` (`:356`) with an
+iteration bound at the top of the loop (`:357`); when exceeded it emits the status
+`max_iterations_exceeded` (`:360`). The model decides to stop normally; the bound
+is only a safety net. `[code]`
 
-Default efektifnya **150**, dari `config.max_iterations` (`coworker/config.py:34`)
-yang dioper di `coworker/agent.py:508-510`. Angka `12` pada signature
-`TurnEngine.__init__` (`engine.py:75`) hanya fallback konstruktor dan tidak
-berlaku di jalur normal. `[code]`
+Its effective default is **150**, from `config.max_iterations`
+(`coworker/config.py:34`) passed at `coworker/agent.py:508-510`. The `12` in the
+`TurnEngine.__init__` signature (`engine.py:75`) is only a constructor fallback
+and doesn't apply on the normal path. `[code]`
 
 ## 2. Context
 
-Auto-kompaksi dengan batas eksplisit. `CompactionState` (`coworker/compaction.py:86-94`)
-menyimpan `boundary_index` yang menunjuk ke **daftar pesan kanonik**: pesan sebelum
-batas diwakili blok terkompaksi di *outbound view*, pesan dari batas ke depan
-dikirim verbatim. State-nya dipersist bersama sesi (`coworker/sessions.py:37-39`)
-sehingga sesi yang dimuat ulang mempertahankan view terkompaksinya. `[code]`
+Auto-compaction with an explicit boundary. `CompactionState`
+(`coworker/compaction.py:86-94`) stores a `boundary_index` pointing into the
+**canonical message list**: messages before the boundary are represented by a
+compacted block in the *outbound view*, messages from the boundary onwards are
+sent verbatim. That state is persisted with the session
+(`coworker/sessions.py:37-39`) so a reloaded session keeps its compacted view.
+`[code]`
 
-Pemisahan kanonik/outbound ini setara dengan pemisahan transcript vs model context
-di [`../concepts/session-state.md`](../concepts/session-state.md) — ditemukan
-independen, dan di sini batasnya berupa satu indeks yang eksplisit.
+This canonical/outbound separation is equivalent to the transcript vs model
+context separation in
+[`../concepts/session-state.md`](../concepts/session-state.md) — arrived at
+independently, and here the boundary is one explicit index.
 
 ## 3. Tool surface
 
-Sedikit tool luas ditambah banyak konektor sempit. Terminal (`run_shell`) dan
-operasi file lokal (`write_file`, `replace_in_file`, `apply_patch`,
-`apply_unified_diff`) adalah tool bawaan yang risikonya ditetapkan by-name
-(`coworker/risk.py:26-33`). `[code]` Di atasnya 25+ integrasi (GitHub, Slack, Jira,
-Notion, Linear, HubSpot, Outlook, monday.com, Gmail, Google Calendar) plus apa pun
-yang dapat dicapai lewat MCP. `[docs]` README
+A few broad tools plus many narrow connectors. The terminal (`run_shell`) and
+local file operations (`write_file`, `replace_in_file`, `apply_patch`,
+`apply_unified_diff`) are built-in tools whose risk is set by name
+(`coworker/risk.py:26-33`). `[code]` On top of them sit 25+ integrations (GitHub,
+Slack, Jira, Notion, Linear, HubSpot, Outlook, monday.com, Gmail, Google Calendar)
+plus anything reachable through MCP. `[docs]` README
 
-Biner eksternal dikelola sendiri: `coworker/toolchain.py` mengunduh, memverifikasi
-hash (`_verify`, `:227`), dan me-resolve path (`resolve`, `:171`), dengan
-`missing()`/`installable()` untuk menyatakan kebutuhan sebelum dipakai. `[code]`
+External binaries are managed in-house: `coworker/toolchain.py` downloads them,
+verifies hashes (`_verify`, `:227`), and resolves paths (`resolve`, `:171`), with
+`missing()`/`installable()` to state requirements before use. `[code]`
 
 ## 4. Delegation
 
-Satu bentuk delegasi: **explorer subagent** read-only
-(`coworker/tools/subagent.py:79`, `build_explorer_engine` di `:42`). Docstring
-tool-nya menyatakan kontraknya sendiri — riset broad read-only dengan *"its own
-fresh context window"*, mengembalikan **hanya laporan akhir**, dan *"the
-intermediate file reads never touch your context"*. Panggilan `explore` independen
-berjalan paralel bila diminta bersamaan. `[code]`
+One form of delegation: a read-only **explorer subagent**
+(`coworker/tools/subagent.py:79`, `build_explorer_engine` at `:42`). Its tool
+docstring states its own contract — broad read-only research with *"its own fresh
+context window"*, returning **only the final report**, and *"the intermediate file
+reads never touch your context"*. Independent `explore` calls run in parallel when
+requested together. `[code]`
 
-Kontrak hasil ini persis pola yang dianjurkan
-[`../concepts/delegation.md`](../concepts/delegation.md): subagent mengembalikan
-ringkasan bersih, bukan transkrip.
+This result contract is exactly the pattern recommended in
+[`../concepts/delegation.md`](../concepts/delegation.md): a subagent returns a
+clean summary, not a transcript.
 
 ## 5. State & resume
 
-Sesi dipersist beserta state kompaksinya (`sessions.py:37-39`). Yang lebih menarik
-adalah **durable resume untuk approval**: item inbox menyimpan `tool_call_id`
-(`coworker/inbox.py:77`, `coworker/engine.py:55`) dan `add_approval` **idempoten
-atas `(session_id, tool_call_id)`** (`inbox.py:142`) — komentarnya menyatakan *"a
-durable resume re-raises the same prompt"*. Jadi bila proses mati saat menunggu
-persetujuan, coroutine-nya hilang tetapi permintaannya bertahan, dan run yang
-dijalankan ulang membangkitkan prompt yang sama alih-alih duplikat. `[code]`
+Sessions are persisted along with their compaction state (`sessions.py:37-39`).
+More interesting is **durable resume for approvals**: an inbox item stores its
+`tool_call_id` (`coworker/inbox.py:77`, `coworker/engine.py:55`) and `add_approval`
+is **idempotent over `(session_id, tool_call_id)`** (`inbox.py:142`) — its comment
+states *"a durable resume re-raises the same prompt"*. So if the process dies
+while awaiting approval, its coroutine is lost but its request survives, and a
+re-run raises the same prompt rather than a duplicate. `[code]`
 
-Kunci idempotensi `(session_id, tool_call_id)` berbentuk sama dengan
-`turns.idempotency_key` + `UNIQUE(user_id, idempotency_key)` di
+The `(session_id, tool_call_id)` idempotency key has the same shape as
+`turns.idempotency_key` + `UNIQUE(user_id, idempotency_key)` in
 [`../concepts/persistence-schema.md`](../concepts/persistence-schema.md).
-Konvergensi independen pada bentuk yang sama.
+Independent convergence on the same shape.
 
 ## 6. Safety gate
 
-Empat kelas risiko sebagai enum (`coworker/risk.py:18-23`): `READ` (tanpa efek
-samping, selalu diizinkan), `WRITE_LOCAL` (path-scoped + mode-gated), `EXEC`
-(mode-gated), dan `EXTERNAL` — yang komentarnya menyebut dirinya *"the unattended
-Inbox hook"*. `is_consequential()` (`:56-58`) menyatakan aturannya: apa pun selain
-`READ` masuk ke permission engine. `[code]`
+Four risk classes as an enum (`coworker/risk.py:18-23`): `READ` (no side effects,
+always allowed), `WRITE_LOCAL` (path-scoped + mode-gated), `EXEC` (mode-gated),
+and `EXTERNAL` — whose comment calls itself *"the unattended Inbox hook"*.
+`is_consequential()` (`:56-58`) states the rule: anything other than `READ` enters
+the permission engine. `[code]`
 
-Approver adalah **strategi yang ditukar per mode sesi**, bukan cabang di dalam
-engine. Sesi unattended memakai `inbox_approver` (`coworker/inbox.py:387`) yang
-docstring-nya menyatakan: *"routes a permission request to the Inbox and suspends
-until resolved"* — `await store.wait(item.id)` (`:362-371`) **tanpa timeout**.
-`ApprovalOutcome` (`engine.py:31-37`) punya lima nilai: `ONCE`, `ALWAYS_TOOL`,
-`ALWAYS_COMMAND`, `READONLY_SESSION`, `DENY`. `[code]`
+The approver is a **strategy swapped per session mode**, not a branch inside the
+engine. An unattended session uses `inbox_approver` (`coworker/inbox.py:387`)
+whose docstring states: *"routes a permission request to the Inbox and suspends
+until resolved"* — an `await store.wait(item.id)` (`:362-371`) **with no
+timeout**. `ApprovalOutcome` (`engine.py:31-37`) has five values: `ONCE`,
+`ALWAYS_TOOL`, `ALWAYS_COMMAND`, `READONLY_SESSION`, `DENY`. `[code]`
 
-Saat operator kembali ke kendali attended, `reconcile_on_resume` (`inbox.py:374-380`)
-memunculkan item yang masih pending secara inline **plus rekap apa yang dijawab
-selama ia pergi**, dengan prinsip *"Single source of truth: every item already has
-one authoritative resolution."* `[code]`
+When the operator returns to attended control, `reconcile_on_resume`
+(`inbox.py:374-380`) surfaces still-pending items inline **plus a recap of what
+was answered while they were away**, on the principle *"Single source of truth:
+every item already has one authoritative resolution."* `[code]`
 
-Lihat [`../concepts/guardrails.md`](../concepts/guardrails.md) §Mode kegagalan
-ketiga untuk implikasi polanya, dan
-[`../concepts/human-in-the-loop.md`](../concepts/human-in-the-loop.md) untuk
-transisi attended/unattended.
+See [`../concepts/guardrails.md`](../concepts/guardrails.md) §The third failure
+mode for the pattern's implications, and
+[`../concepts/human-in-the-loop.md`](../concepts/human-in-the-loop.md) for the
+attended/unattended transition.
 
 ## 7. Capability routing & policy
 
-Risiko ditentukan **sebagai data, bukan prosa**, dengan presedensi eksplisit di
-`classify()` (`risk.py:39-54`): override user-lokal menang, lalu tabel by-name
-`_BASE` (`:29-33`), lalu metadata aisuite `requires_approval` → `EXTERNAL`, dan
-default `READ`. Komentar sumbernya menyebut sendiri bahwa tabel itu adalah *"the
-old WRITE_TOOLS / SHELL_TOOL, **as data**"*. `[code]`
+Risk is determined **as data, not prose**, with explicit precedence in
+`classify()` (`risk.py:39-54`): a user-local override wins, then the by-name
+`_BASE` table (`:29-33`), then aisuite's `requires_approval` metadata →
+`EXTERNAL`, and a `READ` default. Its source comment calls that table *"the old
+WRITE_TOOLS / SHELL_TOOL, **as data**"*. `[code]`
 
-Ini bentuk yang sama dengan yang dianjurkan
-[`../concepts/policy-as-data.md`](../concepts/policy-as-data.md): aturan yang bisa
-diverifikasi kode hidup sebagai tabel, bukan kalimat di prompt — dan penegakannya
-di boundary permission engine. Pemilihan tool mana yang dipanggil tetap judgment
-model; yang berbasis data adalah **kelas risikonya**, bukan routingnya. `[inferred]`
+This is the same shape recommended in
+[`../concepts/policy-as-data.md`](../concepts/policy-as-data.md): a code-verifiable
+rule lives as a table rather than a sentence in a prompt — with enforcement at the
+permission engine boundary. Which tool gets called remains model judgement; what
+is data-driven is its **risk class**, not the routing. `[inferred]`
 
-## Sumber
+## Sources
 
-- `[code]` `andrewyng/openworker` @ `141d02a` (2026-08-22), dibaca via
-  `git clone --depth 1`. File yang dibaca: `coworker/risk.py` (utuh),
-  `coworker/inbox.py:77,142,362-380,387-406`, `coworker/engine.py:31-37,55,65,356-360,75`,
-  `coworker/config.py:34`, `coworker/agent.py:505-515`,
-  `coworker/compaction.py:86-94`, `coworker/sessions.py:37-39`,
-  `coworker/tools/subagent.py:42,79-100`, `coworker/toolchain.py:171,227`,
-  `tests/test_unattended.py:22-60`.
-- `[docs]` README repo — status open beta, klaim single-operator, daftar 25+
-  konektor, arsitektur desktop app + local agent server (di atas `aisuite`).
-- `[docs]` GitHub API: 14.948 bintang, Python, MIT, dibuat 2026-07-20.
+- `[code]` `andrewyng/openworker` @ `141d02a` (2026-08-22), read via
+  `git clone --depth 1`. Files read: `coworker/risk.py` (in full),
+  `coworker/inbox.py:77,142,362-380,387-406`,
+  `coworker/engine.py:31-37,55,65,356-360,75`, `coworker/config.py:34`,
+  `coworker/agent.py:505-515`, `coworker/compaction.py:86-94`,
+  `coworker/sessions.py:37-39`, `coworker/tools/subagent.py:42,79-100`,
+  `coworker/toolchain.py:171,227`, `tests/test_unattended.py:22-60`.
+- `[docs]` The repo README — its open beta status, the single-operator claim, the
+  list of 25+ connectors, and the desktop app + local agent server architecture
+  (on top of `aisuite`).
+- `[docs]` The GitHub API: 14,948 stars, Python, MIT, created 2026-07-20.
