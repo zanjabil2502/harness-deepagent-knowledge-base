@@ -1,496 +1,498 @@
-# Best practice teknis — ekstraksi dokumentasi resmi deepagents
+# Technical best practices — extracted from the official deepagents docs
 
-Praktik yang **dinyatakan sendiri** oleh dokumentasi resmi
-`docs.langchain.com/oss/python/deepagents/`, disarikan dari 40 halaman
-snapshot di [`../upstream/deepagents-docs/`](../upstream/deepagents-docs/README.md).
+Practices **stated by** the official documentation at
+`docs.langchain.com/oss/python/deepagents/`, distilled from the 40-page
+snapshot in
+[`../upstream/deepagents-docs/`](../upstream/deepagents-docs/README.md).
 
-## Cara membaca file ini
+## How to read this file
 
-Tiap butir menyebut halaman dan baris di snapshot, jadi klaimnya bisa
-dilacak ke kalimat aslinya. Tiga hal yang wajib dipegang saat memakainya:
+Every item names the page and line in the snapshot, so each claim can be
+traced back to its original sentence. Three things to hold onto:
 
-- **Ini `[docs]`, bukan `[code]`.** Kalau source paket terpasang
-  bertentangan dengan halaman dokumentasi, source yang menang. Di beberapa
-  butir di bawah pertentangan itu sudah ditemukan dan ditandai.
-- **Sebagian "Tip" adalah penempatan produk.** Dari 76 blok `<Tip>`/
-  `<Warning>` yang dipanen, belasan di antaranya adalah ajakan memakai
-  LangSmith (tracing, Deployments, Engine, Gateway, Sandboxes, Fleet).
-  Itu bukan praktik rekayasa yang netral vendor — nasihat "pasang
-  observability" tetap benar, tapi pilihan alatnya keputusanmu. Yang
-  terkait produk dikumpulkan di §Baca dengan skeptis, tidak dicampur ke
-  butir teknis.
-- **Beberapa peringatan sudah basi.** Dokumentasi masih memuat catatan
-  transisi dari versi lama; yang ketahuan disebut di tempatnya.
+- **This is `[docs]`, not `[code]`.** When the installed package's source
+  contradicts a documentation page, the source wins. In several items
+  below that contradiction has already been found and is flagged.
+- **Some "Tips" are product placement.** Of the 76 `<Tip>`/`<Warning>`
+  blocks harvested, a dozen or so are invitations to use LangSmith
+  (tracing, Deployments, Engine, Gateway, Sandboxes, Fleet). That isn't
+  vendor-neutral engineering advice — "install observability" remains
+  true, but the tool choice is yours. Product-linked items are gathered
+  under §Read with skepticism rather than mixed into the technical ones.
+- **Some warnings are stale.** The documentation still carries transition
+  notes from older versions; the ones spotted are called out in place.
 
-Butir yang menyangkut interpreter, PTC, dan dynamic subagent tidak
-diulang di sini — semuanya di
+Items covering interpreters, PTC, and dynamic subagents are not repeated
+here — they all live in
 [`../concepts/code-orchestration.md`](../concepts/code-orchestration.md).
 
-## 1. Invokasi & multi-user
+## 1. Invocation & multi-user
 
-**Tiap invokasi membawa dua parameter run-level, dan keduanya
-independen.** `thread_id` (lewat `config={"configurable": {...}}`)
-menentukan **percakapan** — riwayat pesan dan checkpoint. `context`
-membawa data **per-run** yang dibaca tool dan middleware: `user_id`,
-API key, feature flag, metadata sesi; bentuknya dideklarasikan lewat
-`context_schema` dan diakses lewat `runtime.context`. Mengubah salah
-satunya tidak memengaruhi yang lain, dan keduanya hampir selalu dikirim
-bersamaan. `[docs]` — `going-to-production.md` baris 67-69, 322-324.
+**Every invocation carries two run-level parameters, and they are
+independent.** `thread_id` (through `config={"configurable": {...}}`)
+determines the **conversation** — message history and checkpoints.
+`context` carries **per-run** data that tools and middleware read:
+`user_id`, API keys, feature flags, session metadata; its shape is
+declared through `context_schema` and accessed through `runtime.context`.
+Changing one does not affect the other, and they are almost always passed
+together. `[docs]` — `going-to-production.md` lines 67-69, 322-324.
 
-Bagi pola multi-user berbasis `user_id`, ini pemisahan yang tepat:
-identitas user **tidak** boleh diturunkan dari `thread_id`, karena satu
-user bisa punya banyak thread dan `thread_id` datang dari klien.
+For a `user_id`-based multi-user pattern, this is exactly the right
+separation: user identity must **not** be derived from `thread_id`,
+because one user can have many threads and `thread_id` comes from the
+client.
 
-**Tiga primitif menentukan apa yang terbagi**: Thread (satu percakapan;
-riwayat dan file scratch tidak terbawa keluar), User (memori dan file
-bisa privat atau terbagi; identitas dan otorisasi datang dari lapis auth
-sendiri), Assistant (instance agent terkonfigurasi). `[docs]` —
-`going-to-production.md` baris 15-17.
+**Three primitives determine what is shared**: Thread (one conversation;
+history and scratch files don't carry outside it), User (memory and files
+may be private or shared; identity and authorisation come from your own
+auth layer), Assistant (a configured agent instance). `[docs]` —
+`going-to-production.md` lines 15-17.
 
-**Bangun async sejak awal.** Beban kerja LLM I/O-bound; tiga anjuran
-konkret: tulis tool async native (LangChain menjalankan tool sync di
-thread terpisah — bekerja, tapi menambah overhead threading), pakai hook
-middleware async (`abefore_agent`, bukan `before_agent`), dan await
-lifecycle resource eksternal (pembuatan sandbox, koneksi MCP server).
-`[docs]` — `going-to-production.md` baris 387-397.
+**Build async from the start.** LLM workloads are I/O-bound; three
+concrete recommendations: write natively async tools (LangChain runs sync
+tools on a separate thread — it works, but adds threading overhead), use
+async middleware hooks (`abefore_agent`, not `before_agent`), and await
+external resource lifecycles (sandbox creation, MCP server connections).
+`[docs]` — `going-to-production.md` lines 387-397.
 
-## 2. Backend & filesystem
+## 2. Backends & filesystem
 
-**Pilih backend dari apa yang harus bertahan, bukan dari kemudahan.**
-`StateBackend` (bawaan) = scratch per-thread, bertahan antar giliran lewat
-checkpointer tapi tidak lintas thread — **di-checkpoint tiap langkah,
-jadi hindari menulis file besar**. `StoreBackend` = lintas thread, wajib
-di-scope lewat namespace factory. `CompositeBackend` = campuran, scratch
-per-thread sebagai default dengan route lintas thread untuk path tertentu
-seperti `/memories/`. `[docs]` — `going-to-production.md` baris 551-561.
+**Choose a backend by what must survive, not by convenience.**
+`StateBackend` (the default) = per-thread scratch, surviving across turns
+through the checkpointer but not across threads — **checkpointed at every
+step, so avoid writing large files**. `StoreBackend` = cross-thread, and
+must be scoped through a namespace factory. `CompositeBackend` = a mix,
+per-thread scratch by default with cross-thread routes for specific paths
+like `/memories/`. `[docs]` — `going-to-production.md` lines 551-561.
 
-**`FilesystemBackend` dan `LocalShellBackend` tidak boleh dipakai di agent
-yang di-deploy.** Dokumentasi menyebutnya eksplisit sebagai
-"inappropriate use cases: web servers or HTTP APIs" dan "production
-environments (such as web servers, APIs, multi-tenant systems)".
-`[docs]` — `backends.md` baris 207, 346; `going-to-production.md` baris
-566.
+**`FilesystemBackend` and `LocalShellBackend` must not be used in deployed
+agents.** The documentation names them explicitly as "inappropriate use
+cases: web servers or HTTP APIs" and "production environments (such as web
+servers, APIs, multi-tenant systems)". `[docs]` — `backends.md` lines 207,
+346; `going-to-production.md` line 566.
 
-Dua rincian yang menentukan apakah pengamanannya nyata:
+Two details determine whether their protection is real:
 
-- `virtual_mode=True` **wajib** dipasang bersama `root_dir` untuk
-  mengaktifkan pembatasan path (memblokir `..`, `~`, dan path absolut di
-  luar root). Bawaannya `virtual_mode=False` yang **tidak memberi
-  keamanan sama sekali meski `root_dir` diset**. `[docs]` —
-  `backends.md` baris 230.
-- Pada `LocalShellBackend`, `virtual_mode=True` **tidak memberi keamanan
-  apa pun**, karena perintah shell bisa menjangkau path mana pun di
-  sistem. `[docs]` — `backends.md` baris 375.
+- `virtual_mode=True` **must** accompany `root_dir` to enable path
+  restrictions (blocking `..`, `~`, and absolute paths outside the root).
+  The default is `virtual_mode=False`, which **provides no security at all
+  even with `root_dir` set**. `[docs]` — `backends.md` line 230.
+- On `LocalShellBackend`, `virtual_mode=True` provides **no security
+  whatsoever**, because shell commands can reach any path on the system.
+  `[docs]` — `backends.md` line 375.
 
-Ini pola yang sama dengan temuan RLS-di-bawah-superuser di
+This is the same pattern as the RLS-under-superuser finding in
 [`../concepts/isolation-and-scoping.md`](../concepts/isolation-and-scoping.md):
-kontrol yang terlihat aktif tapi prasyaratnya tidak terpenuhi.
+a control that looks active while its prerequisite is unmet.
 
-**Bungkus `FilesystemBackend` dalam `CompositeBackend`** untuk hampir
-semua kasus. Alasannya bukan gaya: deepagents menulis data internalnya
-sendiri ke backend — hasil tool besar yang di-offload ke
-`/large_tool_results/` dan riwayat percakapan ke `/conversation_history/`.
-Dengan `FilesystemBackend` telanjang, semua itu mendarat di disk nyata di
-bawah `root_dir`, bercampur dengan berkas project. Route `/workspace/` ke
-`FilesystemBackend` dan biarkan sisanya di `StateBackend`. `[docs]` —
-`backends.md` baris 322; `customization.md` baris 1947. Lihat
-[`middleware.md`](middleware.md) §`artifacts_root` untuk mekanisme yang
-menentukan ke mana prefix-prefix itu benar-benar menulis.
+**Wrap `FilesystemBackend` in a `CompositeBackend`** for nearly every
+case. The reason isn't style: deepagents writes its own internal data to
+the backend — large tool results offloaded to `/large_tool_results/` and
+conversation history to `/conversation_history/`. With a bare
+`FilesystemBackend`, all of that lands on real disk under `root_dir`,
+mixed in with project files. Route `/workspace/` to `FilesystemBackend`
+and leave the rest on `StateBackend`. `[docs]` — `backends.md` line 322;
+`customization.md` line 1947. See [`middleware.md`](middleware.md)
+§`artifacts_root` for the mechanism that decides where those prefixes
+actually write.
 
-**Namespace `StoreBackend` sudah wajib, bukan lagi anjuran.**
-Dokumentasi menulis "The `namespace` parameter will be **required** in
-v0.5.0" (`[docs]` — `backends.md` baris 631) — peringatan transisi yang
-sudah lewat. Di `deepagents==0.7.8` `namespace` adalah argumen
-keyword-only **tanpa default**, jadi lupa mengisinya gagal saat
-konstruksi, bukan diam-diam berbagi data. `[code]` —
-`deepagents/backends/store.py` baris 99-104.
+**`StoreBackend`'s namespace is already mandatory, no longer advice.**
+The documentation says "The `namespace` parameter will be **required** in
+v0.5.0" (`[docs]` — `backends.md` line 631) — a transition warning that
+has already passed. In `deepagents==0.7.8`, `namespace` is a keyword-only
+argument **with no default**, so forgetting it fails at construction
+rather than silently sharing data. `[code]` —
+`deepagents/backends/store.py` lines 99-104.
 
-**Metode backend di luar graph run tidak berefek.** Memanggil
-`state_backend.upload_files(...)` di luar eksekusi graph tidak berlaku
-sampai graph berjalan. `[docs]` — `backends.md` baris 191.
+**Backend methods outside a graph run have no effect.** Calling
+`state_backend.upload_files(...)` outside graph execution does not take
+effect until the graph runs. `[docs]` — `backends.md` line 191.
 
-**Pola backend factory sudah deprecated** sejak 0.5.0 — kirim instance
-backend yang sudah dikonstruksi, bukan fungsi factory. `[docs]` —
-`backends.md` baris 1075.
+**The backend factory pattern is deprecated** as of 0.5.0 — pass a
+constructed backend instance, not a factory function. `[docs]` —
+`backends.md` line 1075.
 
-## 3. Konteks
+## 3. Context
 
-**Kompresi konteks sudah menyala tanpa middleware tambahan.** Tiap
-`create_deep_agent` sudah memuat offloading dan summarization; tidak perlu
-memasang apa pun. `[docs]` — `context-engineering.md` baris 811.
+**Context compression is already on with no extra middleware.** Every
+`create_deep_agent` already includes offloading and summarization; nothing
+needs installing. `[docs]` — `context-engineering.md` line 811.
 
-Angka bawaannya perlu diketahui sebelum menyetel apa pun:
+Its default numbers are worth knowing before tuning anything:
 
-- Offload terjadi saat input **atau** hasil tool melewati **20.000
-  token**. Hasil besar diganti path berkas plus preview 10 baris pertama;
-  input besar dipangkas jadi pointer saat konteks sesi melewati **85%**
-  jendela model. `[docs]` — `context-engineering.md` baris 831-841.
-- Summarization terpicu di **85% `max_input_tokens`** dari profil model,
-  menyisakan **10%** token sebagai konteks terkini, dan jatuh ke
-  **170.000 token / 6 pesan** bila profil model tak tersedia. Bila
-  panggilan model melempar `ContextOverflowError`, agent langsung jatuh ke
-  summarization lalu mencoba ulang. `[docs]` —
-  `context-engineering.md` baris 860-866.
-- Summarization menulis dua hal: ringkasan terstruktur di konteks
-  (intent sesi, artefak, langkah berikutnya) **dan** rendering teks
-  percakapan asli ke filesystem sebagai catatan kanonik. `[docs]` —
-  `context-engineering.md` baris 852-856.
+- Offloading happens when a tool's input **or** result exceeds **20,000
+  tokens**. Large results are replaced by a file path plus a 10-line
+  preview; large inputs are trimmed to a pointer once session context
+  crosses **85%** of the model's window. `[docs]` —
+  `context-engineering.md` lines 831-841.
+- Summarization triggers at **85% of `max_input_tokens`** from the model
+  profile, keeps **10%** of tokens as recent context, and falls back to
+  **170,000 tokens / 6 messages** when the model profile is unavailable.
+  If a model call raises `ContextOverflowError`, the agent immediately
+  falls back to summarization and retries. `[docs]` —
+  `context-engineering.md` lines 860-866.
+- Summarization writes two things: a structured summary in context
+  (session intent, artifacts, next steps) **and** a text rendering of the
+  original conversation to the filesystem as the canonical record.
+  `[docs]` — `context-engineering.md` lines 852-856.
 
-**Pangkas skema tool sebelum kompresi apa pun berjalan.** Tool bawaan yang
-tak terpakai tetap mengirim skema penuh **tiap giliran**. `excluded_tools`
-di harness profile membuangnya dan mengecilkan baseline prompt untuk
-seluruh run — ini konfigurasi, bukan kompresi otomatis, dan bekerja lebih
-awal daripada keduanya. `[docs]` — `context-engineering.md` baris 315.
+**Trim tool schemas before any compression runs.** Unused built-in tools
+still send their full schema **every turn**. `excluded_tools` on a harness
+profile removes them and shrinks the baseline prompt for the whole run —
+this is configuration rather than automatic compression, and it acts
+earlier than either. `[docs]` — `context-engineering.md` line 315.
 
-**Token summarization ikut terbawa saat streaming.** Saring lewat
-metadata: `metadata.get("lc_source") == "summarization"`. Tanpa itu,
-ringkasan internal muncul di UI sebagai jawaban asisten. `[docs]` —
-`context-engineering.md` baris 869-881.
+**Summarization tokens leak into streaming.** Filter through metadata:
+`metadata.get("lc_source") == "summarization"`. Without it, the internal
+summary appears in the UI as an assistant answer. `[docs]` —
+`context-engineering.md` lines 869-881.
 
-**Keluaran tool biner disimpan ke backend, bukan dikembalikan utuh.**
-Saat tool menghasilkan gambar atau data biner besar, simpan artefaknya ke
-backend lalu kembalikan deskripsi teks singkat plus path/URL. Kompresi
-bawaan **tidak** mengecilkan gambar atau menurunkan resolusinya, jadi
-media yang masuk konteks tetap di sana seukuran aslinya. `[docs]` —
-`multimodal.md` baris 64; `context-engineering.md` baris 844-846.
+**Binary tool output goes to the backend rather than being returned
+whole.** When a tool produces an image or large binary data, save the
+artifact to the backend and return a short text description plus a
+path/URL. Built-in compression does **not** shrink images or lower their
+resolution, so media that enters context stays there at full size.
+`[docs]` — `multimodal.md` line 64; `context-engineering.md` lines
+844-846.
 
-**Enam praktik yang dirangkum dokumentasi sendiri**: mulai dari input
-context yang benar (memori minimal untuk konvensi yang selalu relevan,
-skill terfokus untuk kapabilitas per-tugas); delegasikan kerja berat ke
-subagent; kalau saat debugging terlihat subagent menghasilkan output
-panjang, tambahkan arahan meringkas di `system_prompt`-nya; pakai
-filesystem untuk output besar; dokumentasikan struktur memori jangka
-panjang kepada agent; kirim metadata user/API key/konfigurasi statis lewat
-`context`. `[docs]` — `context-engineering.md` baris 1210-1216.
+**Six practices the documentation summarises itself**: start from the
+right input context (minimal memory for always-relevant conventions,
+focused skills for per-task capability); delegate heavy work to subagents;
+if debugging shows a subagent producing long output, add summarising
+guidance to its `system_prompt`; use the filesystem for large output;
+document the long-term memory structure to the agent; pass user
+metadata/API keys/static configuration through `context`. `[docs]` —
+`context-engineering.md` lines 1210-1216.
 
-## 4. Delegasi & subagent
+## 4. Delegation & subagents
 
-**Kontrak hasil diatur lewat `system_prompt` subagent, dan itu memang
-satu-satunya tuas.** Anjuran eksplisitnya: instruksikan subagent
-mengembalikan ringkasan, bukan data mentah — contoh dokumentasi memakai
-"Return only the essential summary (under 500 words). Do NOT include raw
-search results or detailed tool outputs." `[docs]` —
-`context-engineering.md` baris 1024-1036. Ini sisi praktis dari kontrak
-hasil di [`../concepts/delegation.md`](../concepts/delegation.md).
+**The result contract is set through the subagent's `system_prompt`, and
+that really is the only lever.** The explicit recommendation: instruct the
+subagent to return a summary rather than raw data — the documentation's
+example uses "Return only the essential summary (under 500 words). Do NOT
+include raw search results or detailed tool outputs." `[docs]` —
+`context-engineering.md` lines 1024-1036. This is the practical side of
+the result contract in
+[`../concepts/delegation.md`](../concepts/delegation.md).
 
-**Untuk data besar, subagent menulis ke file dan induk membaca
-seperlunya** — bukan mengembalikannya lewat pesan. `[docs]` —
-`context-engineering.md` baris 1040.
+**For large data, the subagent writes to a file and the parent reads what
+it needs** — rather than returning it through a message. `[docs]` —
+`context-engineering.md` line 1040.
 
-**Menjalankan agent tanpa tool `task`** butuh dua hal sekaligus:
+**Running an agent without the `task` tool** requires two things at once:
 `general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)`
-**dan** tidak mengirim subagent sinkron lewat `subagents=`.
-`SubAgentMiddleware` hanya terpasang kalau ada minimal satu subagent
-sinkron. Async subagent tidak terpengaruh. `[docs]` — `profiles.md`
-baris 68; `subagents.md` baris 71.
+**and** passing no synchronous subagents through `subagents=`.
+`SubAgentMiddleware` is only installed when at least one synchronous
+subagent exists. Async subagents are unaffected. `[docs]` —
+`profiles.md` line 68; `subagents.md` line 71.
 
-**Jangan pakai `excluded_middleware` untuk itu.** Mendaftarkan
-`FilesystemMiddleware`, `SubAgentMiddleware`, atau middleware permission
-internal di `excluded_middleware` melempar `ValueError` — semuanya
-scaffolding wajib. Untuk menyembunyikan tool-nya dari model tanpa
-membuang middleware-nya, pakai `excluded_tools`. `[docs]` —
-`profiles.md` baris 68; `subagents.md` baris 71. Mekanisme penegakannya
-ada di [`middleware.md`](middleware.md) §Exclusion.
+**Don't use `excluded_middleware` for that.** Listing
+`FilesystemMiddleware`, `SubAgentMiddleware`, or the internal permission
+middleware in `excluded_middleware` raises `ValueError` — all of them are
+required scaffolding. To hide their tools from the model without removing
+the middleware, use `excluded_tools`. `[docs]` — `profiles.md` line 68;
+`subagents.md` line 71. The enforcement mechanism is in
+[`middleware.md`](middleware.md) §Exclusion.
 
 ## 5. Skills
 
-Halaman ini relevan dua kali: sebagai cara memberi kapabilitas ke agent,
-dan sebagai spesifikasi yang KB ini sendiri patuhi.
+This page is relevant twice: as a way of giving the agent capability, and
+as the specification this KB itself follows.
 
-**Dua lapis, dua anggaran.** Frontmatter tiap skill masuk ke system prompt
-saat discovery; body-nya baru dibaca saat aktivasi. Karena itu: frontmatter
-ringkas, body `SKILL.md` **di bawah 5.000 token**, dan spesifikasi Agent
-Skills menganjurkan `SKILL.md` **di bawah 500 baris**. Menjaga keduanya
-kecil membuat banyak skill bisa dimuat tanpa menyesaki jendela konteks.
-`[docs]` — `skills.md` baris 197, 214.
+**Two layers, two budgets.** Each skill's frontmatter enters the system
+prompt at discovery; its body is only read on activation. Hence: concise
+frontmatter, a `SKILL.md` body **under 5,000 tokens**, and the Agent
+Skills specification's recommendation of `SKILL.md` **under 500 lines**.
+Keeping both small lets many skills load without crowding the context
+window. `[docs]` — `skills.md` lines 197, 214.
 
-**`description` adalah satu-satunya informasi yang dilihat agent saat
-memilih.** Ia harus menyatakan **apa** yang skill lakukan **dan kapan**
-mengaktifkannya, dengan kata kunci yang bisa dicocokkan. "Helps with
-PDFs." disebut dokumentasi sebagai contoh yang terlalu kabur untuk
-pencocokan yang andal. `[docs]` — `skills.md` baris 199-212.
+**`description` is the only information the agent sees when choosing.** It
+must state **what** the skill does **and when** to activate it, with
+keywords that can be matched. "Helps with PDFs." is named by the
+documentation as an example too vague for reliable matching. `[docs]` —
+`skills.md` lines 199-212.
 
-**Sedikit skill yang ter-scope baik mengalahkan banyak yang tumpang
-tindih.** Deskripsi yang beririsan membuat agent mengaktifkan skill yang
-salah atau ragu di antara pilihan; kalau dua skill tujuannya mirip,
-gabungkan. Semakin banyak skill berdeskripsi mirip, semakin turun
-kemampuan agent memilih yang benar. `[docs]` — `skills.md` baris 212,
-239-243.
+**A few well-scoped skills beat many overlapping ones.** Overlapping
+descriptions make the agent activate the wrong skill or hesitate between
+options; if two skills serve similar purposes, consolidate them. The more
+similarly-described skills exist, the worse the agent gets at picking the
+right one. `[docs]` — `skills.md` lines 212, 239-243.
 
-**Rujukan berkas satu tingkat dari `SKILL.md`.** Rantai rujukan bersarang
-dalam memaksa agent melakukan beberapa kali baca sebelum sampai ke
-informasinya. Agent **tidak** menemukan berkas pendukung sendiri —
-`SKILL.md` harus menyatakan isi tiap berkas dan kapan dipakai. `[docs]` —
-`skills.md` baris 230, 1776.
+**File references one level from `SKILL.md`.** Deeply nested reference
+chains force the agent through several reads before reaching the
+information. The agent does **not** discover supporting files on its own —
+`SKILL.md` must state what each file contains and when to use it.
+`[docs]` — `skills.md` lines 230, 1776.
 
-**Tiga kegagalan diam yang perlu dicek saat skill tidak aktif**:
-`SKILL.md` di atas **10 MB** dilewati saat discovery tanpa error;
-`name` di frontmatter wajib sama dengan nama direktori induk; dan bila
-nama skill yang sama muncul di beberapa sumber, **sumber terakhir yang
-menang** — skill lama atau kosong dari path belakangan bisa menimpa yang
-dimaksud. `[docs]` — `skills.md` baris 1841, 1766-1768.
+**Three silent failures to check when a skill doesn't activate**: a
+`SKILL.md` over **10 MB** is skipped at discovery with no error; the
+frontmatter `name` must match the parent directory name; and when the same
+skill name appears in several sources, **the last source wins** — an old
+or empty skill from a later path can override the intended one. `[docs]` —
+`skills.md` lines 1841, 1766-1768.
 
-**Skill tidak otomatis ada di dalam sandbox.** Berkas skill di luar
-kontainer tidak tersedia sampai disalin masuk. `[docs]` — `skills.md`
-baris 1780.
+**Skills are not automatically present inside a sandbox.** Skill files
+outside the container are unavailable until copied in. `[docs]` —
+`skills.md` line 1780.
 
 ## 6. Memory
 
-**Bawaannya scope user.** Tabel scope-nya: `(user_id)` untuk preferensi
-dan konteks per-user (disebut "recommended default"), `(assistant_id)`
-untuk instruksi bersama satu assistant, `(org_id)` untuk kebijakan
-read-only lintas semua user. `[docs]` — `going-to-production.md` baris
-425-429.
+**The default is user scope.** Its scope table: `(user_id)` for per-user
+preferences and context (called the "recommended default"),
+`(assistant_id)` for instructions shared by one assistant, `(org_id)` for
+read-only policies across all users. `[docs]` — `going-to-production.md`
+lines 425-429.
 
-**Memori bersama adalah vektor prompt injection.** Kalau satu user bisa
-menulis ke memori yang dibaca percakapan user lain, user jahat bisa
-menyuntikkan instruksi ke state bersama. Mitigasinya berlapis: default ke
-scope user; jadikan kebijakan bersama **read-only** dan isi lewat kode
-aplikasi (bukan oleh agent); pasang approval manusia sebelum agent menulis
-ke path sensitif; tegakkan lewat `permissions` (deklaratif) atau backend
-policy hook (logika kustom). `[docs]` — `going-to-production.md` baris
-431-433; `memory.md` baris 473-486.
+**Shared memory is a prompt injection vector.** If one user can write to
+memory that another user's conversation reads, a malicious user can inject
+instructions into shared state. Mitigation is layered: default to user
+scope; make shared policies **read-only** and populate them from
+application code (not by the agent); require human approval before the
+agent writes to sensitive paths; enforce through `permissions`
+(declarative) or a backend policy hook (custom logic). `[docs]` —
+`going-to-production.md` lines 431-433; `memory.md` lines 473-486.
 
-**Tulis bersamaan ke berkas yang sama = last-write-wins.** Jarang jadi
-masalah untuk memori scope-user (satu user biasanya satu percakapan
-aktif), tapi nyata untuk scope assistant/organisasi. Mitigasinya:
-serialisasi lewat konsolidasi background, atau pecah memori jadi berkas
-terpisah per topik untuk mengurangi kontensi. `[docs]` — `memory.md`
-baris 488-492.
+**Concurrent writes to the same file = last-write-wins.** Rarely a problem
+for user-scoped memory (one user usually has one active conversation), but
+real for assistant/organisation scope. Mitigation: serialise through
+background consolidation, or split memory into separate files per topic to
+reduce contention. `[docs]` — `memory.md` lines 488-492.
 
-**Beberapa agent dalam satu deployment** dipisah dengan menambahkan
-`assistant_id` ke namespace, mis.
+**Several agents in one deployment** are separated by adding
+`assistant_id` to the namespace, e.g.
 `namespace=lambda rt: (rt.server_info.assistant_id, rt.server_info.user.identity)`.
-`[docs]` — `memory.md` baris 494-508.
+`[docs]` — `memory.md` lines 494-508.
 
-**Konsolidasi terjadwal wajib sinkron dengan jendela lookback-nya.**
-Kalau cron berjalan lebih sering daripada lookback, percakapan yang sama
-diproses ulang; kalau lebih jarang, memori yang jatuh di luar jendela
-hilang. `[docs]` — `memory.md` baris 466.
+**A scheduled consolidation must stay in sync with its lookback window.**
+If the cron runs more often than the lookback, the same conversations are
+reprocessed; less often, and memories falling outside the window are lost.
+`[docs]` — `memory.md` line 466.
 
 ## 7. Permissions
 
-**Evaluasinya first-match-wins, dan bila tidak ada aturan yang cocok
-panggilan itu DIIZINKAN.** Default permisif ini menentukan bentuk daftar
-aturannya: aturan spesifik lebih dulu, penutup `deny` di `/**` paling
-akhir. Dokumentasi menyertakan contoh salah yang persis jadi bug —
-`/workspace/**` mode allow ditaruh sebelum `/workspace/.env` mode deny,
-sehingga deny-nya tak pernah tercapai. `[docs]` — `permissions.md` baris
-53, 193-236.
+**Evaluation is first-match-wins, and when no rule matches the call is
+ALLOWED.** This permissive default determines the shape of the rule list:
+specific rules first, a closing `deny` on `/**` last. The documentation
+includes a wrong example that becomes exactly this bug — `/workspace/**`
+in allow mode placed before `/workspace/.env` in deny mode, so the deny is
+never reached. `[docs]` — `permissions.md` lines 53, 193-236.
 
-Dalam kerangka [`../concepts/guardrails.md`](../concepts/guardrails.md),
-default tanpa penutup adalah **fail-open**.
+In the framing of [`../concepts/guardrails.md`](../concepts/guardrails.md),
+a default with no closing rule is **fail-open**.
 
-**Cakupan `operations` tidak seintuitif namanya**: `"read"` mencakup `ls`,
-`read_file`, `glob`, `grep`; `"write"` mencakup `write_file`, `edit_file`,
-`delete`. `[docs]` — `permissions.md` baris 49-51.
+**The coverage of `operations` is less intuitive than its names**:
+`"read"` covers `ls`, `read_file`, `glob`, `grep`; `"write"` covers
+`write_file`, `edit_file`, `delete`. `[docs]` — `permissions.md` lines
+49-51.
 
-**Pola `interrupt` harus dijangkar dengan segmen literal di depan**
-(mis. `/secrets/**`, bukan `/**/secrets`). Tool massal (`ls`, `glob`,
-`grep`, dan `delete` pada direktori) memicu interrupt kalau subtree
-pencariannya **bisa** beririsan dengan prefix aturan, jadi pola tanpa
-jangkar over-fire secara konservatif. `[docs]` — `permissions.md` baris
-91.
+**`interrupt` patterns must be anchored with a literal leading segment**
+(e.g. `/secrets/**`, not `/**/secrets`). Bulk tools (`ls`, `glob`, `grep`,
+and `delete` on a directory) fire the interrupt when their search subtree
+**could** intersect the rule's prefix, so an unanchored pattern over-fires
+conservatively. `[docs]` — `permissions.md` line 91.
 
-**Subagent mewarisi permission induk; mengisi `permissions` di spec-nya
-MENGGANTI seluruh aturan induk**, bukan menambah. `[docs]` —
-`permissions.md` baris 239.
+**Subagents inherit the parent's permissions; setting `permissions` in a
+subagent spec REPLACES the parent's rules entirely**, rather than adding
+to them. `[docs]` — `permissions.md` line 239.
 
-**Dengan `CompositeBackend` bawaan sandbox, tiap path permission wajib
-berada di bawah prefix route yang dikenal** — di luar itu melempar
-`NotImplementedError`, termasuk `/**` yang mencakup semua route. Alasannya
-prinsipil: sandbox mengizinkan eksekusi perintah sembarang, jadi
-pembatasan berbasis path saja tidak bisa mencegah akses filesystem lewat
-shell. `[docs]` — `permissions.md` baris 286, 316-340.
+**With a `CompositeBackend` whose default is a sandbox, every permission
+path must sit under a known route prefix** — anything else raises
+`NotImplementedError`, including a `/**` covering every route. The reason
+is principled: a sandbox permits arbitrary command execution, so
+path-based restrictions alone cannot prevent filesystem access through the
+shell. `[docs]` — `permissions.md` lines 286, 316-340.
 
-**Pilih alat yang tepat**: `permissions` untuk aturan allow/deny berbasis
-path pada tool filesystem bawaan; backend policy hook saat butuh logika
-validasi kustom (rate limiting, audit logging, inspeksi konten) atau saat
-perlu mengendalikan tool kustom. `[docs]` — `permissions.md` baris 18.
+**Pick the right tool**: `permissions` for path-based allow/deny rules on
+the built-in filesystem tools; a backend policy hook when custom
+validation logic is needed (rate limiting, audit logging, content
+inspection) or when custom tools must be controlled. `[docs]` —
+`permissions.md` line 18.
 
 ## 8. Human-in-the-loop
 
-**Checkpointer wajib.** HITL butuh state yang bertahan antara interrupt
-dan resume; tanpa checkpointer polanya tidak bisa jalan. `[docs]` —
-`human-in-the-loop.md` baris 880-895.
+**A checkpointer is mandatory.** HITL needs state that survives between
+interrupt and resume; without a checkpointer the pattern cannot work.
+`[docs]` — `human-in-the-loop.md` lines 880-895.
 
-**Resume memakai config dan `thread_id` yang sama.** `[docs]` —
-`human-in-the-loop.md` baris 896-907.
+**Resume uses the same config and `thread_id`.** `[docs]` —
+`human-in-the-loop.md` lines 896-907.
 
-**Urutan `decisions` harus sama persis dengan urutan `action_requests`** —
-satu keputusan per aksi, berurutan. `[docs]` — `human-in-the-loop.md`
-baris 909-929.
+**The `decisions` order must match the `action_requests` order exactly** —
+one decision per action, in sequence. `[docs]` — `human-in-the-loop.md`
+lines 909-929.
 
-**Sesuaikan konfigurasi dengan tingkat risiko**, jangan seragam: risiko
-tinggi dapat `["approve", "edit", "reject"]` penuh, risiko menengah tanpa
-`edit`, risiko rendah `False` (tanpa interrupt sama sekali). `[docs]` —
-`human-in-the-loop.md` baris 931-949.
+**Match configuration to risk level** rather than applying one uniformly:
+high risk gets the full `["approve", "edit", "reject"]`, medium risk drops
+`edit`, low risk gets `False` (no interrupt at all). `[docs]` —
+`human-in-the-loop.md` lines 931-949.
 
-**Sunting argumen tool secara konservatif.** Modifikasi besar pada argumen
-asli bisa membuat model menilai ulang pendekatannya dan berpotensi
-menjalankan tool berkali-kali atau mengambil aksi tak terduga. `[docs]` —
-`human-in-the-loop.md` baris 334.
+**Edit tool arguments conservatively.** Large modifications to the
+original arguments can make the model re-evaluate its approach and
+potentially execute the tool several times or take unexpected actions.
+`[docs]` — `human-in-the-loop.md` line 334.
 
-## 9. Fault tolerance & anggaran
+## 9. Fault tolerance & budgets
 
-**Taksonomi error berdasarkan siapa yang memperbaikinya** — ini tabel
-paling bisa dipakai ulang di seluruh dokumentasi, dan langsung memetakan
-ke mode kegagalan di blueprint:
+**A taxonomy of errors by who fixes them** — the most reusable table in
+the entire documentation, and one that maps directly onto the blueprint's
+failure modes:
 
-| Jenis error | Yang memperbaiki | Strategi | Mekanisme |
+| Error kind | Who fixes it | Strategy | Mechanism |
 |---|---|---|---|
-| Transient (jaringan, rate limit) | Sistem, otomatis | Retry dengan exponential backoff | `ModelRetryMiddleware`, `ToolRetryMiddleware` |
-| Bisa dipulihkan LLM (tool gagal, parsing) | LLM | Ubah jadi `ToolMessage` error, biarkan model menyesuaikan | `ToolErrorMiddleware` |
-| Butuh manusia (informasi kurang, instruksi tak jelas) | Manusia | Jeda dengan `interrupt()` | `interrupt_on` |
-| Provider tumbang | Sistem, otomatis | Pindah ke model alternatif | `ModelFallbackMiddleware` |
-| Panggilan berlebih (loop lari) | Sistem, otomatis | Batasi panggilan model & tool per run | `ModelCallLimitMiddleware`, `ToolCallLimitMiddleware` |
-| Tak terduga | Developer | **Biarkan naik** | tanpa middleware |
+| Transient (network, rate limits) | The system, automatically | Retry with exponential backoff | `ModelRetryMiddleware`, `ToolRetryMiddleware` |
+| LLM-recoverable (tool failure, parsing) | The LLM | Convert to an error `ToolMessage` and let the model adjust | `ToolErrorMiddleware` |
+| Needs a human (missing info, unclear instructions) | A human | Pause with `interrupt()` | `interrupt_on` |
+| Provider outage | The system, automatically | Fall back to another model | `ModelFallbackMiddleware` |
+| Excessive calls (runaway loop) | The system, automatically | Cap model & tool calls per run | `ModelCallLimitMiddleware`, `ToolCallLimitMiddleware` |
+| Unexpected | The developer | **Let it propagate** | no middleware |
 
-`[docs]` — `fault-tolerance.md` baris 15-22.
+`[docs]` — `fault-tolerance.md` lines 15-22.
 
-Baris terakhir yang paling sering dilanggar: "Do not catch what you cannot
-handle." `ToolErrorMiddleware` hanya memunculkan exception yang secara
-eksplisit kamu kembalikan isinya; sisanya merambat naik dan menghentikan
-run — itu perilaku yang diinginkan. `[docs]` — `fault-tolerance.md`
-baris 130-138.
+The last row is the most frequently violated: "Do not catch what you
+cannot handle." `ToolErrorMiddleware` only surfaces exceptions whose
+content you explicitly return; the rest propagate and stop the run — which
+is the desired behaviour. `[docs]` — `fault-tolerance.md` lines 130-138.
 
-**Batasi retry ke tool yang memang diuntungkan olehnya.** `read_file`
-yang gagal tidak akan tertolong oleh retry; web search yang timeout
-kemungkinan besar iya. Karena itu `ToolRetryMiddleware` menerima daftar
-`tools=[...]` dan `retry_on=(...)`. `[docs]` — `fault-tolerance.md`
-baris 212.
+**Limit retries to tools that actually benefit.** A failing `read_file`
+won't be helped by a retry; a timing-out web search probably will. That is
+why `ToolRetryMiddleware` accepts `tools=[...]` and `retry_on=(...)`.
+`[docs]` — `fault-tolerance.md` line 212.
 
-**Dua anggaran yang berbeda, keduanya perlu.** `run_limit` membatasi per
-satu invokasi (reset tiap giliran); `thread_limit` membatasi lintas
-seluruh percakapan dan **butuh checkpointer**. `[docs]` —
-`fault-tolerance.md` baris 187. Ini persis pembedaan yang dibahas
-[`../concepts/cost-control.md`](../concepts/cost-control.md).
+**Two different budgets, both needed.** `run_limit` bounds a single
+invocation (resetting each turn); `thread_limit` bounds the whole
+conversation and **requires a checkpointer**. `[docs]` —
+`fault-tolerance.md` line 187. This is exactly the distinction discussed
+in [`../concepts/cost-control.md`](../concepts/cost-control.md).
 
-**Rate limit provider diatur di model, bukan di middleware** — lewat
-`rate_limiter=InMemoryRateLimiter(...)` saat `init_chat_model`. Perhatikan
-namanya: **in-memory**, jadi pada deployment banyak proses tiap proses
-punya bucket sendiri dan batas efektifnya berlipat sejumlah proses.
-`[docs]` — `fault-tolerance.md` baris 148-166; catatan tentang implikasi
-banyak-proses `[inferred]` dari nama dan sifat kelasnya, belum diuji.
+**Provider rate limits are configured on the model, not in middleware** —
+through `rate_limiter=InMemoryRateLimiter(...)` at `init_chat_model`. Note
+the name: **in-memory**, so on a multi-process deployment each process has
+its own bucket and the effective limit multiplies by the process count.
+`[docs]` — `fault-tolerance.md` lines 148-166; the note about
+multi-process implications is `[inferred]` from the class's name and
+nature, and has not been tested.
 
-**Exception integrasi membawa flag `is_retryable`** yang dihormati
-middleware retry secara bawaan (`ModelAuthenticationError`,
-`ModelRateLimitError`, `ModelTimeoutError`, dll). `[docs]` —
-`fault-tolerance.md` baris 215.
+**Integration exceptions carry an `is_retryable` flag** that the retry
+middleware honours by default (`ModelAuthenticationError`,
+`ModelRateLimitError`, `ModelTimeoutError`, etc.). `[docs]` —
+`fault-tolerance.md` line 215.
 
-## 10. Middleware kustom
+## 10. Custom middleware
 
-**Jangan memutasi atribut instance setelah inisialisasi.** Ini peringatan
-paling operasional di seluruh dokumentasi untuk pola server multi-user:
-`self.x += 1` di dalam hook menyebabkan race condition, karena banyak
-operasi berjalan bersamaan — subagent, tool paralel, dan invokasi paralel
-di thread berbeda. Untuk melacak nilai lintas invokasi hook, pakai **graph
-state**, yang memang di-scope per-thread secara desain. `[docs]` —
-`customization.md` baris 1480-1516.
+**Do not mutate instance attributes after initialisation.** This is the
+most operationally important warning in the entire documentation for a
+multi-user server pattern: `self.x += 1` inside a hook causes race
+conditions, because many operations run concurrently — subagents, parallel
+tools, and parallel invocations on different threads. To track a value
+across hook invocations, use **graph state**, which is per-thread scoped
+by design. `[docs]` — `customization.md` lines 1480-1516.
 
-Konsekuensinya untuk penerapan: satu instance middleware **dipakai
-bersama** lintas percakapan dan lintas user. Semua state per-user harus
-hidup di graph state atau di-key oleh `thread_id`, tidak pernah sebagai
-atribut. Bentuk kegagalan yang sama muncul di `CodeInterpreterMiddleware`
-(lihat [`../concepts/code-orchestration.md`](../concepts/code-orchestration.md)
-§Isolasi per-user).
+The consequence for implementation: one middleware instance is **shared**
+across conversations and across users. All per-user state must live in
+graph state or be keyed by `thread_id`, never as an attribute. The same
+failure shape appears in `CodeInterpreterMiddleware` (see
+[`../concepts/code-orchestration.md`](../concepts/code-orchestration.md)
+§Per-user isolation).
 
-## 11. Sandbox & rahasia
+## 11. Sandboxes & secrets
 
-**Jangan pernah menaruh rahasia di dalam sandbox.** API key, token,
-kredensial database — apa pun yang disuntikkan lewat environment variable,
-berkas ter-mount, atau opsi `secrets` bisa dibaca dan dieksfiltrasi oleh
-agent yang konteksnya disuntik. Berlaku **juga** untuk kredensial
-berumur pendek atau ber-scope sempit: kalau agent bisa mengaksesnya,
-penyerang juga. `[docs]` — `sandboxes.md` baris 2080;
-`going-to-production.md` baris 861.
+**Never put secrets inside a sandbox.** API keys, tokens, database
+credentials — anything injected through environment variables, mounted
+files, or the `secrets` option can be read and exfiltrated by an agent
+whose context has been injected. This applies **even** to short-lived or
+narrowly scoped credentials: if the agent can access them, so can an
+attacker. `[docs]` — `sandboxes.md` line 2080;
+`going-to-production.md` line 861.
 
-Kalau tetap terpaksa, dokumentasi menyebutnya "remains an unsafe
-workaround" dan menuntut empat hal sekaligus: HITL untuk **semua**
-panggilan tool (bukan hanya yang sensitif), blokir/batasi akses jaringan
-dari sandbox, kredensial ber-scope sesempit dan seumur sependek mungkin,
-serta pemantauan trafik keluar. `[docs]` — `sandboxes.md` baris 2092.
-Jalur yang dianjurkan justru menjaga rahasia **tak pernah masuk**:
-proxy auth yang menyuntikkan kredensial ke request keluar.
+If you must anyway, the documentation calls it "remains an unsafe
+workaround" and demands four things at once: HITL for **every** tool call
+(not just the sensitive ones), blocking or restricting network access from
+the sandbox, credentials as narrowly scoped and short-lived as possible,
+and monitoring of outbound traffic. `[docs]` — `sandboxes.md` line 2092.
+The recommended path keeps secrets **out entirely**: an auth proxy that
+injects credentials into outbound requests.
 
-**Sandbox ber-scope assistant menumpuk state.** Berkas, paket terpasang,
-dan state lain tumbuh tanpa batas. Konfigurasikan TTL di penyedia
-sandbox, pakai snapshot untuk reset berkala, atau bangun logika cleanup.
-`[docs]` — `sandboxes.md` baris 709, 929; `going-to-production.md`
-baris 652.
+**Assistant-scoped sandboxes accumulate state.** Files, installed
+packages, and other state grow without bound. Configure a TTL with the
+sandbox provider, use snapshots to reset periodically, or build cleanup
+logic. `[docs]` — `sandboxes.md` lines 709, 929;
+`going-to-production.md` line 652.
 
 ## 12. Streaming & observability
 
-**Untuk aplikasi baru, pakai event streaming**, bukan percabangan
-`stream_mode`. API proyeksi bertipe yang masuk di Deep Agents v0.6 memberi
-iterator terpisah per proyeksi (subagent, message, tool call, value) yang
-bisa dikonsumsi independen. `[docs]` — `streaming.md` baris 10.
+**For new applications, use event streaming** rather than branching on
+`stream_mode`. The typed-projection API introduced in Deep Agents v0.6
+gives separate iterators per projection (subagents, messages, tool calls,
+values) that can be consumed independently. `[docs]` — `streaming.md`
+line 10.
 
-**Audit tulisan agent ke memori lewat trace**: tiap penulisan berkas
-muncul sebagai tool call. `[docs]` — `memory.md` baris 510. Klaimnya
-netral vendor meski contohnya LangSmith — yang penting: penulisan memori
-teramati sebagai tool call, apa pun backend trace-nya.
+**Audit the agent's memory writes through traces**: every file write
+appears as a tool call. `[docs]` — `memory.md` line 510. The claim is
+vendor-neutral even though the example is LangSmith — what matters is
+that memory writes are observable as tool calls, whatever the tracing
+backend.
 
-## 13. Migrasi & kompatibilitas versi
+## 13. Migration & version compatibility
 
-**Rollback dari v0.6.0 tidak didukung setelah thread ter-persist.**
-v0.6.0 memindahkan riwayat pesan dan berkas agent ke `DeltaChannel`, yang
-menulis checkpoint dalam format yang versi sebelumnya tidak bisa baca.
-Menurunkan versi mengembalikan channel ke non-delta dan membuat checkpoint
-delta yang ada tak terbaca — hasilnya rekonstruksi state yang tidak
-lengkap atau salah. Prinsip umumnya: **jangan pernah memindahkan channel
-ter-persist antara representasi delta dan non-delta.** `[docs]` —
-`changelog-py.md` baris 78.
+**Rolling back from v0.6.0 is unsupported once threads have persisted.**
+v0.6.0 moved message history and agent files to `DeltaChannel`, which
+writes checkpoints in a format earlier versions cannot read. Downgrading
+switches the channels back to non-delta and leaves existing delta
+checkpoints unreadable — producing incomplete or incorrect state
+reconstruction. The general principle: **never move a persisted channel
+between delta and non-delta representations.** `[docs]` —
+`changelog-py.md` line 78.
 
-Untuk sistem dengan percakapan berumur panjang, ini berarti upgrade
-deepagents lintas 0.6.0 adalah operasi satu arah yang butuh rencana
-migrasi atau pembuangan thread — bukan sekadar bump versi.
+For systems with long-lived conversations this means upgrading deepagents
+across 0.6.0 is a one-way operation needing a migration plan or discarded
+threads — not merely a version bump.
 
-## Baca dengan skeptis
+## Read with skepticism
 
-Butir-butir berikut muncul sebagai "Tip" di dokumentasi tapi merupakan
-anjuran produk, bukan praktik rekayasa netral. Prinsip di baliknya sering
-benar; pilihan alatnya tetap keputusanmu:
+The items below appear as "Tips" in the documentation but are product
+recommendations rather than neutral engineering practice. The principle
+behind them is often right; the tool choice remains yours:
 
-- Tracing/observability lewat LangSmith — muncul di sedikitnya sembilan
-  halaman (`backends.md:25`, `customization.md:143`, `overview.md:178`,
+- Tracing/observability through LangSmith — appearing on at least nine
+  pages (`backends.md:25`, `customization.md:143`, `overview.md:178`,
   `subagents.md:1007`, `sandboxes.md:687`, `mcp.md:70`, `memory.md:510`,
-  `rag.md:272`, `going-to-production.md:36`), beberapa disertai anjuran
-  memasang LangSmith Engine. **Prinsipnya benar** (harness tanpa trace
-  tidak bisa didiagnosis, lihat
-  [`../concepts/observability.md`](../concepts/observability.md));
-  implementasinya tidak harus vendor ini.
-- Checkpointer, auth, RBAC, cron, dan webhook diuraikan terutama sebagai
-  fitur LangSmith Deployments (`going-to-production.md` baris 327-368,
-  412). Untuk deployment sendiri di VM/K8s, yang terpakai adalah
-  primitifnya (`thread_id`, `context`, checkpointer LangGraph,
-  namespace store), bukan platformnya.
-- Sandbox terkelola, LLM gateway, dan Fleet (`sandboxes.md:687`,
-  `quickstart.md:111`, `comparison.md:65`) — sepenuhnya penawaran produk.
+  `rag.md:272`, `going-to-production.md:36`), several accompanied by
+  advice to install LangSmith Engine. **The principle is correct** (a
+  harness without traces cannot be diagnosed, see
+  [`../concepts/observability.md`](../concepts/observability.md)); the
+  implementation need not be this vendor.
+- Checkpointers, auth, RBAC, cron, and webhooks are described mainly as
+  LangSmith Deployments features (`going-to-production.md` lines 327-368,
+  412). For self-hosting on VMs/K8s, what applies is the primitives
+  (`thread_id`, `context`, the LangGraph checkpointer, store namespaces),
+  not the platform.
+- Managed sandboxes, the LLM gateway, and Fleet (`sandboxes.md:687`,
+  `quickstart.md:111`, `comparison.md:65`) — entirely product offerings.
 
-Selain itu, dua peringatan di dokumentasi sudah tertinggal dari kodenya:
-`namespace` "will be required in v0.5.0" (sudah wajib di 0.7.8, §2 di
-atas), dan syarat versi `langchain-quickjs>=0.2.0` (paketnya sendiri
-menuntut `>=0.3.5`, lihat
+Beyond that, two documentation warnings have fallen behind the code:
+`namespace` "will be required in v0.5.0" (already mandatory in 0.7.8, §2
+above), and the version requirement `langchain-quickjs>=0.2.0` (the
+package itself demands `>=0.3.5`, see
 [`../concepts/code-orchestration.md`](../concepts/code-orchestration.md)).
 
-## Sumber
+## Sources
 
 - `[docs]` [`../upstream/deepagents-docs/`](../upstream/deepagents-docs/README.md)
-  — snapshot verbatim 40 halaman, diambil 2026-08-26 dari
-  `docs.langchain.com/oss/python/deepagents/`. Semua nomor baris di file
-  ini merujuk ke snapshot itu, bukan ke halaman web yang bisa berubah.
-  Halaman yang paling banyak dipakai: `going-to-production.md`,
+  — a verbatim 40-page snapshot taken 2026-08-26 from
+  `docs.langchain.com/oss/python/deepagents/`. Every line number in this
+  file refers to that snapshot, not to the live web pages, which can
+  change. The most-used pages: `going-to-production.md`,
   `fault-tolerance.md`, `context-engineering.md`, `backends.md`,
   `permissions.md`, `skills.md`, `memory.md`, `human-in-the-loop.md`,
   `sandboxes.md`, `customization.md`, `changelog-py.md`.
-- `[code]` `deepagents/backends/store.py` baris 99-104 (paket
-  `deepagents==0.7.8`, venv `../recipes/.venv/lib/python3.13/site-packages/`)
-  — `namespace` sebagai argumen keyword-only tanpa default, dasar koreksi
-  atas peringatan "will be required in v0.5.0".
+- `[code]` `deepagents/backends/store.py` lines 99-104 (package
+  `deepagents==0.7.8`, venv
+  `../recipes/.venv/lib/python3.13/site-packages/`) — `namespace` as a
+  keyword-only argument with no default, the basis for correcting the
+  "will be required in v0.5.0" warning.
 - `[code]` [`middleware.md`](middleware.md) §`artifacts_root`, §Exclusion
-  — mekanisme di balik anjuran `CompositeBackend` dan penolakan
-  `excluded_middleware`; dirujuk tanpa membaca ulang source-nya.
-- `[inferred]` Satu klaim ditandai di tempatnya: implikasi banyak-proses
-  dari `InMemoryRateLimiter`, disimpulkan dari nama dan sifat kelasnya,
-  belum diuji.
+  — the mechanisms behind the `CompositeBackend` recommendation and the
+  `excluded_middleware` refusal; cited without re-reading the source.
+- `[inferred]` One claim is flagged in place: the multi-process
+  implication of `InMemoryRateLimiter`, inferred from the class's name and
+  nature, untested.
