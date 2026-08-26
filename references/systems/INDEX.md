@@ -1,94 +1,93 @@
-# Indeks sistem
+# Systems index
 
-Sembilan entri **T2** (grid 7 sumbu penuh, satu file per sistem — lihat
-`_template.md`) plus entri **T3** (indeks murah: nama + arketipe + satu
-baris ciri khas, tanpa file terpisah). T3 ada supaya menambah harness baru
-yang ditemukan nanti cukup satu baris di sini, bukan restrukturisasi grid —
-lihat §10 desain spec.
+Nine **T2** entries (the full 7-axis grid, one file per system — see
+`_template.md`) plus the **T3** entries (a cheap index: name + archetype + one
+line of distinguishing character, with no separate file). T3 exists so that
+adding a harness discovered later takes one line here rather than
+restructuring the grid — see §10 of the design spec.
 
-Kolom **Multilingual** mencatat *apakah sistem punya desain eksplisit*
-untuk pemisahan intent/ekspresi dan lokalisasi (lihat
-`references/concepts/multilingual.md`), bukan sekadar "mendukung bahasa
-lain lewat model dasarnya". Ketiadaan desain itu sendiri adalah temuan —
-lihat catatan di bawah tabel.
+The **Multilingual** column records *whether a system has an explicit design*
+for intent/expression separation and localisation (see
+`references/concepts/multilingual.md`), not merely "supports other languages
+through its base model". The absence of such a design is itself a finding —
+see the note below the tables.
 
-## Tier 1 — SDK dasar KB ini
+## Tier 1 — this KB's foundational SDK
 
-Bukan agent produk, jadi di luar hitungan "sembilan T2" dan catatan
-multilingual di bawah — tapi diberi grid 7 sumbu penuh (§Sumber-nya lebih
-dalam dari T2 mana pun: paket terinstal, bukan repo yang dikloning sekali)
-karena inilah SDK yang dipakai membangun tiap arketipe di KB ini.
+Not a product agent, so outside the "nine T2" count and the multilingual note
+below — but given the full 7-axis grid (its §Sources go deeper than any T2's:
+an installed package rather than a repo cloned once) because this is the SDK
+used to build every archetype in this KB.
 
-| Nama | Arketipe | Tier | Ciri khas | Multilingual | Label sumber |
+| Name | Archetype | Tier | Distinguishing character | Multilingual | Source label |
 |---|---|---|---|---|---|
-| [deepagents](deepagents.md) | Bukan satu arketipe — SDK harness dipakai membangun arketipe apa pun (lihat §Arketipe file-nya) | T1 | Middleware-stack (filesystem, subagent, summarization, prompt-cache) di atas LangChain/LangGraph; default stack paling dekat General Task Agent (03), tiap axis bisa digeser lewat parameter `create_deep_agent(...)` | Tidak berlaku — SDK, bukan agent produk dengan permukaan bahasa sendiri | `[code]` mayoritas |
+| [deepagents](deepagents.md) | Not one archetype — a harness SDK used to build any archetype (see its §Archetype) | T1 | A middleware stack (filesystem, subagents, summarisation, prompt caching) on top of LangChain/LangGraph; its default stack is closest to a General Task Agent (03), with every axis shiftable through `create_deep_agent(...)` parameters | Not applicable — an SDK, not a product agent with a language surface of its own | mostly `[code]` |
 
-## Tier 2 — bedah 7 sumbu
+## Tier 2 — the 7-axis dissection
 
-| Nama | Arketipe | Tier | Ciri khas | Multilingual | Label sumber |
+| Name | Archetype | Tier | Distinguishing character | Multilingual | Source label |
 |---|---|---|---|---|---|
-| [OpenHands](openhands.md) | Workspace Agent (01) + Generative Builder (02) | T2 | Nama repo sudah pivot jadi "Agent Canvas" (kontrol multi-backend); agent inti pindah ke `software-agent-sdk`; routing skill deterministik (keyword/path match di kode, bukan judgment murni) | UI i18n saja (`src/i18n`, bukan desain locale-aware agent) | `[code]` mayoritas |
-| [LibreChat](librechat.md) | Workspace Agent (01) + In-App Copilot (05) | T2 | Loop agent aktual hidup di paket npm terpisah `@librechat/agents` (LangGraph); transkrip tree via `parentMessageId`; delegasi lewat handoff tool antar-agent | UI i18n (`client/src/locales`, i18next) — bukan pipeline intent/ekspresi | `[code]` mayoritas |
-| [Aider](aider.md) | Workspace Agent (01) | T2 | Tidak pakai tool-calling API sama sekali — parsing blok edit dari teks; RepoMap PageRank untuk context; loop "reflection" (`max_reflections=3`), bukan ReAct tool-loop | Tidak ada | `[code]` mayoritas |
-| [Vercel `ai-chatbot`](vercel-ai-chatbot.md) | In-App Copilot (05) + Generative Builder (02) | T2 | `stopWhen: isStepCount(5)` — batas 5 langkah keras; artefak berversi lewat composite PK `(id, createdAt)`; reattach stream bersyarat `REDIS_URL`, endpoint GET reattach berisi stub 204 di snapshot yang dibaca | Tidak ada | `[code]` mayoritas |
-| [LiteLLM](litellm.md) | Bukan agent — infrastruktur gateway/routing | T2 | Bukan agent-loop; retry+cooldown lintas-deployment; `routing_strategy` algoritmik (5+ strategi); >25 provider guardrail sebagai plugin registry deklaratif | Tidak ada | `[code]` mayoritas |
-| [Letta](letta.md) | Workspace Agent (01) | T2 | Repo asli diarsipkan, source pindah ke `letta-code`; memori kini git-backed per-agent (`~/.letta/agents/<id>/memory/`, repo git sungguhan) di atas memory-block API lama; default permission mode `"unrestricted"` | Tidak ada | `[code]` mayoritas |
-| [Dify](dify.md) | Platform: In-App Copilot (05) / Workflow Agent (06) tergantung tipe app | T2 | Dua runner loop terpisah (`FunctionCallAgentRunner` tool-calling vs `CotAgentRunner` teks-ReAct), batas 99 iterasi; node `human_input` sebagai primitif HITL di DAG; workflow lain bisa dipublikasikan jadi tool (`workflow_as_tool`) | Ada — i18n UI + email (`web/i18n`, `email_i18n.py`), lebih luas dari sistem lain di grid tapi tetap string-level, bukan pipeline intent/ekspresi | `[code]` mayoritas |
-| [browser-use](browser-use.md) | Computer-Use Agent (07) | T2 | 26 tool sempit; loop 3-fase (screenshot+DOM → LLM → aksi); dua batas independen (`max_steps=500`, `max_failures=5` berturut-turut); warning eksplisit prompt-injection→eksfiltrasi `sensitive_data` saat `allowed_domains` tak dikunci | Tidak ada | `[code]` mayoritas |
-| [OpenWorker](openworker.md) | General Task Agent (03), hibrida 01/02/05/06 — terbanyak di grid | T2 | Empat kelas risiko sebagai data (`risk.py`); approver ditukar per mode sesi; sesi unattended **suspend tanpa timeout** di Inbox dengan permintaan durable-idempoten `(session_id, tool_call_id)`; kompaksi berbatas `boundary_index` kanonik→outbound | Tidak ada | `[code]` mayoritas |
-| [Claude Code](claude-code.md) | Workspace Agent (01) | T2 | Closed-source — seluruh file `[docs]`/`[inferred]`; contoh utama KB untuk sumbu 7 "prosa + judgment model" **termasuk kelemahannya**: cap 1.536 karakter/skill (dilusi terukur), tidak ada kode intent netral (keterikatan bahasa) | Tidak diketahui (closed; tidak ditemukan halaman docs soal pipeline intent/ekspresi terpisah) | `[docs]`/`[inferred]` murni |
+| [OpenHands](openhands.md) | Workspace Agent (01) + Generative Builder (02) | T2 | The repo name has pivoted to "Agent Canvas" (multi-backend control); the core agent moved to `software-agent-sdk`; deterministic skill routing (keyword/path matching in code rather than pure judgement) | UI i18n only (`src/i18n`, not a locale-aware agent design) | mostly `[code]` |
+| [LibreChat](librechat.md) | Workspace Agent (01) + In-App Copilot (05) | T2 | The actual agent loop lives in a separate npm package, `@librechat/agents` (LangGraph); a tree transcript through `parentMessageId`; delegation through inter-agent handoff tools | UI i18n (`client/src/locales`, i18next) — not an intent/expression pipeline | mostly `[code]` |
+| [Aider](aider.md) | Workspace Agent (01) | T2 | Uses no tool-calling API at all — it parses edit blocks from text; a PageRank RepoMap for context; a "reflection" loop (`max_reflections=3`) rather than a ReAct tool loop | None | mostly `[code]` |
+| [Vercel `ai-chatbot`](vercel-ai-chatbot.md) | In-App Copilot (05) + Generative Builder (02) | T2 | `stopWhen: isStepCount(5)` — a hard 5-step limit; versioned artifacts through the composite PK `(id, createdAt)`; stream reattach conditional on `REDIS_URL`, with the GET reattach endpoint a 204 stub in the snapshot read | None | mostly `[code]` |
+| [LiteLLM](litellm.md) | Not an agent — gateway/routing infrastructure | T2 | Not an agent loop; cross-deployment retry+cooldown; an algorithmic `routing_strategy` (5+ strategies); 25+ guardrail providers as a declarative plugin registry | None | mostly `[code]` |
+| [Letta](letta.md) | Workspace Agent (01) | T2 | The original repo is archived, its source moved to `letta-code`; memory is now git-backed per agent (`~/.letta/agents/<id>/memory/`, a real git repo) on top of the older memory-block API; the default permission mode is `"unrestricted"` | None | mostly `[code]` |
+| [Dify](dify.md) | A platform: In-App Copilot (05) / Workflow Agent (06) depending on the app type | T2 | Two separate loop runners (`FunctionCallAgentRunner` for tool calling vs `CotAgentRunner` for text ReAct), with a 99-iteration limit; a `human_input` node as the DAG's HITL primitive; other workflows publishable as tools (`workflow_as_tool`) | Present — UI + email i18n (`web/i18n`, `email_i18n.py`), broader than any other system in the grid but still string-level, not an intent/expression pipeline | mostly `[code]` |
+| [browser-use](browser-use.md) | Computer-Use Agent (07) | T2 | 26 narrow tools; a 3-phase loop (screenshot+DOM → LLM → action); two independent limits (`max_steps=500`, `max_failures=5` consecutive); an explicit prompt-injection→`sensitive_data` exfiltration warning when `allowed_domains` isn't locked down | None | mostly `[code]` |
+| [OpenWorker](openworker.md) | General Task Agent (03), hybrid 01/02/05/06 — the most in the grid | T2 | Four risk classes as data (`risk.py`); the approver swapped per session mode; an unattended session **suspends with no timeout** in the Inbox with a durable, idempotent `(session_id, tool_call_id)` request; bounded compaction with a canonical→outbound `boundary_index` | None | mostly `[code]` |
+| [Claude Code](claude-code.md) | Workspace Agent (01) | T2 | Closed source — the entire file is `[docs]`/`[inferred]`; the KB's primary example for axis 7 "prose + model judgement" **including its weaknesses**: a 1,536-character cap per skill (measurable dilution), and no neutral intent codes (language coupling) | Unknown (closed; no documentation page found on a separate intent/expression pipeline) | purely `[docs]`/`[inferred]` |
 
-## Tier 3 — indeks
+## Tier 3 — the index
 
-| Nama | Arketipe | Tier | Ciri khas | Multilingual | Label sumber |
+| Name | Archetype | Tier | Distinguishing character | Multilingual | Source label |
 |---|---|---|---|---|---|
-| OpenClaw | General Task Agent (03) + Workflow Agent (06) | T3 | Asisten personal open-source (387k★, TypeScript, MIT) yang **single-operator** dan jalan di device sendiri; satu Gateway menyambungkan model, tool, dan channel chat yang sudah dipakai (WhatsApp/Telegram/Discord, 50+ integrasi). Ekosistemnya: ClawHub sebagai registry skill (format `SKILL.md`, metadata install per-skill spt `"openclaw": {"requires": {"bins": [...]}}` yang terlihat di `browser-use`) dan SOUL.md sebagai spesifikasi persona | Tidak diperiksa | `[docs]` README mentah + GitHub API |
-| Hermes | General Task Agent (03) + Workflow Agent (06) | T3 | *Operator shell* — pintu depan Telegram/CLI/TUI di atas ECC sebagai substrat workflow yang dipakai ulang (`Telegram/CLI/TUI → Hermes → ECC skills + hooks + MCPs`); punya cron, workspace memory, dan distribution flow. Menarik sebagai pola **front door terpisah dari substrat**, bukan sebagai harness itu sendiri | Tidak diperiksa | `[docs]` — dokumen lokal `ecc/docs/HERMES-SETUP.md`, versi publik tersanitasi dari stack privat; **tidak diverifikasi ke repo publik** |
-| Tiny Claw | Terlalu dini untuk diklasifikasi | T3 | **Pre-release** — README-nya sendiri meminta menunggu rilis resmi pertama. Menyatakan diri **bukan** versi kecil OpenClaw melainkan produk independen: framework native dari nol (bukan di atas Pi/Claude Code/Codex), core kecil + arsitektur plugin, memory self-improving, smart routing bertingkat untuk menekan biaya, dan personality tetap yang tidak bisa di-override. Jangan dibangun di atasnya dulu | Tidak diperiksa | `[docs]` README mentah + GitHub API |
-| Open WebUI | In-App Copilot (05) + Workspace Agent (01) | T3 | Chat UI self-hosted multi-user dengan RBAC, model routing, dan dukungan tool/function-calling plugin — alternatif LibreChat dengan penekanan admin/RBAC | Ada (UI i18n) — belum diverifikasi kedalamannya | `[inferred]` |
-| Onyx (eks-Danswer) | Research/Analyst (04) + In-App Copilot (05) | T3 | Asisten enterprise search/RAG yang menyambungkan banyak connector sumber data (Slack, Confluence, Google Drive, dst) dengan sitasi wajib per jawaban | Tidak diketahui | `[inferred]` |
-| assistant-ui | Infrastruktur — bukan agent, komponen React | T3 | Library komponen chat/artefak yang bisa disambungkan ke berbagai backend agent (termasuk `ai-chatbot`); dipakai untuk membangun antarmuka kanvas, bukan menjalankan agent sendiri | Tidak ada | `[inferred]` |
-| Mem0 | Infrastruktur — lapisan memori | T3 | Library memori pluggable (vector + graph) yang bisa dipasang ke agent apa pun; alternatif pola memory-block Letta dengan API lebih generik/framework-agnostic | Tidak diketahui | `[inferred]` |
-| Zep | Infrastruktur — lapisan memori | T3 | Layanan memori lintas-sesi berbasis temporal knowledge graph; menekankan "fakta yang berubah seiring waktu" (versioning fakta), bukan cuma ringkasan statis | Tidak diketahui | `[inferred]` |
-| E2B | Infrastruktur — sandbox eksekusi kode | T3 | Sandbox cloud (microVM Firecracker) untuk eksekusi kode agent, API "buka sandbox → jalankan kode → ambil hasil" per sesi, isolasi kuat per-run | Tidak berlaku (infra, bukan agent) | `[inferred]` |
-| Daytona | Infrastruktur — sandbox/dev environment | T3 | Environment dev terisolasi yang bisa di-provision cepat untuk agent coding (dirujuk juga di `deepagents.md` sebagai `libs/partners/daytona`, belum diverifikasi API persisnya) | Tidak berlaku | `[inferred]` |
-| microsandbox | Infrastruktur — sandbox ringan | T3 | MicroVM ringan (self-hosted) untuk isolasi eksekusi kode agent tanpa overhead kontainer penuh, alternatif E2B yang bisa dijalankan sendiri | Tidak berlaku | `[inferred]` |
-| Langfuse | Infrastruktur — observability/tracing | T3 | Platform tracing+eval open-source untuk aplikasi LLM: trace per-turn, skor eval, atribusi biaya per user/sesi | Tidak berlaku | `[inferred]` |
-| Phoenix (Arize) | Infrastruktur — observability/tracing | T3 | Tracing+eval open-source berbasis OpenTelemetry/OpenInference, penekanan pada eval offline dan drift dataset | Tidak berlaku | `[inferred]` |
-| OpenLLMetry | Infrastruktur — instrumentasi tracing | T3 | Library instrumentasi OpenTelemetry khusus panggilan LLM/vector-DB/framework agent — dipakai *di dalam* aplikasi lain (bukan platform berdiri sendiri) untuk mengirim trace ke backend observability manapun | Tidak berlaku | `[inferred]` |
-| vLLM | Infrastruktur — serving GPU-bound | T3 | Engine inferensi LLM throughput-tinggi (PagedAttention, continuous batching) — lapisan serving di bawah gateway seperti LiteLLM, bukan gateway itu sendiri | Tidak berlaku | `[inferred]` |
-| SGLang | Infrastruktur — serving GPU-bound | T3 | Engine serving LLM dengan penekanan structured generation cepat (constrained decoding) dan RadixAttention untuk cache prefix lintas-request | Tidak berlaku | `[inferred]` |
-| Ray Serve | Infrastruktur — serving umum | T3 | Framework model-serving umum (bukan khusus LLM) di atas Ray, autoscaling berbasis beban aktual per deployment — dirujuk §8.3 spec desain sebagai contoh serving berbasis sinyal bukan RPS naif | Tidak berlaku | `[inferred]` |
-| KEDA | Infrastruktur — autoscaler K8s | T3 | Kubernetes event-driven autoscaler; menskalakan pod berdasar metrik kustom (mis. queue depth, in-flight turns) — pas dengan aturan §8.3 "sinyal HPA bukan RPS" | Tidak berlaku | `[inferred]` |
-| SWE-agent | Workspace Agent (01) | T3 | Agent penyelesai issue GitHub otomatis; memperkenalkan istilah "Agent-Computer Interface" (ACI) — tool didesain ulang supaya cocok kognisi model, bukan sekadar API mentah untuk manusia | Tidak diketahui | `[inferred]` |
-| Cline | Workspace Agent (01) | T3 | Extension VS Code untuk coding agent otonom (antarmuka IDE, bukan CLI/terminal seperti Aider/Claude Code); menonjolkan plan/act mode terpisah di UI | Tidak diketahui | `[inferred]` |
-| n8n | Workflow Agent (06) | T3 | Platform automasi workflow visual (node-based) dengan node AI-agent tersambung — mirip Dify-workflow tapi berakar dari automasi non-AI (integrasi API luas), bukan dibangun untuk LLM sejak awal | Tidak diketahui | `[inferred]` |
-| Stagehand | Computer-Use Agent (07) | T3 | Wrapper AI di atas Playwright — action berbasis natural-language dipetakan ke primitif Playwright deterministik, penekanan pada dapat-di-debug/dapat-diulang dibanding browser-use yang lebih agentic penuh | Tidak diketahui | `[inferred]` |
+| OpenClaw | General Task Agent (03) + Workflow Agent (06) | T3 | An open-source personal assistant (387k★, TypeScript, MIT) that is **single-operator** and runs on your own device; one Gateway connects models, tools, and the chat channels you already use (WhatsApp/Telegram/Discord, 50+ integrations). Its ecosystem: ClawHub as a skill registry (the `SKILL.md` format, with per-skill install metadata like `"openclaw": {"requires": {"bins": [...]}}` visible in `browser-use`) and SOUL.md as a persona specification | Not examined | `[docs]` the raw README + the GitHub API |
+| Hermes | General Task Agent (03) + Workflow Agent (06) | T3 | An *operator shell* — a Telegram/CLI/TUI front door on top of ECC as a reused workflow substrate (`Telegram/CLI/TUI → Hermes → ECC skills + hooks + MCPs`); it has cron, workspace memory, and a distribution flow. Interesting as a **front door separate from the substrate** pattern rather than as a harness itself | Not examined | `[docs]` — the local document `ecc/docs/HERMES-SETUP.md`, a sanitised public version of a private stack; **not verified against a public repo** |
+| Tiny Claw | Too early to classify | T3 | **Pre-release** — its own README asks you to wait for the first official release. It declares itself **not** a small version of OpenClaw but an independent product: a native framework from scratch (not on top of Pi/Claude Code/Codex), a small core + a plugin architecture, self-improving memory, tiered smart routing to cut cost, and a fixed personality that cannot be overridden. Don't build on it yet | Not examined | `[docs]` the raw README + the GitHub API |
+| Open WebUI | In-App Copilot (05) + Workspace Agent (01) | T3 | A self-hosted multi-user chat UI with RBAC, model routing, and plugin tool/function-calling support — a LibreChat alternative emphasising admin/RBAC | Present (UI i18n) — its depth not yet verified | `[inferred]` |
+| Onyx (formerly Danswer) | Research/Analyst (04) + In-App Copilot (05) | T3 | An enterprise search/RAG assistant connecting many data source connectors (Slack, Confluence, Google Drive, etc.) with mandatory citations per answer | Unknown | `[inferred]` |
+| assistant-ui | Infrastructure — not an agent, React components | T3 | A chat/artifact component library connectable to various agent backends (including `ai-chatbot`); used to build canvas interfaces rather than to run an agent itself | None | `[inferred]` |
+| Mem0 | Infrastructure — a memory layer | T3 | A pluggable memory library (vector + graph) attachable to any agent; an alternative to Letta's memory-block pattern with a more generic, framework-agnostic API | Unknown | `[inferred]` |
+| Zep | Infrastructure — a memory layer | T3 | A cross-session memory service built on a temporal knowledge graph; emphasises "facts that change over time" (fact versioning) rather than static summaries | Unknown | `[inferred]` |
+| E2B | Infrastructure — a code execution sandbox | T3 | A cloud sandbox (Firecracker microVMs) for agent code execution, with an "open a sandbox → run code → fetch the result" API per session and strong per-run isolation | Not applicable (infrastructure, not an agent) | `[inferred]` |
+| Daytona | Infrastructure — a sandbox/dev environment | T3 | Isolated dev environments provisionable quickly for coding agents (also referenced in `deepagents.md` as `libs/partners/daytona`, its exact API not yet verified) | Not applicable | `[inferred]` |
+| microsandbox | Infrastructure — a lightweight sandbox | T3 | Lightweight (self-hosted) microVMs for isolating agent code execution without full container overhead, a self-runnable alternative to E2B | Not applicable | `[inferred]` |
+| Langfuse | Infrastructure — observability/tracing | T3 | An open-source tracing+eval platform for LLM applications: per-turn traces, eval scores, per-user/session cost attribution | Not applicable | `[inferred]` |
+| Phoenix (Arize) | Infrastructure — observability/tracing | T3 | Open-source tracing+eval built on OpenTelemetry/OpenInference, emphasising offline eval and dataset drift | Not applicable | `[inferred]` |
+| OpenLLMetry | Infrastructure — tracing instrumentation | T3 | An OpenTelemetry instrumentation library specific to LLM/vector-DB/agent-framework calls — used *inside* other applications (rather than as a standalone platform) to send traces to any observability backend | Not applicable | `[inferred]` |
+| vLLM | Infrastructure — GPU-bound serving | T3 | A high-throughput LLM inference engine (PagedAttention, continuous batching) — the serving layer beneath a gateway like LiteLLM, not the gateway itself | Not applicable | `[inferred]` |
+| SGLang | Infrastructure — GPU-bound serving | T3 | An LLM serving engine emphasising fast structured generation (constrained decoding) and RadixAttention for cross-request prefix caching | Not applicable | `[inferred]` |
+| Ray Serve | Infrastructure — general serving | T3 | A general model-serving framework (not LLM-specific) on Ray, autoscaling on actual per-deployment load — referenced in design spec §8.3 as an example of signal-based serving rather than naive RPS | Not applicable | `[inferred]` |
+| KEDA | Infrastructure — a K8s autoscaler | T3 | A Kubernetes event-driven autoscaler; scales pods on custom metrics (e.g. queue depth, in-flight turns) — fitting §8.3's "the HPA signal isn't RPS" rule | Not applicable | `[inferred]` |
+| SWE-agent | Workspace Agent (01) | T3 | An automated GitHub issue-solving agent; introduced the term "Agent-Computer Interface" (ACI) — tools redesigned to suit model cognition rather than being raw human-facing APIs | Unknown | `[inferred]` |
+| Cline | Workspace Agent (01) | T3 | A VS Code extension for an autonomous coding agent (an IDE interface rather than the CLI/terminal of Aider/Claude Code); notable for separate plan/act modes in the UI | Unknown | `[inferred]` |
+| n8n | Workflow Agent (06) | T3 | A visual (node-based) workflow automation platform with connected AI-agent nodes — similar to Dify's workflows but rooted in non-AI automation (broad API integration) rather than built for LLMs from the start | Unknown | `[inferred]` |
+| Stagehand | Computer-Use Agent (07) | T3 | An AI wrapper over Playwright — natural-language actions mapped to deterministic Playwright primitives, emphasising debuggability/repeatability compared with browser-use's fuller agentic approach | Unknown | `[inferred]` |
 
-## Catatan multilingual
+## The multilingual note
 
-Dari sembilan sistem T2 yang dibaca sampai ke source, **hanya Dify** yang
-punya i18n melampaui string UI murni (email transaksional ikut
-diterjemahkan) — tapi bahkan itu tetap **lokalisasi output**, bukan pipeline
-pemisahan intent/ekspresi yang diargumentasikan
-`references/concepts/multilingual.md` dan dikunci §8.6 spec desain
-(klasifikasi intent → kode netral → lookup policy/skill by kode →
-render output di locale user). OpenHands dan LibreChat punya i18n UI
-(`i18next`) tapi tidak ditemukan lapisan classifier-intent terpisah dari
-routing skill/agent. Lima sistem T2 lain (Aider, `ai-chatbot`, LiteLLM,
-Letta, browser-use) **tidak** punya direktori/paket i18n sama sekali di
-source yang dikloning — dikonfirmasi lewat `find -iname "*i18n*"` /
-`*locale*` per repo, bukan diasumsikan. Claude Code tidak diketahui karena
-closed-source dan tidak ditemukan halaman dokumentasi yang membahas
-pipeline intent/ekspresi terpisah dari routing skill berbasis deskripsi.
+Of the nine T2 systems read down to source, **only Dify** has i18n beyond
+pure UI strings (transactional email is translated too) — but even that is
+still **output localisation**, not the intent/expression separation pipeline
+argued in `references/concepts/multilingual.md` and pinned by design spec
+§8.6 (intent classification → a neutral code → policy/skill lookup by code →
+output rendered in the user's locale). OpenHands and LibreChat have UI i18n
+(`i18next`) but no intent-classifier layer separate from skill/agent routing
+was found. The other five T2 systems (Aider, `ai-chatbot`, LiteLLM, Letta,
+browser-use) have **no** i18n directory or package at all in the cloned
+source — confirmed through `find -iname "*i18n*"` / `*locale*` per repo, not
+assumed. Claude Code is unknown because it is closed source and no
+documentation page was found discussing an intent/expression pipeline
+separate from description-based skill routing.
 
-**Temuan**: ketiadaan desain multilingual eksplisit adalah **norma**, bukan
-pengecualian, di grid ini — persis argumen pembuka `multilingual.md` bahwa
-kebanyakan harness memperlakukan bahasa sebagai fitur UI (terjemahkan
-string tombol/label) dan bukan sebagai dimensi arsitektur (locale sebagai
-konteks kelas satu yang memengaruhi trigger skill, leksikon guardrail, dan
-kalibrasi budget token). Tidak satu pun dari sembilan sistem T2 di grid ini
-mengimplementasikan pemisahan intent/kode-netral seperti yang diargumentasikan
-`references/concepts/skill-composition.md` §`intents` memakai kode
-netral — pola itu ditandai `[ours]` di KB ini justru karena tidak
-ditemukan preseden industrinya di sembilan sistem yang diperiksa.
+**The finding**: the absence of an explicit multilingual design is the
+**norm**, not the exception, in this grid — exactly `multilingual.md`'s
+opening argument that most harnesses treat language as a UI feature
+(translate the button/label strings) rather than an architectural dimension
+(locale as first-class context affecting skill triggering, guardrail
+lexicons, and token budget calibration). Not one of the nine T2 systems in
+this grid implements the intent/neutral-code separation argued in
+`references/concepts/skill-composition.md` §`intents` uses neutral codes —
+that pattern is labelled `[ours]` in this KB precisely because no industry
+precedent for it was found in the nine systems examined.

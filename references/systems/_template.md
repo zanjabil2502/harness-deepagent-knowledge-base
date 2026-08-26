@@ -1,51 +1,51 @@
-# Template `systems/`
+# `systems/` template
 
-Salin file ini untuk tiap sistem baru di grid `systems/`. Ganti tiap kalimat
-instruksi dengan isi nyata, dan hapus baris label bila sudah menandai tiap
-klaim di badan teks.
+Copy this file for each new system in the `systems/` grid. Replace every
+instruction sentence with real content, and delete the label line once every
+claim in the body carries its own.
 
-> Label tiap klaim: [code] / [docs] / [inferred]
+> Label every claim: [code] / [docs] / [inferred]
 
-## Arketipe
+## Archetype
 
-Sebutkan arketipe (bisa hibrida) sistem ini dan alasan singkat berdasar 6 sumbu
-pembeda.
+Name this system's archetype (hybrids allowed) and give a short reason based on
+the 6 discriminating axes.
 
 ## 1. Loop shape
 
-Jelaskan bentuk loop-nya: ReAct / plan-execute / loop-until-done, dan siapa
-yang memutuskan berhenti.
+Describe its loop shape: ReAct / plan-execute / loop-until-done, and who
+decides it stops.
 
 ## 2. Context
 
-Jelaskan strategi compaction, summarization, atau filesystem-as-memory yang
-dipakai sistem ini.
+Describe the compaction, summarisation, or filesystem-as-memory strategy this
+system uses.
 
 ## 3. Tool surface
 
-Jelaskan apakah sistem ini memakai banyak tool sempit atau sedikit tool luas,
-dan kenapa desain itu dipilih.
+Describe whether this system uses many narrow tools or few broad ones, and why
+that design was chosen.
 
 ## 4. Delegation
 
-Jelaskan apakah ada subagent atau arsitektur flat, dan bagaimana hasil
-delegasi kembali ke pemanggil.
+Describe whether there are subagents or a flat architecture, and how a
+delegation's result returns to its caller.
 
 ## 5. State & resume
 
-Jelaskan mekanisme todo, scratchpad, checkpoint, dan resume yang dipakai.
+Describe the todo, scratchpad, checkpoint, and resume mechanisms in use.
 
 ## 6. Safety gate
 
-Jelaskan kapan sistem ini minta izin manusia dan apa yang di-sandbox.
+Describe when this system asks for human permission and what is sandboxed.
 
 ## 7. Capability routing & policy
 
-Jelaskan bagaimana sistem memutuskan skill/mode mana yang dipakai: prosa +
-judgment model, manifest deklaratif, atau classifier.
+Describe how the system decides which skill/mode is used: prose + model
+judgement, a declarative manifest, or a classifier.
 
-## Sumber
+## Sources
 
-Cantumkan sumber tiap klaim: repo/commit untuk `[code]`, tautan dokumentasi
-resmi untuk `[docs]`, atau catatan bahwa itu simpulan dari perilaku produk
-untuk `[inferred]`.
+Cite the source of every claim: repo/commit for `[code]`, a link to official
+documentation for `[docs]`, or a note that it is concluded from the product's
+behaviour for `[inferred]`.
