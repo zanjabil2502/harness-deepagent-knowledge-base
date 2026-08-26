@@ -1,247 +1,245 @@
 # Memory
 
-## Masalah
+## Problem
 
-Memory lintas sesi berbeda dari `session-state.md` lapis "Run state" —
-bukan cuma "state yang lebih awet", tapi state yang harus **dikurasi**
-aktif, bukan diakumulasi mentah. Empat pertanyaan yang jarang dijawab
-sengaja:
+Cross-session memory differs from `session-state.md`'s "Run state" layer —
+not merely "more durable state", but state that has to be **curated**
+actively rather than accumulated raw. Four questions rarely answered
+deliberately:
 
-1. **Ekstraksi** — apa yang masuk memory dari percakapan mentah? Semua
-   yang dikatakan, atau cuma fakta yang dinilai penting — dan siapa/apa
-   yang menilai itu?
-2. **Konflik** — kalau fakta baru bertentangan dengan fakta lama (user
-   dulu bilang X, sekarang bilang bukan-X), apakah keduanya disimpan
-   (memory jadi internal-inkonsisten diam-diam), atau satu menang — dan
-   kalau satu menang, berdasar apa dan apakah keputusan itu tercatat?
-3. **Pembaruan** — kalau fakta yang sama diulang dengan detail lebih
-   lengkap, apakah itu entri baru (duplikasi) atau memperbarui entri lama?
-4. **Penghapusan** — paling jarang dibahas: bagaimana memory sungguh
-   dihapus, bukan cuma "berhenti ditampilkan"? `retention-and-deletion.md`
-   sudah menuntut penghapusan lintas lapis wajib nyata dan cascading; lapis
-   memory bukan pengecualian.
+1. **Extraction** — what enters memory from the raw conversation?
+   Everything said, or only facts judged important — and who or what makes
+   that judgement?
+2. **Conflict** — if a new fact contradicts an old one (the user once said
+   X, now says not-X), are both stored (memory becoming silently
+   internally inconsistent), or does one win — and if one wins, on what
+   basis, and is that decision recorded?
+3. **Update** — if the same fact recurs with fuller detail, is that a new
+   entry (duplication) or an update to the old one?
+4. **Deletion** — the least discussed: how is memory actually deleted,
+   rather than merely "no longer shown"? `retention-and-deletion.md`
+   already requires deletion across layers to be real and cascading; the
+   memory layer is no exception.
 
-Gejala sistem yang tidak menjawab ini: memory yang cuma pernah tumbuh
-(ADD terus-menerus, tidak pernah UPDATE/DELETE) berubah jadi tumpukan
-fakta yang mungkin saling bertentangan, dan masalah resolusi konfliknya
-diam-diam dipindah ke apa pun yang membaca memory saat query — bukan
-diselesaikan saat ditulis.
+The symptom of a system that doesn't answer these: memory that only ever
+grows (endless ADD, never UPDATE/DELETE) turns into a pile of possibly
+contradictory facts, and the conflict resolution problem is silently
+shifted to whatever reads memory at query time — rather than resolved at
+write time.
 
-## Pola
+## Pattern
 
-### Tiga mekanisme berbeda untuk tiga pertanyaan berbeda
+### Three different mechanisms for three different questions
 
-Sistem memory nyata yang dibaca untuk file ini (Letta) memisahkan tiga
-mekanisme dengan tujuan berbeda, bukan satu penyimpanan generik:
+The real memory system read for this file (Letta) separates three
+mechanisms with different purposes, rather than one generic store:
 
-- **Core/working memory** — set blok kecil, berlabel, **selalu** ada di
-  context, diedit presisi lewat tool (`core_memory_append`,
-  `core_memory_replace`, `memory_replace`, `memory_insert`, `rethink_memory`).
-  Menjawab "apa yang harus selalu diingat" (mis. blok `human` berisi fakta
-  inti tentang user). `[code]` `letta/functions/function_sets/base.py`
-  baris 246-527, repo `letta-ai/letta` cabang `archive`.
-- **Archival/long-term memory** — besar, tak terbatas, diambil lewat
-  pencarian semantik, **tidak** selalu di context (`archival_memory_insert`,
-  `archival_memory_search`, mendukung tag dan filter tanggal). Menjawab
-  "apa yang mungkin perlu dicari nanti" — fakta yang tidak perlu selalu
-  hadir tapi harus tetap bisa ditemukan. `[code]` `letta/functions/function_sets/base.py`
-  baris 164-245.
-- **Recall/pencarian percakapan** — pencarian atas transkrip mentah itu
-  sendiri (`conversation_search`, hybrid text + semantic similarity),
-  bukan atas fakta yang sudah dikurasi sama sekali. Menjawab "apa yang
-  betul-betul pernah dikatakan", beda dari dua mekanisme di atas yang
-  menjawab "apa yang disimpulkan penting". `[code]` `letta/functions/function_sets/base.py`
-  baris 87-163. Ini pasangan konsep dari tabel `messages`/`tool_calls` di
-  [`persistence-schema.md`](persistence-schema.md) — transkrip sebagai
-  sumber kebenaran, dicari langsung tanpa lapis kurasi.
+- **Core/working memory** — a set of small, labelled blocks **always**
+  present in the context, edited precisely through tools
+  (`core_memory_append`, `core_memory_replace`, `memory_replace`,
+  `memory_insert`, `rethink_memory`). It answers "what must always be
+  remembered" (e.g. a `human` block holding core facts about the user).
+  `[code]` `letta/functions/function_sets/base.py` lines 246-527, repo
+  `letta-ai/letta` branch `archive`.
+- **Archival/long-term memory** — large, unbounded, retrieved through
+  semantic search, **not** always in the context (`archival_memory_insert`,
+  `archival_memory_search`, supporting tags and date filters). It answers
+  "what might need finding later" — facts that needn't always be present
+  but must remain findable. `[code]`
+  `letta/functions/function_sets/base.py` lines 164-245.
+- **Recall/conversation search** — search over the raw transcript itself
+  (`conversation_search`, hybrid text + semantic similarity), not over
+  curated facts at all. It answers "what was actually said", different from
+  the two above which answer "what was concluded to be important". `[code]`
+  `letta/functions/function_sets/base.py` lines 87-163. This is the
+  conceptual counterpart of the `messages`/`tool_calls` tables in
+  [`persistence-schema.md`](persistence-schema.md) — the transcript as the
+  source of truth, searched directly with no curation layer.
 
-Mencampur ketiganya jadi satu penyimpanan generik kehilangan properti yang
-justru jadi alasan masing-masing ada: core memory butuh selalu-di-context
-(mahal kalau semua fakta diperlakukan begitu); archival butuh tidak-selalu-
-di-context (boros kalau semua fakta wajib muncul tiap turn); recall butuh
-tetap mentah (kurasi yang terlalu agresif menghapus detail yang justru
-dicari nanti).
+Merging all three into one generic store loses the very properties that
+justify each existing: core memory needs always-in-context (expensive if
+every fact is treated that way); archival needs not-always-in-context
+(wasteful if every fact must appear each turn); recall needs to stay raw
+(over-aggressive curation removes exactly the detail sought later).
 
-### Ekstraksi: siapa memutuskan sesuatu layak diingat
+### Extraction: who decides something is worth remembering
 
-Dua mekanisme nyata, dua model aktor berbeda:
+Two real mechanisms, two different actor models:
 
-- **Digerakkan model, berbasis tool** (Letta) — agent sendiri yang
-  memanggil `core_memory_append`/`archival_memory_insert` sebagai bagian
-  dari reasoning-nya sendiri saat itu juga. Ekstraksi **adalah** tindakan
-  tool call — eksplisit, bisa diaudit dari trajektori (`evaluation.md` bisa
-  langsung menegaskan "apakah `core_memory_append` dipanggil di kasus ini"
-  sebagai bagian eval trajektori). `[code]` sama seperti di atas.
-- **Digerakkan pipeline, ekstraksi LLM sebagai batch step** (Mem0) —
-  panggilan LLM terpisah (`ADDITIVE_EXTRACTION_PROMPT`) atas pesan terbaru
-  + kandidat memory yang sudah ada menghasilkan daftar JSON fakta kandidat,
-  dijalankan sebagai fase tersendiri (`_add_to_vector_store` Phase 2),
-  bukan tindakan agent yang sedang bertugas. `[code]` `mem0/memory/main.py`
-  baris 913-968 (Phase 2, panggilan `self.llm.generate_response` dengan
-  `system_prompt = ADDITIVE_EXTRACTION_PROMPT`), repo `mem0ai/mem0`.
+- **Model-driven, tool-based** (Letta) — the agent itself calls
+  `core_memory_append`/`archival_memory_insert` as part of its own
+  reasoning in the moment. Extraction **is** a tool call — explicit,
+  auditable from the trajectory (`evaluation.md` can assert directly
+  "was `core_memory_append` called in this case" as part of trajectory
+  eval). `[code]` the same as above.
+- **Pipeline-driven, LLM extraction as a batch step** (Mem0) — a separate
+  LLM call (`ADDITIVE_EXTRACTION_PROMPT`) over the latest messages plus
+  existing candidate memories produces a JSON list of candidate facts, run
+  as its own phase (`_add_to_vector_store` Phase 2), not an act of the
+  agent currently on task. `[code]` `mem0/memory/main.py` lines 913-968
+  (Phase 2, the `self.llm.generate_response` call with `system_prompt =
+  ADDITIVE_EXTRACTION_PROMPT`), repo `mem0ai/mem0`.
 
-Aktor yang menilai "layak diingat" beda: agent yang sedang mengerjakan
-tugas, seketika (Letta), vs proses ekstraksi terpisah yang membaca ulang
-percakapan setelahnya (Mem0) — lihat `## Trade-off` untuk konsekuensinya.
+The actor judging "worth remembering" differs: the agent working on the
+task, in the moment (Letta), vs a separate extraction process re-reading
+the conversation afterwards (Mem0) — see `## Trade-offs` for the
+consequences.
 
-### Konflik dan pembaruan: judgment LLM vs deterministik exact-match
+### Conflict and update: LLM judgement vs deterministic exact match
 
-Mem0 **mendokumentasikan** pola resolusi konflik empat-arah yang cukup
-dikenal di literatur memory agent: untuk tiap fakta yang diekstrak,
-`DEFAULT_UPDATE_MEMORY_PROMPT` meminta LLM memutuskan salah satu dari ADD
-(fakta baru), UPDATE (bertentangan/menyampaikan hal yang sama tapi lebih
-lengkap — ID lama dipertahankan), DELETE (fakta lama & fakta baru
-bertentangan langsung), atau NONE (sudah ada/tidak relevan), lengkap
-dengan contoh berpasangan untuk tiap kasus. `[code]` `mem0/configs/prompts.py`
-baris 176-322, repo `mem0ai/mem0`.
+Mem0 **documents** a four-way conflict resolution pattern well known in the
+agent memory literature: for each extracted fact,
+`DEFAULT_UPDATE_MEMORY_PROMPT` asks the LLM to decide one of ADD (a new
+fact), UPDATE (contradicting or stating the same thing more fully — the old
+ID retained), DELETE (the old and new facts directly contradict), or NONE
+(already present/irrelevant), complete with paired examples for each case.
+`[code]` `mem0/configs/prompts.py` lines 176-322, repo `mem0ai/mem0`.
 
-**Temuan penting yang wajib dicatat jujur**: prompt ini **tidak** dipanggil
-di jalur `_add_to_vector_store` versi yang dibaca saat ini (`mem0/memory/main.py`,
-diverifikasi lewat pencarian `DEFAULT_UPDATE_MEMORY_PROMPT`/
-`get_update_memory_messages` di file itu — nol kecocokan). Pipeline yang
-sungguh berjalan hari ini murni aditif dengan dedup berbasis hash MD5
-konten (`mem_hash in existing_hashes or mem_hash in seen_hashes` → lewati,
-selain itu selalu `event: "ADD"`) — tidak ada keputusan UPDATE/DELETE
-otomatis terhadap memory yang sudah ada saat menulis fakta baru. `[code]`
-`mem0/memory/main.py` baris 1010-1039 (Phase 4-5, dedup hash),
-1160-1168 (`returned_memories` selalu `"event": "ADD"`). UPDATE/DELETE yang
-sungguh ada di API adalah panggilan eksplisit **by-ID**: `update(memory_id,
-text=...)` dan `delete(memory_id)`, dipicu aplikasi pemanggil, bukan
-diputuskan otomatis oleh sistem memory saat menulis fakta baru. `[code]`
-`mem0/memory/main.py` baris 1815-1866 (`update`), 1869-1889 (`delete`).
-Pola ADD/UPDATE/DELETE/NONE per-fakta tetap contoh nyata dan terdokumentasi
-lengkap tentang **bagaimana** resolusi konflik berbasis judgment LLM bisa
-dirancang — tapi mengutipnya sebagai "begini cara Mem0 menyelesaikan
-konflik hari ini" akan salah tanpa catatan ini.
+**An important finding that must be recorded honestly**: this prompt is
+**not** called on the `_add_to_vector_store` path in the version read today
+(`mem0/memory/main.py`, verified by searching for
+`DEFAULT_UPDATE_MEMORY_PROMPT`/`get_update_memory_messages` in that file —
+zero matches). The pipeline actually running today is purely additive with
+MD5 content-hash dedup (`mem_hash in existing_hashes or mem_hash in
+seen_hashes` → skip, otherwise always `event: "ADD"`) — there is no
+automatic UPDATE/DELETE decision against existing memories when a new fact
+is written. `[code]` `mem0/memory/main.py` lines 1010-1039 (Phases 4-5,
+hash dedup), 1160-1168 (`returned_memories` always `"event": "ADD"`). The
+UPDATE/DELETE that genuinely exists in the API is an explicit **by-ID**
+call: `update(memory_id, text=...)` and `delete(memory_id)`, triggered by
+the calling application rather than decided automatically by the memory
+system when writing a new fact. `[code]` `mem0/memory/main.py` lines
+1815-1866 (`update`), 1869-1889 (`delete`). The per-fact ADD/UPDATE/
+DELETE/NONE pattern remains a real, fully documented example of **how**
+LLM-judgement-based conflict resolution can be designed — but citing it as
+"this is how Mem0 resolves conflicts today" would be wrong without this
+note.
 
-Letta menempuh jalur berlawanan untuk konflik di core memory: **deterministik,
-bukan judgment**. `core_memory_replace(label, old_content, new_content)`
-mensyaratkan `old_content` cocok **persis** dengan isi blok saat ini —
-kalau tidak ditemukan, fungsi `raise ValueError` alih-alih menebak niat
-pemanggil. `[code]` `letta/functions/function_sets/base.py` baris 263-281.
-Konflik di sini tidak "diselesaikan" oleh judgment — ia ditangkap sebagai
-kegagalan keras yang memaksa pemanggil (model itu sendiri, di tengah
-reasoning-nya) memeriksa ulang isi blok dan mencoba lagi dengan match yang
-benar. Untuk reorganisasi/dedup yang genuinely butuh menulis ulang seluruh
-blok (bukan sekadar ganti satu string), jalurnya eksplisit dan terpisah:
-`rethink_memory`/`memory_rethink` menulis ulang **seluruh** isi blok
-sekaligus, disyaratkan dokumentasinya mengintegrasikan info baru sambil
-membuang yang usang/tidak konsisten — operasi rewrite penuh, bukan
-patch parsial. `[code]` `letta/functions/function_sets/base.py`
-baris 283-310, 488-519.
+Letta takes the opposite route for conflict in core memory:
+**deterministic, not judgement**. `core_memory_replace(label, old_content,
+new_content)` requires `old_content` to match the block's current content
+**exactly** — if not found, the function raises `ValueError` rather than
+guessing the caller's intent. `[code]`
+`letta/functions/function_sets/base.py` lines 263-281. Conflict here isn't
+"resolved" by judgement — it is caught as a hard failure forcing the caller
+(the model itself, mid-reasoning) to re-read the block's content and try
+again with a correct match. For a reorganisation/dedup genuinely needing
+the whole block rewritten (rather than one string replaced), the route is
+explicit and separate: `rethink_memory`/`memory_rethink` rewrites the
+**entire** block at once, its documentation requiring it to integrate new
+information while discarding what is stale or inconsistent — a full rewrite
+operation, not a partial patch. `[code]`
+`letta/functions/function_sets/base.py` lines 283-310, 488-519.
 
-### Penghapusan: tindakan eksplisit, bukan "berhenti ditampilkan"
+### Deletion: an explicit act, not "no longer shown"
 
-Konsisten dengan `retention-and-deletion.md`: kedua sistem yang dibaca
-memperlakukan penghapusan sebagai jalur kode tersendiri, bukan efek
-samping dari sesuatu yang lain. Mem0: `delete(memory_id)`/
-`delete_all(user_id=..., agent_id=..., run_id=...)` adalah panggilan API
-kelas satu. `[code]` `mem0/memory/main.py` baris 1869-1926. Letta: tool
-`memory` mendukung sub-command `"delete"` eksplisit pada path blok
-tertentu, dan `core_memory_replace` dengan `new_content=""` adalah jalur
-setara untuk core memory. `[code]` `letta/functions/function_sets/base.py`
-baris 10-69 (docstring tool `memory`, sub-command `delete`), 263-281
-(`core_memory_replace`, komentar "To delete memories, use an empty string").
-Tidak satu pun dari dua sistem ini memperlakukan "tidak lagi diambil saat
-retrieval" sebagai penghapusan — keduanya punya operasi hapus yang benar-
-benar menghapus record.
+Consistent with `retention-and-deletion.md`: both systems read treat
+deletion as its own code path rather than a side effect of something else.
+Mem0: `delete(memory_id)`/`delete_all(user_id=..., agent_id=...,
+run_id=...)` are first-class API calls. `[code]` `mem0/memory/main.py`
+lines 1869-1926. Letta: the `memory` tool supports an explicit `"delete"`
+sub-command on a given block path, and `core_memory_replace` with
+`new_content=""` is the equivalent route for core memory. `[code]`
+`letta/functions/function_sets/base.py` lines 10-69 (the `memory` tool
+docstring, the `delete` sub-command), 263-281 (`core_memory_replace`, the
+comment "To delete memories, use an empty string"). Neither system treats
+"no longer retrieved" as deletion — both have a delete operation that
+genuinely removes the record.
 
-## Trade-off
+## Trade-offs
 
-- **Ekstraksi digerakkan-model vs digerakkan-pipeline** — digerakkan-model
-  bisa diaudit sebagai tindakan spesifik di trajektori dan terjadi persis
-  saat agent yang bertugas menilai sesuatu layak disimpan, tapi kualitas
-  memory-nya terikat pada apa yang kebetulan disadari agent itu di tengah
-  mengerjakan tugas lain (bukan fokus utamanya), dan menambah overhead tool
-  call di giliran mana pun ekstraksi terjadi. Pipeline terpisah bisa
-  memproses seluruh percakapan dengan hindsight penuh, bisa memakai model
-  lebih kecil/murah khusus ekstraksi, tapi adalah sistem terpisah yang
-  harus dibangun/dipelihara sendiri dan punya jeda (ada tenggang waktu
-  antara sesuatu dikatakan dan menjadi memory yang bisa dipakai ulang).
-- **Resolusi konflik berbasis judgment LLM vs deterministik exact-match** —
-  judgment LLM bisa mengenali penyampaian ulang yang secara makna sama
-  ("suka pizza keju" = "cinta pizza keju") dan bertindak seperti editor
-  manusia, tapi keputusannya black-box tiap kali (tidak reproducible,
-  butuh panggilan model per batch fakta) dan bisa salah (menghasilkan
-  DELETE untuk sesuatu yang sebenarnya tidak bertentangan). Deterministik
-  exact-match 100% dapat diprediksi dan gratis (tanpa panggilan model
-  tambahan), tapi rapuh — pemanggil harus tahu persis string lama atau
-  operasinya gagal, dan tidak bisa mengenali parafrase sebagai "fakta yang
-  sama" seperti judgment LLM bisa.
-- **Resolusi konflik selalu-aktif vs ditunda ke panggilan eksplisit
-  by-ID** (pola yang sungguh terverifikasi di jalur Mem0 saat ini) —
-  menunda jauh lebih sederhana dibangun (tidak perlu menyelesaikan konflik
-  terhadap memory store yang sudah ada di tiap penulisan) dan menghindari
-  biaya/risiko judgment LLM di atas, tapi memindahkan masalah deteksi
-  konflik ke siapa pun yang membaca memory belakangan — fakta yang nyaris
-  duplikat atau bahkan bertentangan bisa hidup berdampingan diam-diam,
-  kecuali aplikasi membangun rekonsiliasinya sendiri di atas.
+- **Model-driven vs pipeline-driven extraction** — model-driven is
+  auditable as a specific act in the trajectory and happens exactly when
+  the agent on task judges something worth storing, but its memory quality
+  is bound to what that agent happens to notice while doing something else
+  (not its main focus), and it adds tool-call overhead to whichever turn
+  extraction occurs in. A separate pipeline can process the whole
+  conversation with full hindsight and can use a smaller/cheaper model
+  dedicated to extraction, but is a separate system to build and maintain
+  and has a lag (a gap between something being said and becoming reusable
+  memory).
+- **LLM-judgement conflict resolution vs deterministic exact match** — LLM
+  judgement can recognise a semantically identical restatement ("likes
+  cheese pizza" = "loves cheese pizza") and act like a human editor, but
+  its decisions are a black box each time (not reproducible, requiring a
+  model call per batch of facts) and can be wrong (producing a DELETE for
+  something that doesn't actually contradict). Deterministic exact match is
+  100% predictable and free (no extra model call), but brittle — the caller
+  must know the old string exactly or the operation fails, and it can't
+  recognise a paraphrase as "the same fact" the way LLM judgement can.
+- **Always-on conflict resolution vs deferring to explicit by-ID calls**
+  (the pattern actually verified on Mem0's current path) — deferring is far
+  simpler to build (no need to resolve conflicts against the existing
+  memory store on every write) and avoids the LLM judgement cost/risk
+  above, but shifts the conflict detection problem onto whoever reads
+  memory later — near-duplicate or even contradictory facts can coexist
+  silently, unless the application builds its own reconciliation on top.
 
-## Di deepagents
+## In deepagents
 
-`deepagents` **tidak** mengirim sistem memory lintas sesi terkurasi ala
-Letta/Mem0 — `MemoryMiddleware` cuma memuat isi file `AGENTS.md` ke system
-prompt sekali di awal sesi (`memory=["./AGENTS.md", ...]`): konteks statis
-yang disuntik sekali, bukan ekstraksi/konflik/pembaruan/penghapusan fakta
-diskret. `[code]` dikutip `../systems/deepagents.md` §2. `StoreBackend
-(namespace=...)` memberi penyimpanan durable lintas-thread lewat `BaseStore`
-LangGraph — tapi ia backend generik untuk permukaan tool filesystem
-(`read_file`/`write_file`/`edit_file`), bukan pipeline khusus memory dengan
-mekanisme ekstraksi/konflik sendiri. `[code]` dikutip
-`../systems/deepagents.md` §Backend filesystem. `CompositeBackend` bahkan
-punya konvensi contoh dokumentasi merutekan prefix path `/memories/` ke
-`StoreBackend` — tapi itu tetap penamaan konvensi filesystem, bukan
-mekanisme kurasi memory bawaan. `[code]`/`[docs]` dikutip
-`../systems/deepagents.md` §Backend filesystem
+`deepagents` does **not** ship a curated cross-session memory system like
+Letta's or Mem0's — `MemoryMiddleware` only loads the contents of an
+`AGENTS.md` file into the system prompt once at session start
+(`memory=["./AGENTS.md", ...]`): static context injected once, not
+extraction/conflict/update/deletion of discrete facts. `[code]` cited from
+`../systems/deepagents.md` §2. `StoreBackend(namespace=...)` provides
+durable cross-thread storage through LangGraph's `BaseStore` — but it is a
+generic backend for the filesystem tool surface
+(`read_file`/`write_file`/`edit_file`), not a memory-specific pipeline with
+extraction/conflict mechanisms of its own. `[code]` cited from
+`../systems/deepagents.md` §Filesystem backend. `CompositeBackend` even has
+a documentation-example convention routing the `/memories/` path prefix to
+`StoreBackend` — but that remains a filesystem naming convention, not a
+built-in memory curation mechanism. `[code]`/`[docs]` cited from
+`../systems/deepagents.md` §Filesystem backend
 (`docs.langchain.com/oss/python/deepagents/backends`).
 
-Proyek yang butuh memory ala Letta/Mem0 harus membangunnya sendiri di atas
-`deepagents` — baik sebagai tool kustom yang menulis ke `StoreBackend`
-(pola digerakkan-model, mirip Letta: tool eksplisit yang dipanggil agent),
-atau memanggil layanan memory eksternal (Letta/Mem0 sesungguhnya) sebagai
-tool. `[inferred]` disimpulkan dari tidak ditemukannya modul
-ekstraksi/konflik/deduplikasi fakta di `deepagents/middleware/` yang dibaca
-Task 3 maupun task ini. Lapis "Memory" di tabel lima-lapis
-[`session-state.md`](session-state.md) §Lima lapis (§8.1) — Postgres +
-vector, lintas sesi, dimiliki BE+AI — adalah tempat arsitektural yang
-disediakan proyek ini untuk hasil bangunan kustom itu; `deepagents` sendiri
-tidak mengisi lapis itu.
+A project needing Letta/Mem0-style memory has to build it on top of
+`deepagents` — either as custom tools writing to `StoreBackend` (the
+model-driven pattern, like Letta: explicit tools the agent calls), or by
+calling an external memory service (Letta/Mem0 themselves) as a tool.
+`[inferred]` concluded from the absence of any fact
+extraction/conflict/dedup module in the `deepagents/middleware/` read in
+Task 3 and in this task. The "Memory" layer in
+[`session-state.md`](session-state.md)'s five-layer table (§8.1) — Postgres
++ vector, cross-session, owned by BE+AI — is the architectural place this
+project reserves for that custom build; `deepagents` itself doesn't fill
+that layer.
 
-## Sumber
+## Sources
 
 - `[code]` `letta/functions/function_sets/base.py` (repo `letta-ai/letta`,
-  cabang `archive` — cabang yang menyimpan source server Letta V1;
-  `main` sudah jadi landing page yang mengarahkan ke `letta-ai/letta-code`,
-  dikonfirmasi lewat `README.md` repo tersebut), dibaca via
-  `raw.githubusercontent.com/letta-ai/letta/archive/letta/functions/function_sets/base.py` —
-  `core_memory_append`/`core_memory_replace`/`rethink_memory` (baris
-  246-323), `memory_replace`/`memory_insert`/`memory_rethink` (baris
-  330-527), `archival_memory_insert`/`archival_memory_search` (baris
-  164-245), `conversation_search` (baris 87-163), tool `memory` sub-command
-  `delete` (baris 10-69).
-- `[code]` `mem0/memory/main.py` (repo `mem0ai/mem0`, cabang `main`),
-  dibaca via `raw.githubusercontent.com/mem0ai/mem0/main/mem0/memory/main.py` —
-  `_add_to_vector_store` Phase 2 ekstraksi (baris 913-968), Phase 4-5 dedup
-  hash (baris 1010-1039), `returned_memories` event selalu `"ADD"` (baris
-  1160-1168), `update`/`delete` eksplisit by-ID (baris 1815-1889).
-- `[code]` `mem0/configs/prompts.py` (repo `mem0ai/mem0`), dibaca via
+  branch `archive` — the branch holding the Letta V1 server source; `main`
+  is now a landing page pointing to `letta-ai/letta-code`, confirmed
+  through that repo's `README.md`), read via
+  `raw.githubusercontent.com/letta-ai/letta/archive/letta/functions/function_sets/base.py`
+  — `core_memory_append`/`core_memory_replace`/`rethink_memory` (lines
+  246-323), `memory_replace`/`memory_insert`/`memory_rethink` (lines
+  330-527), `archival_memory_insert`/`archival_memory_search` (lines
+  164-245), `conversation_search` (lines 87-163), the `memory` tool's
+  `delete` sub-command (lines 10-69).
+- `[code]` `mem0/memory/main.py` (repo `mem0ai/mem0`, branch `main`), read
+  via `raw.githubusercontent.com/mem0ai/mem0/main/mem0/memory/main.py` —
+  `_add_to_vector_store` Phase 2 extraction (lines 913-968), Phases 4-5
+  hash dedup (lines 1010-1039), `returned_memories` always `"ADD"` (lines
+  1160-1168), the explicit by-ID `update`/`delete` (lines 1815-1889).
+- `[code]` `mem0/configs/prompts.py` (repo `mem0ai/mem0`), read via
   `raw.githubusercontent.com/mem0ai/mem0/main/mem0/configs/prompts.py` —
-  `DEFAULT_UPDATE_MEMORY_PROMPT` (baris 176-322, pola ADD/UPDATE/DELETE/NONE
-  terdokumentasi lengkap dengan contoh, dikutip dengan catatan tidak
-  terpakai di jalur `main.py` saat ini), `ADDITIVE_EXTRACTION_PROMPT`
-  (baris 468+, dipakai nyata).
+  `DEFAULT_UPDATE_MEMORY_PROMPT` (lines 176-322, the ADD/UPDATE/DELETE/NONE
+  pattern documented in full with examples, cited with the note that it is
+  unused on `main.py`'s current path), `ADDITIVE_EXTRACTION_PROMPT` (line
+  468+, genuinely used).
 - `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §2
-  (`MemoryMiddleware`), §Backend filesystem (`StoreBackend`,
-  `CompositeBackend`) — tier-1 reference terverifikasi Task 3.
-- `[code]` [`session-state.md`](session-state.md) §Lima lapis (§8.1) —
-  lapis Memory (Postgres + vector, BE+AI) yang jadi tempat arsitektural
-  hasil bangunan kustom di atas `deepagents`; tidak diusulkan ulang di
-  sini.
-- `[code]` [`persistence-schema.md`](persistence-schema.md) — pasangan
-  konsep tabel `messages`/`tool_calls` yang dirujuk untuk membedakan
-  recall/transkrip dari memory terkurasi.
-- `[code]` [`retention-and-deletion.md`](retention-and-deletion.md) —
-  dasar tuntutan "penghapusan wajib nyata, bukan berhenti ditampilkan"
-  yang diterapkan ke lapis memory di file ini.
-- `[code]` [`evaluation.md`](evaluation.md) — dasar klaim ekstraksi
-  digerakkan-model bisa dinilai lewat eval trajektori.
+  (`MemoryMiddleware`), §Filesystem backend (`StoreBackend`,
+  `CompositeBackend`) — a tier-1 reference verified in Task 3.
+- `[code]` [`session-state.md`](session-state.md) §Five layers (§8.1) — the
+  Memory layer (Postgres + vector, BE+AI) as the architectural home for a
+  custom build on top of `deepagents`; not re-proposed here.
+- `[code]` [`persistence-schema.md`](persistence-schema.md) — the
+  conceptual counterpart `messages`/`tool_calls` tables, referenced to
+  distinguish recall/transcript from curated memory.
+- `[code]` [`retention-and-deletion.md`](retention-and-deletion.md) — the
+  basis for the "deletion must be real, not merely no longer shown"
+  requirement applied to the memory layer here.
+- `[code]` [`evaluation.md`](evaluation.md) — the basis for the claim that
+  model-driven extraction can be scored through trajectory eval.
