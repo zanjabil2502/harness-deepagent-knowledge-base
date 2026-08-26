@@ -1,64 +1,66 @@
-# Graf AST source `deepagents` — indeks simbol → `file:line`
+# `deepagents` source AST graph — a symbol → `file:line` index
 
-Indeks struktural source `deepagents==0.7.8`: apa memanggil apa, dan di
-baris berapa tiap simbol didefinisikan. Ini yang mengubah "parameter apa
-saja yang dipunya X" dari pertanyaan ingatan jadi pertanyaan lokasi —
-graf memberi alamatnya, source memberi signature-nya.
+A structural index of `deepagents==0.7.8` source: what calls what, and on
+which line each symbol is defined. This is what turns "which parameters
+does X have" from a question of memory into a question of location — the
+graph gives the address, the source gives the signature.
 
-## Apa yang ada di sini, dan apa yang tidak
+## What is here, and what is not
 
-Node menyimpan **identitas simbol dan alamatnya**, bukan isinya: `label`,
-penanda callable/class, `source_file`, `source_location`. **Tidak ada**
-nama parameter, nilai default, atau anotasi tipe — semua itu dibaca dari
-source, dan dirangkum di [`../api-reference.md`](../api-reference.md).
+Nodes store **a symbol's identity and its address**, not its contents:
+`label`, callable/class markers, `source_file`, `source_location`. There
+are **no** parameter names, default values, or type annotations — all of
+those are read from source, and summarised in
+[`../api-reference.md`](../api-reference.md).
 
-Yang kaya justru sisi relasinya — 3.619 edge dalam sepuluh jenis, tiap
-edge membawa `source_file` dan `source_location` sendiri:
+The richness is on the relationship side — 3,619 edges across ten kinds,
+each edge carrying its own `source_file` and `source_location`:
 
-| Relasi | Jumlah | Relasi | Jumlah |
+| Relation | Count | Relation | Count |
 |---|---:|---|---:|
-| `calls` | 1.065 | `uses` | 167 |
+| `calls` | 1,065 | `uses` | 167 |
 | `references` | 766 | `inherits` | 73 |
 | `rationale_for` | 723 | `indirect_call` | 13 |
 | `contains` | 426 | `imports_from` | 2 |
 | `method` | 383 | `imports` | 1 |
 
-## Berkas
+## Files
 
-| Berkas | Isi |
+| File | Contents |
 |---|---|
-| [`GRAPH_REPORT.md`](GRAPH_REPORT.md) | Laporan terbaca: hub per komunitas, node paling terhubung, siklus import, koneksi tak terduga |
-| `graph.json` | Graf penuh (1.788 node, 3.619 edge). Dibaca `tools/build_glossary.py` untuk bagian simbol di [`../../GLOSSARY.md`](../../GLOSSARY.md) |
-| `manifest.json` | md5 tiap berkas source saat graf dibangun. Dibaca `tools/check_kb.py` untuk membuktikan graf masih sinkron |
-| `.graphify_labels.json` | Label komunitas |
+| [`GRAPH_REPORT.md`](GRAPH_REPORT.md) | A readable report: hubs per community, most-connected nodes, import cycles, surprising connections |
+| `graph.json` | The full graph (1,788 nodes, 3,619 edges). Read by `tools/build_glossary.py` for the symbol section of [`../../GLOSSARY.md`](../../GLOSSARY.md) |
+| `manifest.json` | The md5 of every source file at the time the graph was built. Read by `tools/check_kb.py` to prove the graph is still in sync |
+| `.graphify_labels.json` | Community labels |
 
-Turunan yang tidak di-commit (git-ignored): `graph.html`, `cache/`,
-`cost.json`, `.graphify_python`, `.graphify_root` — besar, mesin-spesifik,
-atau memuat path absolut.
+Derived files that are not committed (git-ignored): `graph.html`,
+`cache/`, `cost.json`, `.graphify_python`, `.graphify_root` — large,
+machine-specific, or containing absolute paths.
 
-## Kesinkronan dijaga, bukan diasumsikan
+## Sync is proven, not assumed
 
-Seluruh nilai indeks ini bergantung pada kecocokan dengan source yang
-terpasang. Begitu paketnya berubah, sitasi `file.py:NNN` di seluruh KB
-bisa meleset **tanpa satu pun cek gagal** — kelas kegagalan yang sudah dua
-kali terjadi di proyek ini (32 sitasi dokumentasi meleset satu baris, dan
-sitasi `graph.py` meleset +49).
+This index's entire value depends on matching the installed source. The
+moment the package changes, `file.py:NNN` citations across the whole KB
+can drift **without a single check failing** — a failure class that has
+already happened twice in this project (32 documentation citations off by
+one line, and `graph.py` citations off by +49).
 
-Karena itu `manifest.json` menyimpan md5 mentah tiap berkas, dan
-`tools/check_kb.py` membandingkannya dua arah tiap kali dijalankan: berkas
-yang ada di graf tapi hilang atau berubah di source, dan berkas yang ada di
-source tapi belum masuk graf. Status terakhir: **53/53 cocok**. Tanpa venv
-`../../recipes/.venv`, cek itu dilewati dengan pesan `LEWAT` dan sisanya
-tetap jalan.
+That is why `manifest.json` stores the raw md5 of every file, and
+`tools/check_kb.py` compares both directions on every run: files present
+in the graph but missing or changed in the source, and files present in
+the source but not yet in the graph. Latest status: **53/53 matching**.
+Without the `../../recipes/.venv` venv, that check is skipped with a
+`LEWAT` (skipped) message and the rest still runs.
 
-## Membangun ulang
+## Rebuilding
 
-Dibangkitkan graphify — ekstraksi murni AST, nol token LLM, nol API key.
-Langkahnya ada di [`../../../README.md`](../../../README.md) §Graph source
-deepagents. Graphify melewati apa pun di dalam `.venv`, jadi source-nya
-disalin dulu ke path biasa. Keluarannya mendarat di `graphify-out/`;
-pindahkan isinya ke direktori ini.
+Generated by graphify — pure AST extraction, zero LLM tokens, zero API
+keys. The steps are in [`../../../README.md`](../../../README.md) §Graph
+source deepagents. Graphify skips anything inside `.venv`, so the source
+is copied to an ordinary path first. Its output lands in `graphify-out/`;
+move the contents into this directory.
 
-Satu batas yang perlu diketahui: `graph.json` mencatat `built_at_commit`
-berisi commit **repo ini**, bukan versi `deepagents` yang digambarkan.
-Versinya dipastikan lewat cek md5 di atas, bukan lewat metadata graf.
+One limitation worth knowing: `graph.json` records a `built_at_commit`
+holding a commit of **this repo**, not the `deepagents` version it
+describes. The version is established through the md5 check above, not
+through the graph's metadata.
