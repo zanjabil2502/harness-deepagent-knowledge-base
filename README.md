@@ -42,7 +42,15 @@ Jalankan dari root repo ini. Setelah itu Claude Code akan menemukan skill
 `agent-harness-kb` lewat `SKILL.md` dan memuat `references/` sesuai
 kebutuhan — tidak ada langkah build/install lain.
 
-## Cara memakai — contoh dari deskripsi project sampai blueprint
+## Cara memakai
+
+Ada dua mode, dijelaskan di [`SKILL.md`](SKILL.md) §Dua mode pemakaian:
+**menimbang** (berangkat dari pertanyaan atau ide yang belum berbentuk,
+keluarannya keputusan beserta alasannya) dan **membangun** (berangkat dari
+deskripsi project, keluarannya blueprint lalu scaffold). Contoh di bawah
+menelusuri mode membangun, yang jalurnya paling panjang.
+
+### Contoh: dari deskripsi project sampai blueprint
 
 Misal deskripsi project: *"CLI yang jalan di repo lokal developer, bisa baca/
 edit file dan menjalankan shell (test, linter, package manager), sesi bisa

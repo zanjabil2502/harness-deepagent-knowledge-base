@@ -1,6 +1,6 @@
 ---
 name: agent-harness-kb
-description: Dipakai saat merancang harness agent atau membangun di atas deepagents — bentuk loop, context engineering, tool & delegasi, guardrail, dan konstruksi deepagents yang idiomatik. Fokus pada harness itu sendiri; lapisan serving dan persistensi tersedia tapi bukan jalur utama.
+description: Dipakai saat merancang harness agent atau membangun di atas deepagents — bentuk loop, context engineering, tool & delegasi, guardrail, dan konstruksi deepagents yang idiomatik. Dua mode: menimbang (brainstorming arah, trade-off, "ini jenis sistem apa", membandingkan dengan sistem yang sudah ada) dan membangun (blueprint lalu scaffold). Fokus pada harness itu sendiri; lapisan serving dan persistensi tersedia tapi bukan jalur utama.
 ---
 
 # Agent Harness Engineering Knowledge Base
@@ -112,7 +112,26 @@ diputuskan; membukanya lebih awal menenggelamkan keputusan harness.
 - **Data** — [session-state](references/concepts/session-state.md), [persistence-schema](references/concepts/persistence-schema.md), [artifacts-and-canvas](references/concepts/artifacts-and-canvas.md), [retention-and-deletion](references/concepts/retention-and-deletion.md)
 - **Runtime** — [serving-topology](references/concepts/serving-topology.md), [resource-profiling](references/concepts/resource-profiling.md), [isolation-and-scoping](references/concepts/isolation-and-scoping.md), [sandboxing](references/concepts/sandboxing.md), [queueing-and-backpressure](references/concepts/queueing-and-backpressure.md), [scaling](references/concepts/scaling.md)
 
-## Keluaran
+## Dua mode pemakaian
 
-Keluaran akhir dari skill ini adalah **Harness Blueprint**, lalu **scaffold** —
-bukan penjelasan.
+Bahannya sama; yang berbeda **bagian mana yang dibaca** dan apa yang
+dihasilkan. Frame lima-bagian tiap file memang menyandikan keduanya.
+
+| | **Menimbang** (brainstorming) | **Membangun** |
+|---|---|---|
+| Berangkat dari | pertanyaan, dugaan, ide yang belum berbentuk | deskripsi project yang sudah ada |
+| Bagian yang dibaca | `## Masalah`, `## Trade-off`; di arketipe: `## Sistem contoh`, `## Jebakan khas`; `systems/INDEX.md` | `## Pola`, `## Di deepagents`; di arketipe: `## Konsekuensi harness`, `## Bangun ini pakai deepagents` |
+| Keluaran | keputusan beserta alasan dan yang ditukar — belum tentu satu blueprint | Harness Blueprint, lalu scaffold |
+
+**Menimbang** dipakai saat pertanyaannya masih "sebenarnya ini jenis
+sistem apa", "apa konsekuensinya kalau loop-nya begini", atau "sudah ada
+yang bikin begini belum". Jalannya bukan prosedur diagnostik di atas —
+mulai dari 6 sumbu sebagai menu pilihan, `systems/INDEX.md` untuk melihat
+yang sudah ada, lalu `## Trade-off` di concept yang relevan. Di mode ini
+penjelasan **adalah** keluarannya, dan berhenti tanpa blueprint itu sah.
+
+**Membangun** memakai prosedur diagnostik di atas dan berakhir di
+blueprint lalu scaffold — di mode ini penjelasan bukan keluaran.
+
+Hasil menimbang mengalir masuk ke membangun: keputusan yang sudah punya
+alasan mengisi baris blueprint tanpa perlu ditimbang ulang.
