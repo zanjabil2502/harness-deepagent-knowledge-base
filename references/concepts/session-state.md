@@ -1,151 +1,158 @@
 # Session state
 
-## Masalah
+## Problem
 
-"State" di sistem agent adalah lima hal berbeda yang kebetulan dipanggil
-dengan nama yang sama: riwayat obrolan yang dilihat user, potongan teks yang
-sungguh dikirim ke model tiap call, progres satu run graph yang bisa
-di-resume, fakta yang bertahan lintas sesi, dan file/dokumen yang dihasilkan
-agent. Selama lima hal ini belum dipisah, tidak ada cara bernalar soal
-persistence — pertanyaan "apakah ini butuh disimpan di Postgres?" tidak
-punya jawaban tunggal karena jawabannya beda untuk tiap lapis.
+"State" in an agent system is five different things that happen to share a
+name: the chat history the user sees, the slice of text actually sent to
+the model on each call, the progress of one graph run that can be resumed,
+facts that persist across sessions, and the files/documents the agent
+produces. Until those five are separated there is no way to reason about
+persistence — the question "does this need to live in Postgres?" has no
+single answer, because the answer differs per layer.
 
-Gejala konkret dari kebingungan ini: kompaksi context disalahpahami sebagai
-"menghapus riwayat" (padahal cuma memangkas apa yang dikirim ke model);
-fitur daftar chat dibangun di atas checkpointer (yang bukan database produk,
-lihat di bawah); byte artefak ditaruh langsung di kolom pesan (transcript
-jadi bengkak, context ikut bengkak tiap kali riwayat dimuat ulang).
+Concrete symptoms of the confusion: context compaction is misread as
+"deleting history" (when it only trims what is sent to the model); a chat
+list feature is built on top of the checkpointer (which is not a product
+database, see below); artifact bytes are stored directly in a message
+column (bloating the transcript, and bloating context every time history
+is reloaded).
 
-**Heuristik pemilahan**: kalau state ini hilang, **bisakah dihitung ulang**
-dari sumber lain (transcript, memory, artefak)? Bisa → boleh ephemeral di
-sisi AI/harness (cache, in-memory, dibuang setelah call). Tidak bisa →
-wajib durable di BE. Garis batas tegasnya: **BE punya kebenaran, AI punya
-proyeksi.**
+**The sorting heuristic**: if this state were lost, **can it be
+recomputed** from another source (transcript, memory, artifacts)? Yes → it
+may be ephemeral on the AI/harness side (cache, in-memory, discarded after
+the call). No → it must be durable in the backend. The sharp line:
+**the backend owns truth, the AI owns a projection.**
 
-## Pola
+## Pattern
 
-### Lima lapis (§8.1)
+### Five layers (§8.1)
 
-| Lapis | Store | Lifetime | Pemilik |
+| Layer | Store | Lifetime | Owner |
 |---|---|---|---|
-| Transcript | Postgres append-only | permanen | BE |
-| Model context | dihitung, cache Redis | 1 call | Harness |
+| Transcript | Append-only Postgres | permanent | Backend |
+| Model context | Computed, Redis cache | 1 call | Harness |
 | Run state | Checkpointer (Postgres) | 1 run, resumable | Harness |
-| Memory | Postgres + vector | lintas sesi | BE + AI |
-| Artefak | S3/GCS + row metadata | permanen, berversi | BE |
+| Memory | Postgres + vector | across sessions | Backend + AI |
+| Artifacts | S3/GCS + metadata rows | permanent, versioned | Backend |
 
-Cek tiap lapis lewat heuristik di atas: transcript tidak bisa dihitung ulang
-(itu satu-satunya sumber kebenaran percakapan) → durable, BE. Model context
-bisa dihitung ulang kapan saja dari transcript + memory + artefak-by-reference
-→ boleh ephemeral. Run state ada di tengah: bisa dihitung ulang secara teori
-(replay transcript dari awal), tapi mahal untuk sesi panjang — makanya
-checkpointer tetap durable meski dimiliki harness, bukan BE, karena isinya
-representasi kerja graph, bukan arsip produk.
+Check each layer against the heuristic above: a transcript cannot be
+recomputed (it is the single source of truth for the conversation) →
+durable, backend. Model context can be recomputed at any time from
+transcript + memory + artifacts-by-reference → may be ephemeral. Run state
+sits in between: recomputable in theory (replay the transcript from the
+start) but expensive for long sessions — which is why the checkpointer
+stays durable even though the harness owns it rather than the backend: its
+content is the graph's working representation, not a product archive.
 
-### Kenapa transcript ≠ model context
+### Why transcript ≠ model context
 
-Ini bukan dua nama untuk hal yang sama, dan menyamakannya adalah sumber bug
-paling umum di lapis ini:
+These are not two names for the same thing, and conflating them is the
+most common source of bugs at this layer:
 
-- **Transcript** — arsip lengkap, permanen, append-only, dimiliki BE. Pesan
-  lama tidak pernah hilang hanya karena tidak lagi dikirim ke model.
-- **Model context** — proyeksi yang **dihitung ulang tiap call** dari
-  transcript (+ memory + artefak-by-reference) lewat assembly: windowing,
-  kompaksi/ringkas, eviction hasil tool yang besar. Dibuang atau di-cache
-  pendek (mis. Redis) setelah call selesai.
+- **Transcript** — the complete, permanent, append-only archive, owned by
+  the backend. Old messages never disappear merely because they are no
+  longer sent to the model.
+- **Model context** — a projection **recomputed on every call** from the
+  transcript (+ memory + artifacts-by-reference) through assembly:
+  windowing, compaction/summarization, eviction of large tool results.
+  Discarded, or briefly cached (e.g. in Redis), once the call finishes.
 
-Konsekuensinya: kompaksi (mis. `SummarizationMiddleware`, lihat
-[`../systems/deepagents.md`](../systems/deepagents.md) §2) **tidak menghapus
-baris dari transcript** — ia mengubah apa yang dikirim ke model di call
-berikutnya. Yang dicatat di transcript adalah *event* kompaksi yang menunjuk
-pesan-pesan yang digantikan (lihat `compaction_events` di
-[`persistence-schema.md`](persistence-schema.md)), bukan penghapusan pesan.
-Tim yang menyamakan dua hal ini berakhir "menghapus riwayat" untuk menghemat
-token, padahal yang seharusnya dipangkas cuma yang dikirim ke model — arsip
-tetap utuh.
+The consequence: compaction (e.g. `SummarizationMiddleware`, see
+[`../systems/deepagents.md`](../systems/deepagents.md) §2) **does not
+delete rows from the transcript** — it changes what gets sent to the model
+on the next call. What the transcript records is the compaction *event*
+pointing at the messages it replaced (see `compaction_events` in
+[`persistence-schema.md`](persistence-schema.md)), not a message deletion.
+Teams that conflate the two end up "deleting history" to save tokens, when
+the only thing that should have been trimmed is what goes to the model —
+the archive stays intact.
 
-### Aturan turunan (§8.1)
+### Derived rules (§8.1)
 
-- Transcript adalah **tree**, bukan list — edit pesan lama = pesan baru
-  bercabang dari `parent_id` yang sama, bukan menimpa (lihat
+- The transcript is a **tree**, not a list — editing an old message means a
+  new message branching from the same `parent_id`, not overwriting (see
   [`persistence-schema.md`](persistence-schema.md)).
-- Checkpointer **bukan database produk** — jangan bangun fitur daftar
-  chat/history browsing di atasnya. Skema internalnya (`thread_id`,
-  `checkpoint_id`, blob biner) dioptimalkan untuk resume satu thread, bukan
-  query lintas-user/lintas-waktu.
-- Artefak **by reference** — transcript menyimpan `artifact_id + version`,
-  model context menyimpan handle + ringkasan, byte sungguhnya hidup di
-  object store (lihat [`artifacts-and-canvas.md`](artifacts-and-canvas.md)).
-- Tool call & hasilnya adalah **row transcript kelas satu**, bukan field
-  JSON terkubur di dalam pesan — supaya bisa di-query, di-redact, dan
-  di-scope per user secara independen.
-- Idempotency key **per turn**, bukan per pesan — satu turn bisa berisi
-  banyak tool call, retry jaringan/duplicate-submit pada level turn tidak
-  boleh membuat turn kedua.
+- The checkpointer is **not a product database** — don't build chat list or
+  history browsing features on it. Its internal schema (`thread_id`,
+  `checkpoint_id`, binary blobs) is optimised for resuming one thread, not
+  for cross-user/cross-time queries.
+- Artifacts go **by reference** — the transcript stores `artifact_id +
+  version`, model context stores a handle plus a summary, and the real
+  bytes live in an object store (see
+  [`artifacts-and-canvas.md`](artifacts-and-canvas.md)).
+- A tool call and its result are **first-class transcript rows**, not a
+  JSON field buried inside a message — so they can be queried, redacted,
+  and scoped per user independently.
+- Idempotency keys go **per turn**, not per message — one turn can contain
+  many tool calls, and a network retry or duplicate submit at turn level
+  must not create a second turn.
 
-## Trade-off
+## Trade-offs
 
-- **Ephemeral vs durable per lapis**: menyimpan lebih banyak (durable
-  semuanya) menghindari kehilangan data tapi memperbesar permukaan RLS dan
-  biaya storage; membuang lebih agresif (ephemeral semuanya) murah tapi
-  kehilangan data yang sebenarnya tidak bisa dihitung ulang (mis. hasil
-  tool call yang nondeterministik — memanggil ulang API eksternal bisa
-  menghasilkan nilai berbeda atau punya efek samping berbayar).
-- **Tree vs flat list untuk transcript**: tree menambah kerumitan query
-  (perlu jalan dari root ke leaf aktif — resolusinya lewat pointer
-  `conversations.active_leaf_id` yang dipersist, bukan dihitung ulang tiap
-  render; lihat `persistence-schema.md`) dibanding list, tapi flat list
-  tidak bisa merepresentasikan "user edit pesan lalu regenerate" tanpa
-  menimpa riwayat — kehilangan kemampuan itu sama dengan kehilangan data
-  yang tidak bisa dihitung ulang.
-- **Tool call sebagai row terpisah vs field di message**: row terpisah butuh
-  join tambahan untuk merender satu bubble pesan, tapi field JSON terkubur
-  tidak bisa di-index/di-redact per baris dan menyulitkan retention selektif
-  (mis. menghapus hasil tool yang mengandung PII tanpa menghapus pesannya).
-- **Checkpointer durable meski "hanya" Run state**: alternatif murni-ephemeral
-  (replay transcript dari awal tiap resume) menghemat storage tapi mahal di
-  latency dan token untuk sesi panjang — trade-off recompute-cost vs
-  storage-cost yang sama dengan heuristik di atas, cuma di titik yang
-  berbeda.
+- **Ephemeral vs durable per layer**: storing more (everything durable)
+  avoids data loss but enlarges the RLS surface and storage cost;
+  discarding more aggressively (everything ephemeral) is cheap but loses
+  data that genuinely cannot be recomputed (e.g. nondeterministic tool
+  call results — recalling an external API may return a different value or
+  carry a billable side effect).
+- **Tree vs flat list for the transcript**: a tree adds query complexity
+  (you must walk from root to the active leaf — resolved through a
+  persisted `conversations.active_leaf_id` pointer rather than recomputed
+  per render; see `persistence-schema.md`), but a flat list cannot
+  represent "the user edited a message then regenerated" without
+  overwriting history — and losing that ability is losing data that cannot
+  be recomputed.
+- **Tool call as a separate row vs a field on the message**: a separate row
+  needs an extra join to render one message bubble, but a buried JSON
+  field cannot be indexed or redacted per row and makes selective
+  retention hard (e.g. deleting a tool result containing PII without
+  deleting its message).
+- **A durable checkpointer even for "only" Run state**: the purely
+  ephemeral alternative (replay the transcript from the start on every
+  resume) saves storage but costs latency and tokens for long sessions —
+  the same recompute-cost vs storage-cost trade-off as the heuristic
+  above, just at a different point.
 
-## Di deepagents
+## In deepagents
 
-`deepagents` tidak membangun lapis Transcript sendiri — ini murni tanggung
-jawab aplikasi (lihat [`persistence-schema.md`](persistence-schema.md)).
-Yang disediakan `deepagents` adalah mekanisme konkret untuk tiga lapis
-lainnya, lewat `checkpointer`/`store` yang **diteruskan apa adanya** ke
-`langchain.agents.create_agent` — `deepagents` tidak pernah membangun
-checkpointer/store sendiri. `[code]` — lihat
-[`../systems/deepagents.md`](../systems/deepagents.md) §5 (`deepagents/graph.py`
-baris 546-553, 922-931).
+`deepagents` does not build the Transcript layer at all — that is purely
+the application's responsibility (see
+[`persistence-schema.md`](persistence-schema.md)). What `deepagents`
+provides are concrete mechanisms for the other three layers, through the
+`checkpointer`/`store` it **passes through unchanged** to
+`langchain.agents.create_agent` — `deepagents` never builds a
+checkpointer/store of its own. `[code]` — see
+[`../systems/deepagents.md`](../systems/deepagents.md) §5
+(`deepagents/graph.py` lines 546-553, 922-931).
 
-| Lapis (spec) | Konkret di deepagents | Sumber |
+| Layer (spec) | Concretely in deepagents | Source |
 |---|---|---|
-| Transcript | Tidak ada — `DeepAgentState.messages` (direduksi `DeltaChannel`) adalah representasi kerja graph untuk resume, bukan arsip bercabang permanen. Aplikasi tetap wajib punya tabel `messages` sendiri. | `[inferred]` dari absennya mekanisme ini di §5/Backend filesystem `../systems/deepagents.md` |
-| Model context | `SummarizationMiddleware` (kompaksi otomatis berbasis threshold token) + `FilesystemMiddleware` (eviction hasil tool besar ke backend, diganti preview + rujukan path) | `[code]` `../systems/deepagents.md` §2 |
-| Run state | `DeepAgentState` lewat `checkpointer` yang disuntik aplikasi — resumable per thread | `[code]` `../systems/deepagents.md` §5 |
-| Memory | `MemoryMiddleware` (statis — isi `AGENTS.md` disuntik sekali di awal sesi) + `StoreBackend(namespace=...)` (durable lintas-thread, butuh `store` disuntik aplikasi) | `[code]` `../systems/deepagents.md` §2, §5, Backend filesystem |
-| Artefak | Tidak ada primitive "artifact"/versioning bawaan; `StoreBackend`/`CompositeBackend` bisa dipakai sebagai lapisan durable-nya, tapi object-store S3 + metadata versi tetap tanggung jawab aplikasi | `[code]`+`[inferred]` `../systems/deepagents.md` Backend filesystem |
+| Transcript | Absent — `DeepAgentState.messages` (reduced by `DeltaChannel`) is the graph's working representation for resuming, not a permanent branching archive. The application still needs its own `messages` table. | `[inferred]` from the absence of this mechanism in §5/Backend filesystem of `../systems/deepagents.md` |
+| Model context | `SummarizationMiddleware` (automatic token-threshold compaction) plus `FilesystemMiddleware` (evicting large tool results to the backend, replaced by a preview plus a path reference) | `[code]` `../systems/deepagents.md` §2 |
+| Run state | `DeepAgentState` through the application-injected `checkpointer` — resumable per thread | `[code]` `../systems/deepagents.md` §5 |
+| Memory | `MemoryMiddleware` (static — `AGENTS.md` content injected once at session start) plus `StoreBackend(namespace=...)` (durable across threads, requires an application-injected `store`) | `[code]` `../systems/deepagents.md` §2, §5, Backend filesystem |
+| Artifacts | No built-in "artifact"/versioning primitive; `StoreBackend`/`CompositeBackend` can serve as the durable layer, but the S3 object store plus version metadata stays the application's job | `[code]`+`[inferred]` `../systems/deepagents.md` Backend filesystem |
 
-Implikasi langsung: kalau sebuah project butuh riwayat chat yang bisa
-dicari/dipaginasi/di-branch lintas sesi (yaitu Transcript sungguhan), itu
-**tidak** datang gratis dari `checkpointer`. Harus dibangun sebagai tabel
-`messages` aplikasi sendiri (lihat `persistence-schema.md`), dan
-`checkpointer`/`store` yang disuntik ke `create_deep_agent` tetap dipakai
-apa adanya untuk Run state + Memory durable — dua hal berbeda yang kebetulan
-sama-sama "Postgres" di tabel lima lapis di atas.
+The direct implication: if a project needs chat history that can be
+searched, paginated, or branched across sessions (that is, a real
+Transcript), it does **not** come free from the `checkpointer`. It has to
+be built as the application's own `messages` table (see
+`persistence-schema.md`), while the `checkpointer`/`store` injected into
+`create_deep_agent` continue to serve Run state and durable Memory —
+two different things that merely happen to both say "Postgres" in the
+five-layer table above.
 
-## Sumber
+## Sources
 
 - `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §2
-  (Context), §5 (State & resume), dan §Backend filesystem — tier-1 reference
-  yang sudah diverifikasi terhadap source `deepagents==0.7.8`; dikutip
-  langsung di sini tanpa membaca ulang source karena sudah divalidasi di
+  (Context), §5 (State & resume), and §Backend filesystem — a tier-1
+  reference already verified against `deepagents==0.7.8` source; cited
+  directly here without re-reading the source because it was validated in
   Task 3.
-- `[docs]` LangGraph — skema `checkpoints`/`writes` dan kontrak
-  `BaseCheckpointSaver` (`thread_id`, `checkpoint_ns`, `checkpoint_id`,
-  `parent_checkpoint_id`), dikutip via Context7 dari
-  `docs.langchain.com/oss/python/langgraph/checkpointers` — dipakai untuk
-  memverifikasi klaim "checkpointer bukan database produk": skemanya
-  dioptimalkan untuk lookup satu thread (PK `thread_id, checkpoint_ns,
-  checkpoint_id`), bukan untuk query lintas-user.
+- `[docs]` LangGraph — the `checkpoints`/`writes` schema and the
+  `BaseCheckpointSaver` contract (`thread_id`, `checkpoint_ns`,
+  `checkpoint_id`, `parent_checkpoint_id`), cited via Context7 from
+  `docs.langchain.com/oss/python/langgraph/checkpointers` — used to verify
+  the claim "the checkpointer is not a product database": its schema is
+  optimised for single-thread lookup (PK `thread_id, checkpoint_ns,
+  checkpoint_id`), not cross-user queries.
