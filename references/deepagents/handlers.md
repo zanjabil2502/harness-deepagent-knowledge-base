@@ -1,177 +1,185 @@
-# `deepagents` — handler & hook
+# `deepagents` — handlers & hooks
 
-Daftar titik intercept yang tersedia, apa yang bisa diubah di masing-masing,
-apa yang **tidak** bisa, dan pola penanganan error yang resmi.
+The available intercept points, what each one may change, what it
+**cannot**, and the official error-handling patterns.
 
-Semua hook di sini berasal dari `langchain.agents.middleware.AgentMiddleware`;
-`deepagents` tidak menambah jenis hook baru — ia hanya merakit middleware yang
-memakainya. `[code]` — `langchain/agents/middleware/types.py` baris 385-740.
+Every hook here comes from `langchain.agents.middleware.AgentMiddleware`;
+`deepagents` adds no new hook types — it only assembles middleware that
+uses them. `[code]` — `langchain/agents/middleware/types.py` lines
+385-740.
 
-## Tabel hook
+## Hook table
 
-| Hook | Kapan | Menerima | Boleh mengubah | **Tidak** bisa |
+| Hook | When | Receives | May change | **Cannot** |
 |---|---|---|---|---|
-| `before_agent` / `abefore_agent` | sekali per run, sebelum loop | `state`, `runtime` | state update (`dict`), termasuk menulis ulang `messages` | tidak melihat `ModelRequest`; tidak bisa mengubah daftar tool |
-| `before_model` / `abefore_model` | tiap iterasi, sebelum node `model` | `state`, `runtime` | state update; `jump_to` bila di-`@hook_config(can_jump_to=[...])` | tidak melihat/mengubah `request.tools` maupun system message |
-| `wrap_model_call` / `awrap_model_call` | membungkus panggilan LLM | `ModelRequest`, `handler` | `model`, `tools`, `system_message`, `messages`, `response_format`, `tool_choice` lewat `request.override(...)`; boleh memanggil `handler` 0..N kali; boleh mengembalikan `AIMessage` langsung | ⚠️ `Command` dengan `goto`, `resume`, atau `graph` **ditolak** (`factory.py` baris 245-256). State update hanya lewat `ExtendedModelResponse(command=...)` |
-| `after_model` / `aafter_model` | tiap iterasi, setelah node `model`, **urutan terbalik** | `state`, `runtime` | state update; `jump_to`; `interrupt()` | tidak bisa membatalkan panggilan LLM yang sudah terjadi (biayanya sudah keluar) |
-| `wrap_tool_call` / `awrap_tool_call` | membungkus tiap eksekusi tool | `ToolCallRequest`, `handler` | argumen tool sebelum eksekusi; hasil setelah eksekusi; boleh tidak memanggil `handler` (short-circuit); boleh mengembalikan `ToolMessage` atau `Command` | tidak melihat tool call lain di `AIMessage` yang sama |
-| `after_agent` / `aafter_agent` | sekali per run, sebelum END, **urutan terbalik** | `state`, `runtime` | state update; `jump_to` kembali ke model | tidak bisa mengubah struktur graph |
+| `before_agent` / `abefore_agent` | once per run, before the loop | `state`, `runtime` | a state update (`dict`), including rewriting `messages` wholesale | doesn't see `ModelRequest`; cannot change the tool list |
+| `before_model` / `abefore_model` | every iteration, before the `model` node | `state`, `runtime` | a state update; `jump_to` when declared via `@hook_config(can_jump_to=[...])` | doesn't see or change `request.tools` or the system message |
+| `wrap_model_call` / `awrap_model_call` | wraps the LLM call | `ModelRequest`, `handler` | `model`, `tools`, `system_message`, `messages`, `response_format`, `tool_choice` through `request.override(...)`; may call `handler` 0..N times; may return an `AIMessage` directly | ⚠️ a `Command` with `goto`, `resume`, or `graph` is **rejected** (`factory.py` lines 245-256). State updates only through `ExtendedModelResponse(command=...)` |
+| `after_model` / `aafter_model` | every iteration, after the `model` node, in **reverse order** | `state`, `runtime` | a state update; `jump_to`; `interrupt()` | cannot cancel an LLM call that already happened (its cost is already incurred) |
+| `wrap_tool_call` / `awrap_tool_call` | wraps each tool execution | `ToolCallRequest`, `handler` | tool arguments before execution; the result after; may skip calling `handler` (short-circuit); may return a `ToolMessage` or `Command` | doesn't see the other tool calls in the same `AIMessage` |
+| `after_agent` / `aafter_agent` | once per run, before END, in **reverse order** | `state`, `runtime` | a state update; `jump_to` back to the model | cannot change the graph's structure |
 
-Versi async: kalau sebuah middleware hanya mengimplementasi versi sync dan
-graph dijalankan lewat `ainvoke`, `create_agent` tetap memasangnya lewat
-`RunnableCallable`, tapi untuk `wrap_*` `NotImplementedError` bisa muncul —
-`factory.py` sengaja mengumpulkan middleware yang punya **salah satu** dari
-sync/async supaya kegagalan jalur yang salah terlihat, bukan diam.
-`[code]` — `langchain/agents/factory.py` baris 1040-1060.
+On async variants: if a middleware implements only the sync version and
+the graph runs through `ainvoke`, `create_agent` still installs it via
+`RunnableCallable`, but for `wrap_*` a `NotImplementedError` can surface —
+`factory.py` deliberately collects middleware having **either** sync or
+async so that taking the wrong path fails visibly rather than silently.
+`[code]` — `langchain/agents/factory.py` lines 1040-1060.
 
 ## Human-in-the-loop
 
-Dua jalur, keduanya berujung ke `HumanInTheLoopMiddleware`:
+Two paths, both ending at `HumanInTheLoopMiddleware`:
 
-1. `create_deep_agent(interrupt_on={...})` — eksplisit per nama tool.
+1. `create_deep_agent(interrupt_on={...})` — explicit, per tool name.
 2. `create_deep_agent(permissions=[FilesystemPermission(..., mode="interrupt")])`
-   — `_build_interrupt_on_from_permissions` mensintesis entri `interrupt_on`
-   dengan predikat `when` yang mengevaluasi path per panggilan.
+   — `_build_interrupt_on_from_permissions` synthesises `interrupt_on`
+   entries with a `when` predicate that evaluates the path per call.
 
-Keduanya digabung `_merge_fs_interrupt_on`; entri user menang per nama tool.
-Kalau gabungannya kosong, middleware-nya **tidak dipasang sama sekali**.
-`[code]` — `deepagents/graph.py` baris 182-198, 871-876;
+The two are merged by `_merge_fs_interrupt_on`; user entries win per tool
+name. If the merged result is empty, the middleware is **not installed at
+all**. `[code]` — `deepagents/graph.py` lines 182-198, 871-876;
 `deepagents/middleware/_fs_interrupt.py`.
 
-### Bentuk `InterruptOnConfig`
+### The shape of `InterruptOnConfig`
 
-`[code]` — `langchain/agents/middleware/human_in_the_loop.py` baris 51,
+`[code]` — `langchain/agents/middleware/human_in_the_loop.py` lines 51,
 146-215.
 
-| Field | Tipe | Catatan |
+| Field | Type | Notes |
 |---|---|---|
-| `allowed_decisions` | `list[Literal["approve","edit","reject","respond"]]` | Wajib. `respond` = manusia menjawab **menggantikan** tool; tool tidak dieksekusi, `ToolMessage` sintetis berstatus `success` dikirim ke model. |
-| `description` | `str` atau callable `(tool_call, state, runtime) -> str` | Teks yang dilihat approver. |
-| `args_schema` | `dict` | JSON schema untuk keputusan `edit`. |
-| `when` | `(ToolCallRequest) -> bool` | Predikat auto-approve. Inilah satu-satunya cara resmi menyaring "interrupt hanya kalau kondisi X". |
+| `allowed_decisions` | `list[Literal["approve","edit","reject","respond"]]` | Required. `respond` = the human answers **instead of** the tool; the tool is not executed and a synthetic `ToolMessage` with status `success` goes to the model. |
+| `description` | `str` or a callable `(tool_call, state, runtime) -> str` | The text the approver sees. |
+| `args_schema` | `dict` | JSON schema for the `edit` decision. |
+| `when` | `(ToolCallRequest) -> bool` | An auto-approve predicate. This is the only official way to express "interrupt only when condition X". |
 
-`interrupt_on={"execute": True}` adalah gula untuk
+`interrupt_on={"execute": True}` is sugar for
 `allowed_decisions=["approve","edit","reject"]`.
 
 ### Resume
 
-Interrupt LangGraph berarti run **berhenti** dan checkpointer menyimpan
-posisinya. Melanjutkan = `invoke(Command(resume=HITLResponse(...)), config)`
-dengan `thread_id` yang sama. Tanpa `checkpointer`, `interrupt_on` tidak
-berguna — tidak ada tempat menyimpan titik jeda.
+A LangGraph interrupt means the run **stops** and the checkpointer records
+its position. Continuing means
+`invoke(Command(resume=HITLResponse(...)), config)` with the same
+`thread_id`. Without a `checkpointer`, `interrupt_on` is useless — there
+is nowhere to store the pause point.
 
-⚠️ Pewarisan: `SubAgent` deklaratif mewarisi `interrupt_on` top-level;
-`CompiledSubAgent` dan `AsyncSubAgent` **tidak**. Subagent yang menyediakan
-`interrupt_on` sendiri **mengganti** warisan, tidak menambah.
+⚠️ Inheritance: a declarative `SubAgent` inherits top-level
+`interrupt_on`; `CompiledSubAgent` and `AsyncSubAgent` **do not**. A
+subagent that supplies its own `interrupt_on` **replaces** the inherited
+one rather than adding to it.
 
-## Pola penanganan error
+## Error-handling patterns
 
-### Tool gagal (exception)
+### A tool fails (exception)
 
-`FilesystemMiddleware.wrap_tool_call` **sengaja meloloskan** exception tool,
-termasuk `ToolException` (docstring: "propagate through this wrapper
-unhandled by design"). Yang resmi menangani:
+`FilesystemMiddleware.wrap_tool_call` **deliberately lets tool exceptions
+through**, including `ToolException` (docstring: "propagate through this
+wrapper unhandled by design"). What officially handles them:
 
-| Kebutuhan | Middleware | Konfigurasi kunci |
+| Need | Middleware | Key configuration |
 |---|---|---|
-| Ubah exception jadi `ToolMessage` error | `ToolErrorMiddleware` | `on_error=<callable>`, `aon_error=`, `tools=` (subset). Handler yang mengembalikan `None` **melepas exception kembali** |
-| Retry dengan backoff | `ToolRetryMiddleware` | `max_retries=2`, `retry_on=`, `on_failure="continue"\|"error"\|callable`, `backoff_factor=2.0`, `initial_delay=1.0`, `max_delay=60.0`, `jitter=True` |
-| Tolak sebelum eksekusi | `wrap_tool_call` sendiri, kembalikan `ToolMessage(status="error")` | pola `ShellAllowListMiddleware` maintainer |
+| Turn the exception into an error `ToolMessage` | `ToolErrorMiddleware` | `on_error=<callable>`, `aon_error=`, `tools=` (a subset). A handler returning `None` **re-raises the exception** |
+| Retry with backoff | `ToolRetryMiddleware` | `max_retries=2`, `retry_on=`, `on_failure="continue"\|"error"\|callable`, `backoff_factor=2.0`, `initial_delay=1.0`, `max_delay=60.0`, `jitter=True` |
+| Refuse before execution | your own `wrap_tool_call`, returning `ToolMessage(status="error")` | the maintainer's `ShellAllowListMiddleware` pattern |
 
-`[code]` — `langchain/agents/middleware/tool_error.py` baris 75-105,
-`tool_retry.py` baris 133-175.
+`[code]` — `langchain/agents/middleware/tool_error.py` lines 75-105,
+`tool_retry.py` lines 133-175.
 
-### Model gagal / timeout
+### The model fails / times out
 
-| Kebutuhan | Middleware | Konfigurasi kunci |
+| Need | Middleware | Key configuration |
 |---|---|---|
-| Retry panggilan model | `ModelRetryMiddleware` | `max_retries=2`, `retry_on=`, `on_failure="continue"\|"error"\|callable`, backoff sama seperti tool |
-| Pindah ke model cadangan | `ModelFallbackMiddleware` | `ModelFallbackMiddleware(first_model, *additional_models)` — dicoba berurutan |
-| Konteks kelebihan | sudah tertangani `SummarizationMiddleware` `deepagents`: `ContextOverflowError` ditangkap, riwayat dikompaksi, request diulang | `create_summarization_middleware(...)` |
+| Retry the model call | `ModelRetryMiddleware` | `max_retries=2`, `retry_on=`, `on_failure="continue"\|"error"\|callable`, same backoff as tools |
+| Fall back to another model | `ModelFallbackMiddleware` | `ModelFallbackMiddleware(first_model, *additional_models)` — tried in order |
+| Context overflow | already handled by deepagents' `SummarizationMiddleware`: `ContextOverflowError` is caught, history is compacted, and the request is retried | `create_summarization_middleware(...)` |
 
-Timeout murni jaringan bukan urusan middleware — atur di konstruktor model
-(`ChatAnthropic(default_request_timeout=..., max_retries=...)` — alias `timeout` juga diterima).
+Pure network timeouts are not a middleware concern — configure them on the
+model constructor (`ChatAnthropic(default_request_timeout=...,
+max_retries=...)` — the alias `timeout` is also accepted).
 
-### Budget habis
+### Budget exhausted
 
-| Batas | Mekanisme | Perilaku saat terlampaui |
+| Limit | Mechanism | Behaviour when exceeded |
 |---|---|---|
-| Langkah graph | `recursion_limit` LangGraph, default `9_999` dari `create_deep_agent` | `GraphRecursionError` |
-| Panggilan model | `ModelCallLimitMiddleware(thread_limit=, run_limit=, exit_behavior="end"\|"error")` | `"end"` = lompat ke END + `AIMessage` penjelasan; `"error"` = `ModelCallLimitExceededError` |
-| Panggilan tool | `ToolCallLimitMiddleware(tool_name=, thread_limit=, run_limit=, exit_behavior="continue"\|"error"\|"end")` | `"continue"` = tool yang lewat batas diblokir dengan pesan error, tool lain jalan; `"end"` = hentikan sekarang |
+| Graph steps | LangGraph's `recursion_limit`, default `9_999` from `create_deep_agent` | `GraphRecursionError` |
+| Model calls | `ModelCallLimitMiddleware(thread_limit=, run_limit=, exit_behavior="end"\|"error")` | `"end"` = jump to END plus an explanatory `AIMessage`; `"error"` = `ModelCallLimitExceededError` |
+| Tool calls | `ToolCallLimitMiddleware(tool_name=, thread_limit=, run_limit=, exit_behavior="continue"\|"error"\|"end")` | `"continue"` = the over-limit tool is blocked with an error message while other tools keep running; `"end"` = stop now |
 
-`recursion_limit` di-override lewat
-`agent.with_config({"recursion_limit": N})` atau
-`agent.invoke(..., config={"recursion_limit": N})` — ini yang dipakai
-maintainer di `examples/better-harness/better_harness/agent.py` dan di
-`libs/code/deepagents_code/agent.py` (`.with_config({**config,
+`recursion_limit` is overridden through
+`agent.with_config({"recursion_limit": N})` or
+`agent.invoke(..., config={"recursion_limit": N})` — which is what the
+maintainers use in `examples/better-harness/better_harness/agent.py` and
+in `libs/code/deepagents_code/agent.py` (`.with_config({**config,
 "recursion_limit": effective_recursion_limit})`). `[code]` — repo
 `langchain-ai/deepagents` commit `23b83ad`.
 
-⚠️ Default `9_999` bukan pengaman; ia praktis berarti "tak terbatas".
-Setiap deployment harus menurunkannya secara eksplisit.
+⚠️ The `9_999` default is not a safeguard; in practice it means
+"unlimited". Every deployment must lower it explicitly.
 
-`ToolCallLimitMiddleware` menghitung **jumlah** panggilan, bukan
-pengulangan identik. Deteksi "berputar di tempat" tidak ada bawaan — lihat
-contoh di [`middleware.md`](middleware.md).
+`ToolCallLimitMiddleware` counts the **number** of calls, not identical
+repetitions. There is no built-in "spinning in place" detection — see the
+example in [`middleware.md`](middleware.md).
 
-### Interupsi manusia (cancel/kill)
+### Human interruption (cancel/kill)
 
-Tidak ada API "hentikan semua run" di `deepagents`. Yang ada:
+There is no "stop all runs" API in `deepagents`. What exists:
 
-- `interrupt()` (HITL) — jeda kooperatif, menunggu `Command(resume=...)`.
-- Membatalkan task asyncio / menutup proses — meninggalkan tool call
-  dangling di checkpoint. `PatchToolCallsMiddleware.before_agent` yang
-  merapikannya pada run berikutnya, dengan `ToolMessage` sintetis berisi
+- `interrupt()` (HITL) — a cooperative pause awaiting
+  `Command(resume=...)`.
+- Cancelling the asyncio task or killing the process — leaves dangling
+  tool calls in the checkpoint. `PatchToolCallsMiddleware.before_agent`
+  cleans them up on the next run with a synthetic `ToolMessage` reading
   "was cancelled - another message came in before it could be completed".
-  Ini satu-satunya jaring pengaman resmi untuk pembatalan mendadak.
-- Kill switch tingkat armada = tanggung jawab orchestrator/queue di atas
-  `deepagents`.
+  This is the only official safety net for abrupt cancellation.
+- A fleet-level kill switch is the responsibility of the orchestrator/
+  queue above `deepagents`.
 
-`[code]` — `deepagents/middleware/patch_tool_calls.py` baris 30-45.
+`[code]` — `deepagents/middleware/patch_tool_calls.py` lines 30-45.
 
-### Subagent gagal
+### A subagent fails
 
-Kalau `subagent_type` tidak dikenal, tool `task` mengembalikan **string**
-error biasa ("we cannot invoke subagent X ... the only allowed types are
-..."), bukan exception — model bisa mencoba nama lain.
-Kalau `CompiledSubAgent` mengembalikan state tanpa key `messages`,
-`_return_command_with_state_update` **raise `ValueError`** dan run gagal.
-`[code]` — `deepagents/middleware/subagents.py` baris 474-482, 549 (jalur sync) dan 577 (jalur async).
+If `subagent_type` is unknown, the `task` tool returns an ordinary error
+**string** ("we cannot invoke subagent X ... the only allowed types are
+...") rather than an exception — the model can try another name.
+If a `CompiledSubAgent` returns state without a `messages` key,
+`_return_command_with_state_update` **raises `ValueError`** and the run
+fails. `[code]` — `deepagents/middleware/subagents.py` lines 474-482, 549
+(sync path) and 577 (async path).
 
-## Yang tidak bisa di-intercept
+## What cannot be intercepted
 
-- **Isi request HTTP ke provider** — itu urusan objek `BaseChatModel`.
-- **Urutan pemanggilan tool.** Tidak ada hook "tool B wajib setelah tool A".
-  `PatchToolCallsMiddleware` sering disalahpahami sebagai penegak urutan;
-  ia hanya menambal `ToolMessage` yang hilang. Penegakan urutan hanya bisa
-  lewat instruksi prompt, atau `wrap_tool_call` yang menolak panggilan yang
-  melanggar urutan — keduanya bukan jaminan struktural.
-- **Menghapus `FilesystemMiddleware`/`SubAgentMiddleware`** —
-  `HarnessProfile.excluded_middleware` menolaknya dengan `ValueError`.
-- **Membuat `after_model` berjalan setelah HITL** — HITL selalu paling awal
-  di fase itu (lihat [`middleware.md`](middleware.md) §5).
+- **The contents of the HTTP request to the provider** — that belongs to
+  the `BaseChatModel` object.
+- **Tool call ordering.** There is no "tool B must follow tool A" hook.
+  `PatchToolCallsMiddleware` is often mistaken for an ordering enforcer;
+  it only patches missing `ToolMessage`s. Ordering can only be enforced
+  through prompt instructions, or a `wrap_tool_call` that refuses calls
+  violating the order — neither of which is a structural guarantee.
+- **Removing `FilesystemMiddleware`/`SubAgentMiddleware`** —
+  `HarnessProfile.excluded_middleware` refuses with a `ValueError`.
+- **Making `after_model` run after HITL** — HITL is always first in that
+  phase (see [`middleware.md`](middleware.md) §5).
 
-## Sumber
+## Sources
 
-**Versi yang dibaca**: `deepagents==0.7.8`, `langchain==1.3.16`.
+**Versions read**: `deepagents==0.7.8`, `langchain==1.3.16`.
 
-`[code]` dari `references/recipes/.venv/lib/python3.13/site-packages/`:
+`[code]` from `references/recipes/.venv/lib/python3.13/site-packages/`:
 
-- `langchain/agents/middleware/types.py` (kontrak `AgentMiddleware`, decorator)
+- `langchain/agents/middleware/types.py` (the `AgentMiddleware` contract,
+  decorators)
 - `langchain/agents/middleware/human_in_the_loop.py` (`DecisionType`,
   `InterruptOnConfig`, `HITLRequest`/`HITLResponse`)
 - `langchain/agents/middleware/tool_error.py`, `tool_retry.py`,
   `model_retry.py`, `model_fallback.py`, `model_call_limit.py`,
-  `tool_call_limit.py` (signature `__init__` + docstring)
-- `langchain/agents/factory.py` (penolakan `Command` di `wrap_model_call`,
-  pengumpulan middleware per hook)
+  `tool_call_limit.py` (`__init__` signatures plus docstrings)
+- `langchain/agents/factory.py` (rejection of `Command` in
+  `wrap_model_call`, per-hook middleware collection)
 - `deepagents/graph.py`, `deepagents/middleware/_fs_interrupt.py`,
   `patch_tool_calls.py`, `filesystem.py`, `subagents.py`,
   `summarization.py`
 
-`[code]` dari `git clone --depth 1 langchain-ai/deepagents` (commit
+`[code]` from `git clone --depth 1 langchain-ai/deepagents` (commit
 `23b83ad`, 2026-08-21): `examples/better-harness/better_harness/agent.py`
-baris 206-226 dan `libs/code/deepagents_code/agent.py` baris 3093-3110
-(pola `recursion_limit`).
+lines 206-226 and `libs/code/deepagents_code/agent.py` lines 3093-3110
+(the `recursion_limit` pattern).
