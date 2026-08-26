@@ -19,7 +19,6 @@ membangkitkan `interrupt_on` otomatis, digabung dengan entri eksplisit) di
 `references/systems/deepagents.md`.
 """
 
-import os
 import sys
 
 from langchain.agents.middleware import TodoListMiddleware
@@ -51,17 +50,11 @@ def main() -> int:
     print("Middleware eksplisit: TodoListMiddleware (planning, tool write_todos)")
     print("Permission gate: write ke /scratch/** diizinkan, write lain interrupt")
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print(
-            "Konstruksi terverifikasi — permission rule dan TodoListMiddleware "
-            "terpasang tanpa exception. Live call bersifat opsional: set "
-            "ANTHROPIC_API_KEY kalau ingin melihat satu giliran nyata."
-        )
-        return 0
-
-    print("ANTHROPIC_API_KEY ada — menjalankan satu giliran nyata (opsional)...")
-    result = agent.invoke({"messages": [{"role": "user", "content": "Balas dengan satu kata: 'ok'."}]})
-    print("Respons model:", result["messages"][-1].content)
+    print(
+        "Konstruksi terverifikasi — nama dan signature API yang dipakai valid. "
+        "Recipe ini sengaja tidak memanggil model: tidak butuh kredensial "
+        "apa pun, dan tidak menyentuh jaringan."
+    )
     return 0
 
 

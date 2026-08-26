@@ -20,7 +20,6 @@ subagent `general-purpose` di samping subagent kustom, dan bagaimana hasil
 delegasi kembali sebagai `ToolMessage` tool `task`.
 """
 
-import os
 import sys
 
 from langchain_anthropic import ChatAnthropic
@@ -59,17 +58,11 @@ def main() -> int:
     print("Subagent terdaftar: research-agent (tool sempit: web_search_stub)")
     print("Subagent default general-purpose tetap ditambahkan otomatis")
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print(
-            "Konstruksi terverifikasi — spec SubAgent diterima tanpa exception. "
-            "Live call bersifat opsional: set ANTHROPIC_API_KEY kalau ingin "
-            "melihat satu giliran nyata."
-        )
-        return 0
-
-    print("ANTHROPIC_API_KEY ada — menjalankan satu giliran nyata (opsional)...")
-    result = agent.invoke({"messages": [{"role": "user", "content": "Balas dengan satu kata: 'ok'."}]})
-    print("Respons model:", result["messages"][-1].content)
+    print(
+        "Konstruksi terverifikasi — nama dan signature API yang dipakai valid. "
+        "Recipe ini sengaja tidak memanggil model: tidak butuh kredensial "
+        "apa pun, dan tidak menyentuh jaringan."
+    )
     return 0
 
 

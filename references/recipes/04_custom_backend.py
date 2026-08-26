@@ -18,7 +18,6 @@ Konsep yang diilustrasikan: `## Backend filesystem` di
 isolasi multi-user; `StateBackend` polos tidak.
 """
 
-import os
 import sys
 
 from langchain_anthropic import ChatAnthropic
@@ -58,17 +57,11 @@ def main() -> int:
     print("Backend: CompositeBackend — default StateBackend (ephemeral),")
     print("         route /memories/** -> StoreBackend (durable, per-user namespace)")
 
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print(
-            "Konstruksi terverifikasi — CompositeBackend+StoreBackend terpasang "
-            "tanpa exception. Live call bersifat opsional: set "
-            "ANTHROPIC_API_KEY kalau ingin melihat satu giliran nyata."
-        )
-        return 0
-
-    print("ANTHROPIC_API_KEY ada — menjalankan satu giliran nyata (opsional)...")
-    result = agent.invoke({"messages": [{"role": "user", "content": "Balas dengan satu kata: 'ok'."}]})
-    print("Respons model:", result["messages"][-1].content)
+    print(
+        "Konstruksi terverifikasi — nama dan signature API yang dipakai valid. "
+        "Recipe ini sengaja tidak memanggil model: tidak butuh kredensial "
+        "apa pun, dan tidak menyentuh jaringan."
+    )
     return 0
 
 

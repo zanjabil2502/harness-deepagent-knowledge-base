@@ -29,18 +29,72 @@ source-verified: `[code]` di situ berarti "transitif dari klaim yang sudah
 dibaca dari source di tempat lain", bukan pelonggaran definisi. Angka di
 bawah menghitung label apa adanya, termasuk sitasi transitif itu.
 
-## Instalasi
+## Pasang
 
-Repo ini *adalah* skill-nya — root repo = root skill, beserta `SKILL.md` di
-level atas. Symlink ke direktori skill Claude Code:
+Repo ini **adalah** skill-nya: root repo = root skill, dengan `SKILL.md` di
+level atas. Tidak ada langkah build, tidak ada `pip install`, dan **tidak
+ada API key** — skill ini murni berkas markdown yang dibaca Claude Code.
+
+### 1. Clone
 
 ```bash
-ln -s "$(pwd)" ~/.claude/skills/agent-harness-kb
+git clone https://github.com/zanjabil2502/harness-deepagent-knowledge-base.git
+cd harness-deepagent-knowledge-base
 ```
 
-Jalankan dari root repo ini. Setelah itu Claude Code akan menemukan skill
-`agent-harness-kb` lewat `SKILL.md` dan memuat `references/` sesuai
-kebutuhan — tidak ada langkah build/install lain.
+### 2. Sambungkan ke Claude Code
+
+Pilih salah satu, tergantung mau tersedia di mana:
+
+```bash
+# A. Semua project (personal scope)
+mkdir -p ~/.claude/skills
+ln -s "$(pwd)" ~/.claude/skills/agent-harness-kb
+
+# B. Satu project saja — jalankan dari root project itu
+mkdir -p .claude/skills
+ln -s /path/ke/harness-deepagent-knowledge-base .claude/skills/agent-harness-kb
+```
+
+Symlink dipakai supaya `git pull` langsung memperbarui skill-nya tanpa
+menyalin ulang. Kalau lingkunganmu tidak mendukung symlink, salin
+direktorinya — konsekuensinya pembaruan harus disalin ulang tiap kali.
+
+### 3. Pastikan terbaca
+
+Mulai sesi Claude Code baru, lalu minta sesuatu yang masuk salah satu dari
+tiga mode di [`SKILL.md`](SKILL.md) §Tiga mode pemakaian, mis. *"apa itu
+fail-deferred"* (mode mencari) atau *"aku mau bangun agent yang bisa edit
+file di repo lokal, ini jenis apa"* (mode menimbang). Kalau skill-nya
+aktif, jawabannya merujuk berkas di `references/`.
+
+### Prasyarat
+
+| Untuk | Butuh |
+|---|---|
+| Memakai skill | Claude Code. Itu saja. |
+| Menjalankan `tools/*.py` | Python 3.10+, pustaka standar saja — tanpa `pip install` |
+| Menjalankan `references/recipes/` | [`uv`](https://docs.astral.sh/uv/) (opsional, lihat di bawah) |
+
+### Opsional: verifikasi ulang klaim `[code]`
+
+KB ini menyitasi source `deepagents` sampai nomor baris. Untuk membuktikan
+sitasi itu masih tepat, siapkan venv recipes-nya:
+
+```bash
+cd references/recipes && uv sync    # pin deepagents 0.7.8
+```
+
+Setelah venv ada, `python3 tools/check_kb.py` ikut memeriksa bahwa 53
+berkas source masih identik dengan keadaan saat graf AST dibangun. Tanpa
+venv, cek itu dilewati dan sisanya tetap jalan.
+
+### Perbarui
+
+```bash
+git pull
+python3 tools/check_kb.py     # gerbang struktural; harus "OK: semua cek lulus"
+```
 
 ## Cara memakai
 

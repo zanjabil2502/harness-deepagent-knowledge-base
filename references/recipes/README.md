@@ -27,17 +27,10 @@ parameter yang salah, konstruksi akan raise dan kegagalannya langsung
 terlihat.
 
 Konstruksi itulah verifikasinya, dan ia **tidak butuh kredensial apa pun**.
-Skill ini secara keseluruhan tidak pernah meminta API key; satu-satunya tempat
-`ANTHROPIC_API_KEY` disebut adalah keempat skrip demo di direktori ini, dan
-hanya sebagai jalur opsional:
+Keempat skrip sengaja tidak memanggil model: tidak ada `agent.invoke(...)`,
+tidak ada environment variable yang dibaca, tidak ada yang menyentuh jaringan.
+Skill ini secara keseluruhan tidak pernah meminta API key.
 
-- **Tanpa key** (keadaan normal): skrip mencetak bahwa konstruksi terverifikasi,
-  lalu keluar dengan exit code 0. Bukan kegagalan, bukan pula sesuatu yang
-  kurang — pembuktian API-nya sudah selesai di titik ini.
-- **Dengan key**: skrip melanjutkan satu giliran nyata (`agent.invoke(...)`) dan
-  mencetak respons model. Berguna kalau ingin melihatnya berjalan, tidak
-  menambah apa pun pada verifikasi nama/signature API.
-
-Di lingkungan CI/dev tanpa `ANTHROPIC_API_KEY`, keempat skrip tetap harus
-selesai (`exit 0`) lewat jalur konstruksi — itulah yang diverifikasi task ini,
-**bukan** bahwa model benar-benar dipanggil.
+Keempatnya harus selesai dengan `exit 0` di lingkungan mana pun, termasuk CI
+tanpa kredensial apa pun. Itulah yang diverifikasi — **bukan** bahwa model
+benar-benar dipanggil.
