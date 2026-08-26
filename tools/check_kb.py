@@ -10,19 +10,36 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 REF = ROOT / "references"
 
+# Selama migrasi ke bahasa Inggris, tiap slot menerima heading lama ATAU baru
+# supaya satu kelompok bisa diterjemahkan berkas demi berkas tanpa memerahkan
+# validator. Ketatkan ke satu bahasa begitu kelompoknya selesai.
 FRAMES = {
     "archetypes": [
-        "## Definition", "## Position on the 6 axes", "## Harness consequences",
-        "## Example systems", "## Common pitfalls",
-        "## Building this with deepagents", "## Sources",
+        ("## Definition",),
+        ("## Position on the 6 axes",),
+        ("## Harness consequences",),
+        ("## Example systems",),
+        ("## Common pitfalls",),
+        ("## Building this with deepagents",),
+        ("## Sources",),
     ],
     "concepts": [
-        "## Masalah", "## Pola", "## Trade-off", "## Di deepagents", "## Sumber",
+        ("## Masalah", "## Problem"),
+        ("## Pola", "## Pattern"),
+        ("## Trade-off", "## Trade-offs"),
+        ("## Di deepagents", "## In deepagents"),
+        ("## Sumber", "## Sources"),
     ],
     "systems": [
-        "## Arketipe", "## 1. Loop shape", "## 2. Context", "## 3. Tool surface",
-        "## 4. Delegation", "## 5. State & resume", "## 6. Safety gate",
-        "## 7. Capability routing & policy", "## Sumber",
+        ("## Arketipe", "## Archetype"),
+        ("## 1. Loop shape",),
+        ("## 2. Context",),
+        ("## 3. Tool surface",),
+        ("## 4. Delegation",),
+        ("## 5. State & resume",),
+        ("## 6. Safety gate",),
+        ("## 7. Capability routing & policy",),
+        ("## Sumber", "## Sources"),
     ],
 }
 EXEMPT = {"README.md", "_template.md", "INDEX.md"}
@@ -80,9 +97,9 @@ def check_frames(errs):
                 continue
             txt = f.read_text(encoding="utf-8")
             rel = f.relative_to(ROOT)
-            for h in heads:
-                if h not in txt:
-                    errs.append(f"{rel}: hilang section '{h}'")
+            for alts in heads:
+                if not any(h in txt for h in alts):
+                    errs.append(f"{rel}: hilang section '{alts[0]}'")
             if not LABEL.search(txt):
                 errs.append(f"{rel}: tidak ada label sumber [code]/[docs]/[inferred]")
 

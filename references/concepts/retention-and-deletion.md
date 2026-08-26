@@ -1,126 +1,132 @@
 # Retention & deletion
 
-## Masalah
+## Problem
 
-"Hapus user X" terdengar seperti satu `DELETE`, tapi state agent tersebar di
-lima lapis lintas beberapa sistem (§8.1): Postgres transcript, checkpointer
-Postgres, object store artefak, dan — dua yang paling sering luput —
-**vector index** untuk memory/RAG dan **trace store** observability. FK
-`ON DELETE CASCADE` cuma menjangkau apa yang ada di dalam satu database
-Postgres; tiga sistem lain (object store, vector DB eksternal, trace store)
-tidak tahu apa-apa soal `user_id` sampai dipanggil eksplisit. Kalau daftar
-cascade tidak lengkap, "penghapusan" berhasil di UI (baris hilang dari
-riwayat chat) sementara PII tetap hidup di trace observability atau index
-vektor selamanya.
+"Delete user X" sounds like a single `DELETE`, but agent state is spread
+across five layers in several systems (§8.1): the Postgres transcript, the
+Postgres checkpointer, the artifact object store, and — the two most
+frequently missed — the **vector index** for memory/RAG and the
+observability **trace store**. An `ON DELETE CASCADE` foreign key only
+reaches what lives inside one Postgres database; the other three systems
+(object store, external vector DB, trace store) know nothing about
+`user_id` until they are called explicitly. If the cascade list is
+incomplete, the "deletion" succeeds in the UI (rows vanish from chat
+history) while PII lives on forever in observability traces or the vector
+index.
 
-## Pola
+## Pattern
 
-### Daftar cascade lengkap
+### The complete cascade list
 
-| Lapis | Store | Aksi hapus | Mekanisme |
+| Layer | Store | Delete action | Mechanism |
 |---|---|---|---|
-| Transcript | Postgres — `conversations`, `messages`, `tool_calls`, `turns`, `compaction_events` | `DELETE FROM conversations WHERE user_id = ...` — sisanya ikut lewat `ON DELETE CASCADE` (lihat `persistence-schema.md`) | SQL, satu transaksi |
-| Checkpoint (Run state) | Tabel `checkpoints`/`writes` milik library checkpointer, bukan skema aplikasi | Panggil `checkpointer.adelete_thread(thread_id)` per `conversation_id` yang dihapus — **bukan** `DELETE` manual ke tabel checkpointer, skemanya bukan milik migration aplikasi | `[docs]` API checkpointer, dipanggil dari app |
-| Artefak (object store) | S3/GCS + `artifacts`/`artifact_versions` (lihat `artifacts-and-canvas.md`) | Hapus tiap object di `content_ref` untuk semua versi milik user, baru `DELETE FROM artifacts` (cascade ke `artifact_versions`/`message_artifact_refs`) | API storage (idempoten, di-retry) + SQL |
-| Memory row | Postgres `memory_entries`, atau `StoreBackend` durable file kalau dipakai | `DELETE FROM memory_entries WHERE user_id = ...`; untuk yang lewat `StoreBackend`: `store.adelete(namespace, key)` per key hasil `store.asearch((user_id,))` | SQL + `[docs]` LangGraph `store.adelete`/`asearch` |
-| **Vector index** | Kolom `embedding` di `memory_entries` (pgvector) **atau** vector DB eksternal (Pinecone/Weaviate/Qdrant) terpisah dari Postgres | Kalau pgvector kolokasi: ikut terhapus otomatis lewat `DELETE FROM memory_entries` di atas. Kalau eksternal: **wajib panggilan API delete-by-metadata terpisah** — tidak ada FK yang memaksa ini, paling gampang terlewat | `[inferred]` — perilaku umum vector DB eksternal, tidak ada API standar lintas vendor untuk ini |
-| **Trace store** | Observability/tracing eksternal (LangSmith, Langfuse, backend OpenTelemetry) | **Wajib** panggilan API/retention-policy terpisah untuk purge trace bertag `user_id` — trace store nyaris selalu sistem pihak ketiga yang tidak otomatis sinkron dengan penghapusan di produk | `[inferred]` — perilaku umum trace store pihak ketiga, bukan keputusan desain kita |
+| Transcript | Postgres — `conversations`, `messages`, `tool_calls`, `turns`, `compaction_events` | `DELETE FROM conversations WHERE user_id = ...` — the rest follows through `ON DELETE CASCADE` (see `persistence-schema.md`) | SQL, one transaction |
+| Checkpoint (Run state) | The checkpointer library's own `checkpoints`/`writes` tables, not the application schema | Call `checkpointer.adelete_thread(thread_id)` per deleted `conversation_id` — **not** a manual `DELETE` against the checkpointer's tables, whose schema isn't owned by the application's migrations | `[docs]` checkpointer API, called from the app |
+| Artifacts (object store) | S3/GCS plus `artifacts`/`artifact_versions` (see `artifacts-and-canvas.md`) | Delete every object at `content_ref` for all of the user's versions, then `DELETE FROM artifacts` (cascading to `artifact_versions`/`message_artifact_refs`) | Storage API (idempotent, retried) + SQL |
+| Memory rows | Postgres `memory_entries`, or durable `StoreBackend` files where used | `DELETE FROM memory_entries WHERE user_id = ...`; for anything under `StoreBackend`: `store.adelete(namespace, key)` per key returned by `store.asearch((user_id,))` | SQL + `[docs]` LangGraph `store.adelete`/`asearch` |
+| **Vector index** | An `embedding` column on `memory_entries` (pgvector) **or** an external vector DB (Pinecone/Weaviate/Qdrant) separate from Postgres | Colocated pgvector: deleted automatically by the `DELETE FROM memory_entries` above. External: **a separate delete-by-metadata API call is mandatory** — no foreign key forces it, which is why it is the easiest to miss | `[inferred]` — general external vector DB behaviour; there is no cross-vendor standard API for this |
+| **Trace store** | External observability/tracing (LangSmith, Langfuse, an OpenTelemetry backend) | A separate API call or retention policy is **mandatory** to purge traces tagged with `user_id` — a trace store is almost always a third-party system that doesn't automatically follow deletions in the product | `[inferred]` — general third-party trace store behaviour, not a design decision of ours |
 
-Dua baris terakhir ditandai tebal karena **paling sering terlewat**: baik
-vector index maupun trace store biasanya hidup di sistem yang tidak
-menganggap dirinya "milik" siklus hidup user — vector DB dianggap
-infrastruktur pencarian, trace store dianggap tooling internal — sampai ada
-audit atau permintaan penghapusan data yang menemukan sisa-sisa PII di
-keduanya.
+The last two rows are bold because they are **the most frequently
+missed**: both the vector index and the trace store usually live in
+systems that don't consider themselves part of a user's lifecycle — a
+vector DB is treated as search infrastructure, a trace store as internal
+tooling — until an audit or a deletion request finds PII remnants in both.
 
-### Urutan operasi (saga, bukan satu transaksi)
+### Order of operations (a saga, not one transaction)
 
-Penghapusan lintas lima lapis ini tidak bisa jadi satu transaksi ACID —
-object store, checkpointer, vector DB eksternal, dan trace store adalah
-sistem terpisah. Urutan yang aman untuk kegagalan-parsial:
+Deletion across these five layers cannot be a single ACID transaction —
+the object store, checkpointer, external vector DB, and trace store are
+separate systems. A partial-failure-safe order:
 
-1. Tandai user untuk dihapus (transaksional: set `deleted_at` atau enqueue
-   job penghapusan) — titik commit yang tidak bisa gagal setengah jalan.
-2. Cascade Postgres (transcript, tool calls, turns, compaction events, memory
-   rows, artifact metadata) dalam satu transaksi — cepat dan atomik karena
-   semuanya di database yang sama.
-3. Object store: hapus tiap `content_ref` artefak — idempoten, aman
-   di-retry kalau job terputus.
+1. Mark the user for deletion (transactionally: set `deleted_at` or
+   enqueue a deletion job) — a commit point that cannot half-fail.
+2. Cascade Postgres (transcript, tool calls, turns, compaction events,
+   memory rows, artifact metadata) in one transaction — fast and atomic
+   because it all lives in the same database.
+3. Object store: delete every artifact `content_ref` — idempotent, safe to
+   retry if the job is interrupted.
 4. Checkpointer: `adelete_thread` per `conversation_id`.
-5. Vector index eksternal (kalau bukan pgvector kolokasi): delete-by-metadata
-   `user_id`.
-6. Trace store: purge/redact via API atau retention policy provider.
-7. Tandai job selesai + catat di audit log **tanpa** menyertakan konten yang
-   baru dihapus (audit log yang menyimpan ulang PII yang katanya sudah
-   dihapus meniadakan tujuan penghapusan itu sendiri).
+5. External vector index (unless colocated pgvector): delete-by-metadata
+   on `user_id`.
+6. Trace store: purge/redact through the provider's API or retention
+   policy.
+7. Mark the job complete and record it in an audit log **without**
+   including the content just deleted (an audit log that re-stores PII you
+   claimed to delete defeats the deletion entirely).
 
-Langkah 3-6 idealnya job background dengan retry per langkah (bukan bagian
-dari request HTTP yang menghapus baris di langkah 2) — kalau langkah 5 gagal
-karena vector DB eksternal sedang down, langkah 2 tetap sudah selesai dan job
-bisa retry cuma dari langkah 5 tanpa mengulang cascade Postgres.
+Steps 3-6 should ideally be a background job with per-step retry (not part
+of the HTTP request that deletes rows in step 2) — if step 5 fails because
+the external vector DB is down, step 2 is already complete and the job can
+retry from step 5 alone without repeating the Postgres cascade.
 
-## Trade-off
+## Trade-offs
 
-- **Hard delete vs soft-delete (tombstone)** — hard delete (skema
-  `ON DELETE CASCADE` di `persistence-schema.md`) sederhana dan langsung
-  patuh terhadap permintaan hapus, tapi menghancurkan bukti yang mungkin
-  dibutuhkan investigasi abuse/audit trail. Tombstone (`deleted_at` +
-  filter di RLS policy) memberi jendela recovery/investigasi, tapi PII tetap
-  hidup sampai job hard-purge terjadwal jalan — artinya tombstone **menunda**
-  retensi, bukan menyelesaikannya; masih butuh job hard-purge di langkah 2-6
-  di atas setelah jendela retensi lewat. Pola produksi yang realistis:
-  tombstone dulu, hard-purge terjadwal setelah grace period (mis. 30 hari).
-- **Job sinkron vs asinkron untuk langkah 3-6** — sinkron (semua langkah
-  dalam satu request) memberi kepastian instan ("sudah terhapus semua" saat
-  response 200), tapi request bisa timeout kalau salah satu API eksternal
-  lambat, dan kegagalan-parsial jadi sulit di-retry granular. Asinkron (job
-  queue per langkah) tahan kegagalan-parsial tapi butuh status tracking
-  ("penghapusan sedang diproses") dan user tidak dapat konfirmasi instan.
-- **Vector index kolokasi (pgvector) vs eksternal** — kolokasi menghapus gap
-  ini sepenuhnya (ikut `DELETE FROM memory_entries` biasa, tidak ada langkah
-  saga tambahan), tapi vector DB terkelola eksternal biasanya lebih murah
-  di skala besar dan search-nya lebih matang. Trade-off ini sama dengan yang
-  disebut di `persistence-schema.md` soal `embedding VECTOR(...)` opsional.
+- **Hard delete vs soft delete (tombstone)** — hard delete (the
+  `ON DELETE CASCADE` schema in `persistence-schema.md`) is simple and
+  immediately compliant with a deletion request, but destroys evidence an
+  abuse investigation or audit trail might need. A tombstone (`deleted_at`
+  plus a filter in the RLS policy) gives a recovery/investigation window,
+  but PII lives on until the scheduled hard-purge job runs — meaning a
+  tombstone **defers** retention rather than resolving it; you still need
+  a hard-purge job running steps 2-6 once the retention window passes. The
+  realistic production pattern: tombstone first, scheduled hard-purge
+  after a grace period (e.g. 30 days).
+- **Synchronous vs asynchronous jobs for steps 3-6** — synchronous (all
+  steps in one request) gives instant certainty ("everything is deleted"
+  at the 200 response), but the request can time out if one external API
+  is slow, and partial failure becomes hard to retry granularly.
+  Asynchronous (a job queue per step) tolerates partial failure but needs
+  status tracking ("deletion in progress") and the user gets no instant
+  confirmation.
+- **Colocated vector index (pgvector) vs external** — colocation removes
+  this gap entirely (it follows the ordinary `DELETE FROM memory_entries`,
+  with no extra saga step), but a managed external vector DB is usually
+  cheaper at scale and its search is more mature. This is the same
+  trade-off noted in `persistence-schema.md` about the optional
+  `embedding VECTOR(...)` column.
 
-## Di deepagents
+## In deepagents
 
-`deepagents` tidak menjalankan retention/deletion job apa pun — konsisten
-dengan `checkpointer`/`store` yang **diteruskan apa adanya** ke
-`langchain.agents.create_agent` (`deepagents` tidak membangun keduanya
-sendiri), `[code]` — lihat
-[`../systems/deepagents.md`](../systems/deepagents.md) §5. Konsekuensinya,
-memanggil `checkpointer.adelete_thread(...)`/`store.adelete(...)` di langkah
-4-5 di atas adalah kode aplikasi yang memakai checkpointer/store yang sama
-persis dengan yang disuntikkan ke `create_deep_agent` — bukan API dari
-`deepagents` itu sendiri.
+`deepagents` runs no retention/deletion job of any kind — consistent with
+`checkpointer`/`store` being **passed through unchanged** to
+`langchain.agents.create_agent` (`deepagents` builds neither itself),
+`[code]` — see
+[`../systems/deepagents.md`](../systems/deepagents.md) §5. Consequently,
+calling `checkpointer.adelete_thread(...)`/`store.adelete(...)` in steps
+4-5 above is application code using exactly the same checkpointer/store
+that was injected into `create_deep_agent` — not an API of `deepagents`
+itself.
 
-Satu cascade tambahan yang relevan kalau `FilesystemBackend`/
-`LocalShellBackend` dipakai: keduanya baca/tulis langsung ke disk host
-(`root_dir`), dan isolasi antar user **bukan** tanggung jawab backend
-melainkan proses/container terpisah per user, `[code]` — lihat
+One additional cascade matters when `FilesystemBackend`/
+`LocalShellBackend` is used: both read and write directly to host disk
+(`root_dir`), and isolation between users is **not** the backend's
+responsibility but that of a separate process/container per user,
+`[code]` — see
 [`../systems/deepagents.md`](../systems/deepagents.md) §Backend filesystem
-(dikutip dari `THREAT_MODEL.md`). Kalau backend ini dipakai untuk state yang
-bertahan lintas sesi per user (bukan cuma sandbox sekali-pakai yang dibuang),
-penghapusan harus menyapu direktori itu juga — di luar cakupan skema
-Postgres di atas sepenuhnya.
+(quoting `THREAT_MODEL.md`). If that backend holds per-user state
+surviving across sessions (rather than a single-use sandbox that gets
+discarded), deletion must sweep that directory too — entirely outside the
+Postgres schema above.
 
-## Sumber
+## Sources
 
 - `[docs]` LangGraph — `checkpointer.delete_thread`/`adelete_thread`
   ("removes all checkpoints and associated write records for a specified
-  thread"), dikutip via Context7 dari
+  thread"), cited via Context7 from
   `docs.langchain.com/oss/python/langgraph/checkpointers`.
-- `[docs]` LangGraph — `store.adelete(namespace, key)` dan
-  `store.asearch(namespace)` untuk enumerasi key sebelum dihapus, dikutip
-  via Context7 dari `docs.langchain.com/oss/python/langgraph/stores`.
-- `[code]` LibreChat `packages/data-schemas/src/schema/message.ts` baris 233
-  (`messageSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 })`) dan
-  `packages/data-schemas/src/schema/toolCall.ts` baris 61 — precedent nyata
-  untuk penghapusan otomatis berbasis TTL index (chat/tool-call sementara
-  yang auto-expire). Postgres tidak punya TTL index native seperti MongoDB;
-  pola yang setara adalah job terjadwal (`pg_cron` atau worker eksternal)
-  yang men-scan kolom `expired_at`/`deleted_at` — dicatat di sini sebagai
-  `[inferred]` translasi pola, bukan diklaim sebagai fitur Postgres bawaan.
-- `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §5, §Backend
-  filesystem — tier-1 reference yang sudah diverifikasi di Task 3, dikutip
-  di sini tanpa membaca ulang source.
+- `[docs]` LangGraph — `store.adelete(namespace, key)` and
+  `store.asearch(namespace)` for enumerating keys before deletion, cited
+  via Context7 from `docs.langchain.com/oss/python/langgraph/stores`.
+- `[code]` LibreChat `packages/data-schemas/src/schema/message.ts` line 233
+  (`messageSchema.index({ expiredAt: 1 }, { expireAfterSeconds: 0 })`) and
+  `packages/data-schemas/src/schema/toolCall.ts` line 61 — real precedent
+  for automatic TTL-index-based deletion (temporary chat/tool-call records
+  that auto-expire). Postgres has no native TTL index like MongoDB; the
+  equivalent pattern is a scheduled job (`pg_cron` or an external worker)
+  scanning an `expired_at`/`deleted_at` column — recorded here as
+  `[inferred]` pattern translation, not claimed as a built-in Postgres
+  feature.
+- `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §5,
+  §Backend filesystem — a tier-1 reference already verified in Task 3,
+  cited here without re-reading the source.
