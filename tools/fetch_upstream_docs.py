@@ -48,6 +48,24 @@ def fetch(url: str) -> tuple[str, str | None]:
     return rel, None
 
 
+def citing_files(page: str) -> list[str]:
+    """Berkas KB yang menyitasi nomor baris di halaman upstream ini.
+
+    Sitasi berbentuk `nama.md` baris N menunjuk ke posisi, bukan ke isi.
+    Sekali halaman upstream berubah, nomornya bisa meleset tanpa satu pun
+    cek gagal — pernah terjadi, 32 sitasi sekaligus. Jadi setiap halaman
+    yang berubah harus menyebut siapa yang perlu ditinjau ulang.
+    """
+    needle = f"`{Path(page).name}` baris"
+    out = []
+    for f in sorted((ROOT / "references").rglob("*.md")):
+        if f.is_relative_to(DEST):
+            continue
+        if needle in f.read_text(encoding="utf-8"):
+            out.append(f.relative_to(ROOT).as_posix())
+    return out
+
+
 def main() -> int:
     urls = sorted(set(PAGE.findall(get(INDEX))))
     if not urls:
@@ -55,6 +73,8 @@ def main() -> int:
         return 1
 
     DEST.mkdir(parents=True, exist_ok=True)
+    before = {f.relative_to(DEST).as_posix(): f.read_text(encoding="utf-8")
+              for f in DEST.rglob("*.md") if f.name != "README.md"}
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(fetch, urls))
 
@@ -63,10 +83,23 @@ def main() -> int:
         print(f"FAIL: {rel}: {e}")
     print(f"\n{len(results) - len(errs)}/{len(results)} halaman tersimpan di "
           f"{DEST.relative_to(ROOT)}")
-    if not errs:
-        print("Berikutnya: git diff --stat references/upstream/ — halaman yang "
-              "berubah menandai klaim [docs] yang perlu ditinjau.")
-    return 1 if errs else 0
+    if errs:
+        return 1
+
+    changed = [rel for rel, _ in results if rel in before
+               and before[rel] != (DEST / rel).read_text(encoding="utf-8")]
+    if not changed:
+        print("Tidak ada halaman yang berubah.")
+        return 0
+
+    print(f"\n{len(changed)} halaman berubah:")
+    for rel in changed:
+        cites = citing_files(rel)
+        print(f"  {rel}" + (f"  -> tinjau ulang: {', '.join(cites)}" if cites
+                            else "  (tidak disitasi)"))
+    print("\nSitasi `baris N` ke halaman di atas mungkin meleset. Verifikasi "
+          "sebelum commit.")
+    return 0
 
 
 if __name__ == "__main__":

@@ -59,6 +59,7 @@ Setiap tahap di atas mendarat di sini:
 | **Titik ekstensi + anti-pattern** | [deepagents/extension-points.md](references/deepagents/extension-points.md) |
 | **Konstruksi per arketipe** | [deepagents/per-archetype.md](references/deepagents/per-archetype.md) |
 | **Handler & pola error** | [deepagents/handlers.md](references/deepagents/handlers.md) |
+| **Best practice yang dinyatakan dokumentasi resmi** | [deepagents/best-practices.md](references/deepagents/best-practices.md) |
 | Config deepagents — API lengkap | [deepagents/api-reference.md](references/deepagents/api-reference.md) |
 | Config deepagents — kesesuaian vs vanilla | [deepagents/conformance.md](references/deepagents/conformance.md) |
 | Internal deepagents — apa memanggil apa | [graphify-out/GRAPH_REPORT.md](graphify-out/GRAPH_REPORT.md) |
