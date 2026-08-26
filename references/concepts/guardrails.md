@@ -1,279 +1,288 @@
 # Guardrails
 
-## Masalah
+## Problem
 
-"Guardrail" hampir selalu menyusut jadi satu hal: content filter di output —
-biasanya satu panggilan moderasi sebelum jawaban dikirim ke user. Itu cuma
-menutup satu dari enam titik di mana kebijakan bisa (dan akan) dilanggar
-dalam satu loop agent. Produk yang merasa "sudah punya guardrail" karena
-memasang satu classifier moderasi di output tetap kebobolan lewat: prompt
-injection yang masuk lewat hasil tool (bukan lewat pesan user, jadi tidak
-pernah lewat input filter), retrieval yang mengembalikan dokumen milik user
-lain (tidak ada "output" yang salah — teksnya valid, cuma pemiliknya salah),
-tool destruktif yang dipanggil tanpa approval, atau loop yang jalan 4000
-langkah sebelum ada yang sadar biayanya. Nama classifier yang benar (Llama
-Guard, NeMo Guardrails, dst.) dipasang di titik yang salah tetap kebobolan di
-lima titik lain — nama produk yang tepat bukan bukti cakupan yang cukup.
+"Guardrail" almost always shrinks to one thing: a content filter on output —
+usually one moderation call before the answer goes to the user. That covers
+one of the six points where policy can (and will) be violated inside an
+agent loop. A product that feels it "has guardrails" because it installed one
+moderation classifier on output is still breached through: prompt injection
+arriving in a tool result (not in a user message, so it never passes the
+input filter), retrieval returning another user's documents (nothing is
+wrong with the "output" — the text is valid, only its owner is wrong), a
+destructive tool called without approval, or a loop running 4000 steps
+before anyone notices the cost. The right classifier name (Llama Guard, NeMo
+Guardrails, etc.) installed at the wrong point is still breached at the other
+five — the right product name is no evidence of sufficient coverage.
 
-Masalah kedua, lebih halus: guardrail yang dipasang tanpa **memutuskan** apa
-yang terjadi saat dia gagal (error klasifier, timeout, dependency down)
-mewarisi perilaku dari cara error itu kebetulan ditangani di kode — biasanya
-`try/except` yang menelan error dan melanjutkan (fail-open kebetulan) atau
-yang membiarkan exception naik dan menghentikan request (fail-closed
-kebetulan). Kedua default itu benar untuk sebagian guardrail dan salah fatal
-untuk sebagian lain, dan kode tidak tahu bedanya kecuali penulisnya
-memutuskan secara eksplisit per guardrail.
+The second problem is subtler: a guardrail installed without **deciding**
+what happens when it fails (a classifier error, a timeout, a dependency
+down) inherits its behaviour from however that error happens to be handled
+in code — usually a `try/except` that swallows it and continues (accidental
+fail-open) or one that lets the exception propagate and stops the request
+(accidental fail-closed). Both defaults are right for some guardrails and
+fatally wrong for others, and the code can't tell the difference unless its
+author decides explicitly per guardrail.
 
-## Pola
+## Pattern
 
-### Enam titik penegakan, tiap guardrail deklarasi tiga hal
+### Six enforcement points, each guardrail declaring three things
 
-Kerangka enam titik ini `[ours]` — mengikuti kerangka spec §8.4 proyek ini,
-selaras dengan taksonomi "rails" NeMo Guardrails yang independen sampai pada
-titik serupa: *input rails* (pra-LLM), *dialog rails* (alur percakapan),
-*retrieval rails* (validasi konten yang diambil), *execution/tool rails*
-(sebelum/sesudah pemanggilan tool), *output rails* (pasca-LLM) `[docs]`.
-Vanilla di industri: guardrail dijual dan dipasang sebagai satu titik —
-biasanya "moderasi output", kadang ditambah input — cukup untuk chatbot
-single-turn tanpa tool. Kita menyimpang dengan menambah dua titik yang tidak
-dibutuhkan taksonomi single-turn manapun: **Loop** (kontrol lintas-banyak-
-langkah: biaya, waktu, oscillation) dan **Sistem** (versi model, fallback,
-audit lintas keputusan gerbang) — keduanya tidak eksis di produk non-agentic
-karena tidak ada "banyak langkah" atau "banyak keputusan gerbang" untuk
-dikontrol/diaudit.
+This six-point framework is `[ours]` — following this project's spec §8.4,
+consistent with NeMo Guardrails' "rails" taxonomy which independently
+arrives at something similar: *input rails* (pre-LLM), *dialog rails*
+(conversation flow), *retrieval rails* (validating retrieved content),
+*execution/tool rails* (before/after a tool call), *output rails* (post-LLM)
+`[docs]`. Vanilla in the industry: guardrails are sold and installed as one
+point — usually "output moderation", sometimes plus input — sufficient for a
+single-turn chatbot with no tools. We diverge by adding two points no
+single-turn taxonomy needs: **Loop** (multi-step controls: cost, time,
+oscillation) and **System** (model versions, fallbacks, auditing across gate
+decisions) — neither exists in non-agentic products because there are no
+"many steps" or "many gate decisions" to control or audit.
 
-Tiap baris di bawah adalah satu guardrail konkret, bukan satu titik — **tiap
-guardrail wajib menyatakan tiga hal**: kebijakan, titik penegakan, mode
-kegagalan. Mode kegagalan sengaja tidak seragam:
+Each row below is one concrete guardrail, not one point — and **every
+guardrail must state three things**: the policy, the enforcement point, the
+failure mode. The failure modes are deliberately not uniform:
 
-| # | Titik | Kebijakan (contoh) | Titik penegakan | Mode kegagalan |
+| # | Point | Policy (example) | Enforcement point | Failure mode |
 |---|---|---|---|---|
-| 1 | Input | Moderasi konten (kekerasan/pelecehan/abuse) | Sebelum turn masuk state, hook `before_model` | **Fail-open** — error klasifier → log + lanjut. Menahan seluruh produk demi satu pemeriksaan yang gagal lebih mahal dari membiarkan satu turn tak termoderasi |
-| 1 | Input | PII redaction (email, kartu kredit di pesan user) | `before_model`, `PIIMiddleware(apply_to_input=True)` | Campuran per tipe: `strategy="block"` (fail-closed) untuk PII berisiko tinggi (kartu kredit), `strategy="redact"` (fail-open, lanjut dg versi tersamar) untuk PII risiko rendah (email) |
-| 1 | Input | Deteksi injection & jailbreak, batas topik | `before_model`, classifier kustom (Llama Guard / rail input NeMo) | Fail-closed pada skor tinggi (`can_jump_to=["end"]`, turn dihentikan) — palsu-positif di sini cuma menolak satu turn, jauh lebih murah dari palsu-negatif yang meloloskan jailbreak |
-| 2 | Retrieval/context | **Filter otorisasi** — hasil retrieval discope ke `user_id` aktif (§8.2) | Di dalam implementasi tool retrieval, sebelum query dieksekusi — bukan filter dari hasil sesudahnya | **Fail-closed** — error di lapis scope (mis. `current_user_id` lupa di-set) berarti nol baris, bukan seluruh index. Ini yang paling sering bocor di RAG multi-user karena kelihatannya "cuma pencarian", persis argumen `isolation-and-scoping.md` |
-| 2 | Retrieval/context | Penandaan konten tak-dipercaya + provenance | Saat konten retrieval/tool result ditulis ke state, sebelum masuk context model | Fail-open untuk penandaan (selalu tandai, tidak pernah blokir isi) — labelnya yang membuat model (dan guardrail lain di titik Output) tahu konten itu tidak boleh diperlakukan sebagai instruksi. Lihat `security.md` untuk kenapa ini pertahanan utama terhadap prompt injection lewat tool result |
-| 3 | Tool/aksi | Allowlist tool per peran | `excluded_tools` (`HarnessProfile`) → `_ToolExclusionMiddleware` | **Fail-closed** — tool yang tak terdaftar tidak pernah terlihat model sama sekali, bukan terlihat lalu ditolak saat dipanggil (kegagalan yang tak dilihat model = tidak ada percobaan bujuk-ulang) |
-| 3 | Tool/aksi | Validasi argumen tool | Skema tool (`args_schema` Pydantic) sebelum handler dipanggil | Fail-closed — argumen yang gagal validasi tidak pernah sampai ke fungsi tool |
-| 3 | Tool/aksi | Gerbang approval aksi destruktif, penyempitan scope token | `interrupt_on=`/`permissions=[...,mode="interrupt"]` → `HumanInTheLoopMiddleware` | Fail-closed — run berhenti menunggu approval; timeout approval = default *deny*, bukan default lanjut |
-| 4 | Output | Validasi schema, groundedness, wajib sitasi | `RubricMiddleware` (iterasi sampai lolos rubric atau `max_iterations`) | Fail-open pada `max_iterations` tercapai — kirim jawaban terbaik yang ada dg flag "belum lolos rubric" ke lapis observability, jangan diamkan turn selamanya |
-| 4 | Output | Cek kebocoran PII di jawaban | `after_model`, `PIIMiddleware(apply_to_output=True)` | Sama pola campuran seperti PII input — `hash`/`mask` untuk data pseudonim yang perlu tetap berguna, `block` untuk kelas data yang tidak boleh keluar sama sekali |
-| 4 | Output | Scan secret di kode yang digenerate (API key, private key, token pola `sk-…`/`AKIA…`) | Sebelum `write_file`/`edit_file` commit ke disk, atau `after_model` pada blok kode | **Fail-closed** — temuan pola secret memblokir tulis; tulis-lalu-warn berarti secret sudah ada di disk (dan mungkin sudah ke git) sebelum siapa pun membaca warning-nya |
-| 5 | Loop | Max tool call per run/thread | `ToolCallLimitMiddleware(thread_limit=, run_limit=, exit_behavior=)` | `exit_behavior` **adalah** deklarasi mode kegagalan eksplisit: `"error"` = fail-closed (raise), `"end"` = fail-open terkendali (tutup turn dg state apa adanya), `"continue"` (default library) = tidak berhenti sama sekali — memilih default tanpa membaca dokumentasinya berarti guardrail ini tidak melakukan apa-apa |
-| 5 | Loop | Budget token/biaya per run, kill switch | `ModelCallLimitMiddleware` + akumulasi biaya app-level (`cost-control.md`) | Fail-closed di level run (hentikan run itu), fail-open di level user (user tetap bisa memulai run baru — budget habis bukan larangan permanen) |
-| 5 | Loop | Deteksi oscillation & no-progress | Custom `after_model` — bandingkan hash tool-call berurutan / progres state | Fail-open dg peringatan sampai N pengulangan, baru fail-closed (hentikan run) — satu pengulangan biasa terjadi (retry legit), banyak pengulangan identik adalah sinyal stuck |
-| 6 | Sistem | Pin versi model | Parameter `model` eksplisit ke `create_deep_agent(model=...)`, bukan alias mengambang (`"latest"`) | Fail-closed implisit — model/alias yang tak dikenal gagal saat konstruksi agent, bukan diam-diam terselesaikan ke versi lain saat runtime |
-| 6 | Sistem | Kebijakan fallback model | `ModelFallbackMiddleware(primary, *fallbacks)` | **Fail-open by design** (tujuannya availability) — tapi wajib berpasangan dg audit log per keputusan gerbang (model mana yang sebenarnya menjawab), kalau tidak "jawaban dari fallback yang lebih lemah" jadi tak tertelusuri |
+| 1 | Input | Content moderation (violence/harassment/abuse) | Before the turn enters state, the `before_model` hook | **Fail-open** — a classifier error → log + continue. Holding the whole product hostage to one failed check costs more than letting one turn through unmoderated |
+| 1 | Input | PII redaction (emails, card numbers in user messages) | `before_model`, `PIIMiddleware(apply_to_input=True)` | Mixed per type: `strategy="block"` (fail-closed) for high-risk PII (card numbers), `strategy="redact"` (fail-open, continuing with a masked version) for low-risk PII (emails) |
+| 1 | Input | Injection & jailbreak detection, topic bounds | `before_model`, a custom classifier (Llama Guard / a NeMo input rail) | Fail-closed on a high score (`can_jump_to=["end"]`, the turn stops) — a false positive here only rejects one turn, far cheaper than a false negative letting a jailbreak through |
+| 2 | Retrieval/context | **Authorisation filtering** — retrieval results scoped to the active `user_id` (§8.2) | Inside the retrieval tool's implementation, before the query executes — not filtering the results afterwards | **Fail-closed** — an error in the scope layer (e.g. `current_user_id` never set) means zero rows, not the whole index. This is the most frequent leak in multi-user RAG because it looks like "just a search", exactly the `isolation-and-scoping.md` argument |
+| 2 | Retrieval/context | Untrusted content tagging + provenance | When retrieval/tool result content is written to state, before it enters the model context | Fail-open for tagging (always tag, never block content) — the label is what tells the model (and other guardrails at the Output point) that this content must not be treated as instructions. See `security.md` for why this is the primary defence against prompt injection through tool results |
+| 3 | Tool/action | A per-role tool allowlist | `excluded_tools` (`HarnessProfile`) → `_ToolExclusionMiddleware` | **Fail-closed** — an unlisted tool is never visible to the model at all, rather than visible then refused when called (a failure the model doesn't see = no attempt to re-persuade) |
+| 3 | Tool/action | Tool argument validation | The tool schema (Pydantic `args_schema`) before the handler is called | Fail-closed — arguments failing validation never reach the tool function |
+| 3 | Tool/action | An approval gate for destructive actions, token scope narrowing | `interrupt_on=`/`permissions=[...,mode="interrupt"]` → `HumanInTheLoopMiddleware` | Fail-closed — the run stops awaiting approval; an approval timeout defaults to *deny*, not to continue |
+| 4 | Output | Schema validation, groundedness, citations required | `RubricMiddleware` (iterating until the rubric passes or `max_iterations`) | Fail-open on reaching `max_iterations` — send the best available answer with a "rubric not met" flag to the observability layer; don't leave the turn hanging forever |
+| 4 | Output | Checking for PII leakage in the answer | `after_model`, `PIIMiddleware(apply_to_output=True)` | The same mixed pattern as input PII — `hash`/`mask` for pseudonymous data that must stay useful, `block` for data classes that must never leave |
+| 4 | Output | Secret scanning in generated code (API keys, private keys, `sk-…`/`AKIA…` patterns) | Before `write_file`/`edit_file` commits to disk, or `after_model` on code blocks | **Fail-closed** — a secret pattern match blocks the write; write-then-warn means the secret is already on disk (and possibly already in git) before anyone reads the warning |
+| 5 | Loop | Max tool calls per run/thread | `ToolCallLimitMiddleware(thread_limit=, run_limit=, exit_behavior=)` | `exit_behavior` **is** the explicit failure mode declaration: `"error"` = fail-closed (raise), `"end"` = controlled fail-open (close the turn with state as-is), `"continue"` (the library default) = it doesn't stop at all — choosing the default without reading its documentation means this guardrail does nothing |
+| 5 | Loop | Token/cost budget per run, kill switch | `ModelCallLimitMiddleware` + app-level cost accumulation (`cost-control.md`) | Fail-closed at run level (stop that run), fail-open at user level (the user can still start a new run — an exhausted budget isn't a permanent ban) |
+| 5 | Loop | Oscillation & no-progress detection | A custom `after_model` — comparing consecutive tool-call hashes / state progress | Fail-open with a warning up to N repetitions, then fail-closed (stop the run) — one repetition is normal (a legitimate retry), many identical repetitions signal being stuck |
+| 6 | System | Pinning the model version | An explicit `model` parameter to `create_deep_agent(model=...)`, not a floating alias (`"latest"`) | Implicitly fail-closed — an unknown model/alias fails at agent construction rather than quietly resolving to another version at runtime |
+| 6 | System | Model fallback policy | `ModelFallbackMiddleware(primary, *fallbacks)` | **Fail-open by design** (its purpose is availability) — but it must be paired with an audit log per gate decision (which model actually answered), or "an answer from a weaker fallback" becomes untraceable |
 
-### Mode kegagalan ketiga: fail-deferred
+### The third failure mode: fail-deferred
 
-Tabel di atas memakai dua mode — fail-open dan fail-closed. Ada yang ketiga, dan
-ia baru masuk akal ketika gerbangnya berupa **persetujuan manusia** dan tidak ada
-manusia yang sedang menunggu: **jangan lolos, jangan tolak, suspend**.
+The table above uses two modes — fail-open and fail-closed. There is a third,
+and it only makes sense when the gate is **human approval** and no human is
+waiting: **don't allow, don't refuse, suspend**.
 
-OpenWorker mengimplementasikannya sebagai approver yang ditukar per mode sesi.
-Sesi unattended memakai `inbox_approver`, yang docstring-nya menyatakan perilakunya
-sendiri — *"routes a permission request to the Inbox and suspends until resolved"*.
-`[code]` `andrewyng/openworker` @ `141d02a`, `coworker/inbox.py:387-406`; `await
-store.wait(item.id)` di `:362-371` **tanpa timeout**. Lihat
+OpenWorker implements it as an approver swapped per session mode. An
+unattended session uses `inbox_approver`, whose docstring states its own
+behaviour — *"routes a permission request to the Inbox and suspends until
+resolved"*. `[code]` `andrewyng/openworker` @ `141d02a`,
+`coworker/inbox.py:387-406`; the `await store.wait(item.id)` at `:362-371`
+has **no timeout**. See
 [`../systems/openworker.md`](../systems/openworker.md) §6.
 
-Yang membuatnya bukan sekadar fail-closed yang sopan: permintaannya **durable dan
-idempoten**. Item inbox menyimpan `tool_call_id` dan pembuatannya idempoten atas
-`(session_id, tool_call_id)` (`inbox.py:77,142`), sehingga proses yang mati saat
-menunggu kehilangan coroutine-nya tetapi tidak kehilangan permintaannya — run yang
-dijalankan ulang membangkitkan prompt yang sama, bukan duplikat. `[code]`
+What makes it more than a polite fail-closed: the request is **durable and
+idempotent**. An inbox item stores its `tool_call_id` and its creation is
+idempotent over `(session_id, tool_call_id)` (`inbox.py:77,142`), so a
+process dying while waiting loses its coroutine but not its request — a
+re-run raises the same prompt rather than a duplicate. `[code]`
 
-**Biayanya jujur dan tidak boleh disembunyikan**: run yang suspend menahan resource
-tanpa batas waktu. Di produk single-operator desktop itu dapat diterima — hanya ada
-satu run, milik orang yang akan kembali. **Di layanan multi-user itu kebocoran
-resource**, dan run terjadwal yang menunggu persetujuan adalah kejadian normal,
-bukan pengecualian.
+**Its cost is honest and must not be hidden**: a suspended run holds
+resources indefinitely. In a single-operator desktop product that is
+acceptable — there is one run, belonging to the person who will come back.
+**In a multi-user service it is a resource leak**, and a scheduled run
+waiting for approval is a normal occurrence, not an exception.
 
-Karena itu fail-deferred hanya boleh dipakai di sini bila dipasangkan dengan dua hal
-yang OpenWorker tidak butuh: `[ours]`
+So fail-deferred may only be used here when paired with two things OpenWorker
+doesn't need: `[ours]`
 
-1. **Timeout pada penantian**, bukan `await` telanjang — jadi run tidak menggantung
-   selamanya. Cara vanilla-nya adalah `await` tanpa batas seperti di
-   `inbox.py:362-371`; kita menyimpang karena satu run menggantung di layanan
-   multi-user menahan slot orchestrator yang dihitung HPA
-   ([`serving-topology.md`](serving-topology.md) §sinyal in-flight turns).
-2. **Kebijakan eksplisit saat timeout habis** — turun ke fail-closed (batalkan run,
-   catat alasan) atau fail-open terkendali. Memilih "biarkan menggantung" adalah
-   memilih mode kegagalan tanpa menyatakannya, yang dilarang aturan tiga-hal di atas.
+1. **A timeout on the wait**, not a bare `await` — so the run doesn't hang
+   forever. Vanilla is the unbounded `await` at `inbox.py:362-371`; we
+   diverge because one hanging run in a multi-user service holds an
+   orchestrator slot the HPA counts
+   ([`serving-topology.md`](serving-topology.md) §the in-flight turns
+   signal).
+2. **An explicit policy when the timeout expires** — falling to fail-closed
+   (cancel the run, record why) or to a controlled fail-open. Choosing "let
+   it hang" is choosing a failure mode without stating it, which the
+   three-things rule above forbids.
 
-Antrean permintaan yang menunggu itu sendiri punya backpressure; lihat
+The queue of waiting requests has backpressure of its own; see
 [`queueing-and-backpressure.md`](queueing-and-backpressure.md).
 
-### Bertingkat: deterministik dulu, model-based cuma kalau perlu
+### Tiered: deterministic first, model-based only when needed
 
-Guardrail model-based (Llama Guard, rail self-check NeMo, validator LLM-based
-di Guardrails AI) melipatgandakan biaya dan latensi **setiap panggilan yang
-lewat titik itu** — bukan cuma yang positif melanggar. Satu guardrail
-model-based di titik Input berarti setiap turn, termasuk 99% yang aman,
-sekarang menunggu satu round-trip LLM tambahan sebelum turn utama mulai.
-Urutan tingkatan, murah ke mahal:
+Model-based guardrails (Llama Guard, NeMo's self-check rails, Guardrails AI's
+LLM-based validators) multiply cost and latency on **every call passing that
+point** — not just the violating ones. One model-based guardrail at the Input
+point means every turn, including the 99% that are safe, now waits for an
+extra LLM round trip before the main turn starts. The tiers, cheap to
+expensive:
 
-1. **Deterministik murni** — schema (Pydantic `args_schema`), regex, allowlist
-   nama tool. Presidio termasuk sebagian di sini: recognizer regex/checksum
-   (mis. validasi Luhn untuk kartu kredit) berjalan tanpa model sama sekali.
+1. **Purely deterministic** — schemas (Pydantic `args_schema`), regexes, a
+   tool name allowlist. Presidio partly belongs here: its regex/checksum
+   recognisers (e.g. Luhn validation for card numbers) run with no model at
+   all. `[docs]`
+2. **Deterministic + cheap NER** — the full Presidio Analyzer combines regex
+   recognisers with NER models (spaCy/Transformers/Stanza, pluggable) plus a
+   lemma-based `ContextAwareEnhancer` to raise confidence from surrounding
+   context — more expensive than pure regex but far cheaper than one
+   generative LLM call, and it catches PII classes regex cannot (people's
+   names, addresses). `[docs]`
+3. **A small model/dedicated classifier** — Llama Guard: an 8B fine-tuned
+   model inferenced once to produce a safe/unsafe verdict plus a category (a
+   14-category taxonomy aligned with MLCommons: violence, child
+   exploitation, privacy, hate speech, etc., supporting both input and
+   output). Still one model call, but a small model on a narrow task
+   (classification, not free generation) — cheaper than the product's main
+   model but not free. `[docs]`
+4. **A full generative LLM as the guardrail** — NeMo Guardrails' self-check
+   rails or Guardrails AI's LLM-based validators asking a model to judge or
+   rewrite the answer. The most expensive, used only for what can't be
+   checked deterministically or by a small classifier: groundedness against
+   retrieved documents, nuanced policy compliance irreducible to patterns.
    `[docs]`
-2. **Deterministik+NER murah** — Presidio Analyzer penuh menggabungkan
-   recognizer regex dengan model NER (spaCy/Transformers/Stanza, dapat
-   dipasang) plus `ContextAwareEnhancer` berbasis lemma untuk menaikkan
-   confidence dari konteks sekitar — lebih mahal dari regex murni tapi jauh
-   lebih murah dari satu panggilan LLM generatif, dan menangkap kelas PII
-   yang regex tidak bisa (nama orang, alamat). `[docs]`
-3. **Model kecil/klasifier khusus** — Llama Guard: model fine-tuned 8B yang
-   di-*inference* sekali untuk menghasilkan verdict aman/tidak-aman +
-   kategori (taksonomi 14 kategori selaras MLCommons: kekerasan, eksploitasi
-   anak, privasi, ujaran kebencian, dll., mendukung input maupun output).
-   Tetap satu panggilan model, tapi model kecil dan tugasnya sempit
-   (klasifikasi, bukan generasi bebas) — lebih murah dari model utama produk
-   tapi tidak gratis. `[docs]`
-4. **LLM generatif penuh sebagai guardrail** — rail self-check NeMo Guardrails
-   atau validator LLM-based Guardrails AI yang meminta model menilai/menulis
-   ulang jawaban. Termahal, dipakai hanya untuk hal yang tidak bisa
-   diperiksa deterministik/klasifier kecil: groundedness terhadap dokumen
-   retrieval, kepatuhan nuansa kebijakan yang tidak bisa direduksi ke pola.
-   `[docs]`
 
-Urutan defaultnya: coba tingkat 1 dulu; naik satu tingkat hanya kalau
-tingkat sebelumnya terbukti tidak cukup untuk kelas risiko itu — bukan
-memasang tingkat 4 untuk semua titik karena "paling akurat".
+The default order: try tier 1 first; go up one tier only when the previous
+proves insufficient for that risk class — not installing tier 4 everywhere
+because it is "the most accurate".
 
-### Guardrail punya false-positive rate — masuk eval harness
+### A guardrail has a false-positive rate — put it in the eval harness
 
-Guardrail yang dipasang dan tidak pernah diukur adalah liabilitas, bukan
-kontrol: tiap deteksi (regex, NER, klasifier) punya trade-off precision/
-recall, dan tanpa angka nyata, threshold-nya cuma tebakan. Guardrail yang
-terlalu agresif fail-closed di permintaan sah (mis. moderasi salah memblokir
-bahasa non-Inggris, PII redaction salah menandai nomor referensi biasa
-sebagai kartu kredit) adalah insiden UX yang tidak akan pernah ketahuan
-kalau tidak ada yang mengukurnya. Presisi/recall tiap guardrail wajib jadi
-metrik eval harness, bukan cuma "terpasang" — lihat
-[`evaluation.md`](evaluation.md) §Guardrail sebagai objek terukur.
+A guardrail installed and never measured is a liability, not a control: every
+detector (regex, NER, classifier) has a precision/recall trade-off, and
+without real numbers its threshold is a guess. A guardrail that fails closed
+too aggressively on legitimate requests (e.g. moderation wrongly blocking
+non-English text, PII redaction wrongly flagging an ordinary reference number
+as a card) is a UX incident nobody will ever discover unless somebody
+measures it. Every guardrail's precision/recall must be an eval harness
+metric rather than merely "installed" — see [`evaluation.md`](evaluation.md)
+§Guardrails as measurable objects.
 
-### Kebijakan tidak boleh hanya di prompt
+### Policy must not live only in the prompt
 
-Aturan di system prompt ("jangan pernah bocorkan data user lain", "selalu
-minta konfirmasi sebelum menghapus") itu **advisory** — model bisa dibujuk
-mengabaikannya, dan yang paling sering membujuknya bukan user yang jujur di
-pesan awal, tapi teks di hasil tool yang disamarkan sebagai instruksi (lihat
-[`security.md`](security.md) §Prompt injection lewat hasil tool, isu nomor
-satu keamanan multi-langkah). Penegakan yang nyata hidup di kode yang
-berjalan di luar kendali model — middleware yang membaca/mengubah/memblokir
-state sebelum atau sesudah model dipanggil. Prompt tetap berguna untuk
-memandu perilaku *default* model, tapi tidak pernah menjadi satu-satunya
-lapis untuk apa pun yang kegagalannya mahal.
+A rule in the system prompt ("never leak another user's data", "always ask
+for confirmation before deleting") is **advisory** — the model can be
+persuaded to ignore it, and the most frequent persuader isn't an honest user
+in the opening message but text in a tool result disguised as an instruction
+(see [`security.md`](security.md) §Prompt injection through tool results, the
+number one multi-step security issue). Real enforcement lives in code running
+outside the model's control — middleware reading, changing, or blocking state
+before or after the model is called. The prompt remains useful for guiding
+the model's *default* behaviour, but is never the only layer for anything
+whose failure is expensive.
 
-## Trade-off
+## Trade-offs
 
-- **Fail-closed di semua titik vs fail-open di semua titik** — fail-closed
-  seragam maksimal aman tapi menjadikan tiap guardrail titik gagal tunggal
-  untuk seluruh produk (guardrail down = produk down); fail-open seragam
-  maksimal tersedia tapi guardrail jadi dekoratif begitu infra-nya gagal
-  atau di bawah beban. Keputusan harus per guardrail berdasar asimetri
-  bahaya: kebocoran data senyap & tak-terlihat (fail-closed) vs chat
-  ter-blokir yang menjengkelkan & terlihat (fail-open) — tabel di atas
-  adalah penerapan aturan ini, bukan aturan baru.
-- **Bertingkat vs satu classifier LLM yang memeriksa semuanya** — satu
-  pemeriksa LLM generik lebih sederhana untuk dinalar (satu kode path, satu
-  tempat tuning) tapi menambah satu round-trip model penuh ke *setiap* turn
-  tanpa pengecualian; bertingkat lebih murah rata-rata tapi menambah
-  permukaan kode (tiap tingkat = jalur terpisah yang perlu diuji) dan
-  keputusan eksplisit "kapan naik tingkat" yang bisa salah diset.
-- **Framework guardrail terpusat (NeMo Guardrails/Guardrails AI sebagai
-  orkestrator rail) vs pustaka titik yang dirangkai sendiri** (Presidio untuk
-  PII + Llama Guard untuk konten + regex kustom untuk secret, masing-masing
-  dipanggil dari middleware yang kita tulis) — framework memberi bahasa
-  konfigurasi/rail yang bisa dipakai ulang lintas proyek dengan biaya
-  dependency tambahan dan runtime yang semantiknya tidak sepenuhnya kita
-  kendalikan berjalan di dalam loop kita; rangkaian titik lebih pas dengan
-  model "guardrail = middleware" `deepagents`/`langchain` (tiap pustaka jadi
-  satu panggilan di dalam hook yang kita tulis sendiri) dengan biaya:
-  plumbing (wiring hook, exit behavior, logging) diulang manual untuk tiap
-  guardrail, tidak ada abstraksi bersama.
+- **Fail-closed everywhere vs fail-open everywhere** — uniform fail-closed is
+  maximally safe but makes every guardrail a single point of failure for the
+  whole product (guardrail down = product down); uniform fail-open is
+  maximally available but makes guardrails decorative as soon as their
+  infrastructure fails or is under load. The decision must be per guardrail
+  based on the asymmetry of harm: a silent, invisible data leak (fail-closed)
+  vs an annoying, visible blocked chat (fail-open) — the table above is that
+  rule applied, not a new rule.
+- **Tiering vs one LLM classifier checking everything** — one generic LLM
+  checker is simpler to reason about (one code path, one place to tune) but
+  adds a full model round trip to *every* turn without exception; tiering is
+  cheaper on average but adds code surface (each tier = a separate path
+  needing tests) and an explicit "when to go up a tier" decision that can be
+  set wrongly.
+- **A centralised guardrail framework (NeMo Guardrails/Guardrails AI as the
+  rail orchestrator) vs point libraries wired together yourself** (Presidio
+  for PII + Llama Guard for content + custom regexes for secrets, each called
+  from middleware we write) — a framework provides a configuration/rail
+  language reusable across projects at the cost of an extra dependency and a
+  runtime whose semantics we don't fully control running inside our loop;
+  wiring point libraries fits `deepagents`/`langchain`'s "guardrail =
+  middleware" model better (each library becomes one call inside a hook we
+  wrote) at the cost of repeating the plumbing (hook wiring, exit behaviour,
+  logging) manually per guardrail, with no shared abstraction.
 
-## Di deepagents
+## In deepagents
 
-Tidak ada satu pun dari NeMo Guardrails, Guardrails AI, Llama Guard, atau
-Presidio yang punya integrasi native ke `deepagents`/`langchain` — keempatnya
-pustaka berdiri sendiri yang harus dipanggil manual dari dalam
-`AgentMiddleware` kustom. Yang **memetakan 1:1 ke middleware** adalah titik
-penegakannya, bukan pustaka classifier-nya:
+None of NeMo Guardrails, Guardrails AI, Llama Guard, or Presidio has a native
+integration into `deepagents`/`langchain` — all four are standalone libraries
+that must be called manually from inside custom `AgentMiddleware`. What
+**maps 1:1 to middleware** is the enforcement point, not the classifier
+library:
 
-| Titik (dari tabel di atas) | Middleware/mekanisme `deepagents`/`langchain` | Sumber |
+| Point (from the table above) | `deepagents`/`langchain` middleware/mechanism | Source |
 |---|---|---|
-| 1. Input — PII | `langchain.agents.middleware.PIIMiddleware(pii_type, strategy=, apply_to_input=True)`, hook `before_model` | `[code]` `langchain/agents/middleware/pii.py` (langchain 1.3.16, versi yang sama dikutip `deepagents.md`) |
-| 1. Input — injection/jailbreak/topik/moderasi/abuse | Tidak ada middleware bawaan; tulis `AgentMiddleware` kustom dg hook `before_model`, panggil classifier (Llama Guard/rail input NeMo/validator Guardrails AI) di dalamnya, `@hook_config(can_jump_to=["end"])` untuk memutus turn saat positif | `[code]` hook `before_model`/`hook_config` ada di `langchain/agents/middleware/types.py`; `[inferred]` tidak ada modul classifier bawaan — disimpulkan dari tidak ditemukannya import semacam itu di `langchain/agents/middleware/` maupun `deepagents/middleware/` |
-| 2. Retrieval/context — otorisasi, provenance | Tidak ada middleware generik; penegakan ada **di dalam** implementasi tool retrieval kustom (query discope RLS, lihat `isolation-and-scoping.md`), atau lewat hook `wrap_tool_call(request, handler)` yang mencegat request sebelum handler tool jalan | `[code]` `wrap_tool_call` — `langchain/agents/middleware/types.py` |
-| 3. Tool/aksi — allowlist per peran | `excluded_tools` (`HarnessProfile`/`ProviderProfile`) → `_ToolExclusionMiddleware` | `[code]` dikutip `../systems/deepagents.md` §7, §Middleware bawaan |
-| 3. Tool/aksi — validasi argumen | Skema Pydantic `args_schema` tiap `BaseTool`, divalidasi framework LangChain sebelum handler dipanggil | `[docs]` |
-| 3. Tool/aksi — approval gate, penyempitan scope | `interrupt_on=`/`permissions=[FilesystemPermission(mode="interrupt")]` → `HumanInTheLoopMiddleware` | `[code]` dikutip `../systems/deepagents.md` §6 |
-| 3. Tool/aksi — batas sandbox | Backend yang mengimplementasi `SandboxBackendProtocol` (bukan `LocalShellBackend` tanpa sandbox tambahan — opsional, harus dipasang eksplisit, **bukan** default `deepagents` (default-nya `StateBackend`, lihat `../systems/deepagents.md` §Backend filesystem); begitu `LocalShellBackend` dipilih, temuan `THREAT_MODEL.md` soal command tak divalidasi tetap berlaku) | `[code]`/`[docs]` dikutip `../systems/deepagents.md` §6, §Backend filesystem |
-| 3. Tool/aksi — dry-run | Tidak ada mekanisme bawaan; `permissions=[..., mode="deny"]` menolak eksekusi tanpa efek samping tapi itu blokir permanen, bukan mode "coba tanpa efek" yang bisa diulang jadi eksekusi nyata — dry-run sungguhan (tool mengembalikan simulasi hasil tanpa side effect) harus ditulis di dalam implementasi tool itu sendiri | `[inferred]` tidak ditemukan parameter/mode dry-run di `FilesystemPermission`/`interrupt_on` yang dibaca Task 3 |
-| 4. Output — schema, groundedness, sitasi | `RubricMiddleware` (deepagents, iterasi terhadap rubric sampai lolos/`max_iterations`, tidak default) | `[code]` dikutip `../systems/deepagents.md` §Middleware bawaan (`deepagents/middleware/rubric.py`) |
-| 4. Output — PII, scan secret | `PIIMiddleware(apply_to_output=True, apply_to_tool_results=True)` untuk PII; scan secret = hook `after_model` atau pre-write kustom (tidak ada bawaan) | `[code]` `langchain/agents/middleware/pii.py` |
-| 5. Loop — max step, budget, kill switch | `ToolCallLimitMiddleware(thread_limit=, run_limit=, exit_behavior=)`, `ModelCallLimitMiddleware(thread_limit=, run_limit=, exit_behavior=)`; `cancel_async_task` (`AsyncSubAgentMiddleware`) sebagai kill switch task background | `[code]` `langchain/agents/middleware/tool_call_limit.py`, `model_call_limit.py`; `AsyncSubAgentMiddleware` dikutip `../systems/deepagents.md` §Middleware bawaan |
-| 6. Sistem — pin model, fallback | Parameter `model` eksplisit ke `create_deep_agent(model=...)`; `ModelFallbackMiddleware(primary_model, *fallback_models)`, hook `wrap_model_call` | `[code]` `langchain/agents/middleware/model_fallback.py` |
-| 6. Sistem — audit log gerbang | Tidak ada tabel audit bawaan; checkpoint state per step (`checkpointer` yang disuntik aplikasi) adalah jejak paling dekat yang tersedia gratis — lihat [`replay-and-forensics.md`](replay-and-forensics.md) untuk batasannya sebagai audit log | `[code]` dikutip `persistence-schema.md` §checkpointer, `../systems/deepagents.md` §5 |
+| 1. Input — PII | `langchain.agents.middleware.PIIMiddleware(pii_type, strategy=, apply_to_input=True)`, the `before_model` hook | `[code]` `langchain/agents/middleware/pii.py` (langchain 1.3.16, the same version cited by `deepagents.md`) |
+| 1. Input — injection/jailbreak/topic/moderation/abuse | No built-in middleware; write a custom `AgentMiddleware` with a `before_model` hook calling a classifier (Llama Guard / a NeMo input rail / a Guardrails AI validator) inside it, with `@hook_config(can_jump_to=["end"])` to cut the turn on a positive | `[code]` the `before_model`/`hook_config` hooks exist in `langchain/agents/middleware/types.py`; `[inferred]` no built-in classifier module — concluded from the absence of any such import in `langchain/agents/middleware/` or `deepagents/middleware/` |
+| 2. Retrieval/context — authorisation, provenance | No generic middleware; enforcement lives **inside** the custom retrieval tool's implementation (an RLS-scoped query, see `isolation-and-scoping.md`), or through the `wrap_tool_call(request, handler)` hook intercepting the request before the tool handler runs | `[code]` `wrap_tool_call` — `langchain/agents/middleware/types.py` |
+| 3. Tool/action — a per-role allowlist | `excluded_tools` (`HarnessProfile`/`ProviderProfile`) → `_ToolExclusionMiddleware` | `[code]` cited from `../systems/deepagents.md` §7, §Built-in middleware |
+| 3. Tool/action — argument validation | Each `BaseTool`'s Pydantic `args_schema`, validated by the LangChain framework before the handler is called | `[docs]` |
+| 3. Tool/action — approval gate, scope narrowing | `interrupt_on=`/`permissions=[FilesystemPermission(mode="interrupt")]` → `HumanInTheLoopMiddleware` | `[code]` cited from `../systems/deepagents.md` §6 |
+| 3. Tool/action — sandbox bounds | A backend implementing `SandboxBackendProtocol` (not `LocalShellBackend` without additional sandboxing — optional, must be installed explicitly, and **not** a `deepagents` default (the default is `StateBackend`, see `../systems/deepagents.md` §Filesystem backend); once `LocalShellBackend` is chosen, the `THREAT_MODEL.md` finding about unvalidated commands applies) | `[code]`/`[docs]` cited from `../systems/deepagents.md` §6, §Filesystem backend |
+| 3. Tool/action — dry run | No built-in mechanism; `permissions=[..., mode="deny"]` refuses execution without side effects but that is a permanent block, not a "try without effects" mode repeatable as a real execution — a genuine dry run (the tool returning a simulated result with no side effects) has to be written inside the tool implementation itself | `[inferred]` no dry-run parameter/mode found in the `FilesystemPermission`/`interrupt_on` read in Task 3 |
+| 4. Output — schema, groundedness, citations | `RubricMiddleware` (deepagents; iterating against a rubric until it passes or `max_iterations`; not a default) | `[code]` cited from `../systems/deepagents.md` §Built-in middleware (`deepagents/middleware/rubric.py`) |
+| 4. Output — PII, secret scanning | `PIIMiddleware(apply_to_output=True, apply_to_tool_results=True)` for PII; secret scanning = a custom `after_model` or pre-write hook (nothing built in) | `[code]` `langchain/agents/middleware/pii.py` |
+| 5. Loop — step limits, budget, kill switch | `ToolCallLimitMiddleware(thread_limit=, run_limit=, exit_behavior=)`, `ModelCallLimitMiddleware(thread_limit=, run_limit=, exit_behavior=)`; `cancel_async_task` (`AsyncSubAgentMiddleware`) as a background task kill switch | `[code]` `langchain/agents/middleware/tool_call_limit.py`, `model_call_limit.py`; `AsyncSubAgentMiddleware` cited from `../systems/deepagents.md` §Built-in middleware |
+| 6. System — pinning models, fallback | An explicit `model` parameter to `create_deep_agent(model=...)`; `ModelFallbackMiddleware(primary_model, *fallback_models)`, the `wrap_model_call` hook | `[code]` `langchain/agents/middleware/model_fallback.py` |
+| 6. System — a gate audit log | No built-in audit table; the per-step state checkpoint (the application-injected `checkpointer`) is the closest trail available for free — see [`replay-and-forensics.md`](replay-and-forensics.md) for its limits as an audit log | `[code]` cited from `persistence-schema.md` §checkpointer, `../systems/deepagents.md` §5 |
 
-**Peringatan konkret untuk titik 5 (Loop)**: `deepagents` menaikkan
-`recursion_limit` LangGraph dari 25 (default) ke **9999**
-(`.with_config({"recursion_limit": 9_999, ...})`, dipasang otomatis di
-`create_deep_agent`) — ini **bukan** guardrail loop, ini jaring pengaman
-supaya task legit yang panjang tidak kepotong `GraphRecursionError` di limit
-default LangGraph yang jauh lebih kecil. `[code]` — dikutip
-`../systems/deepagents.md` §1 (`deepagents/graph.py` baris 935-944). Akibatnya:
-kalau `ToolCallLimitMiddleware`/`ModelCallLimitMiddleware` tidak dipasang
-eksplisit, default `deepagents` efektif **tidak** punya batas langkah
-praktis — 9999 langkah adalah budget yang bisa membakar biaya besar sebelum
-berhenti sendiri. Guardrail titik 5 wajib dipasang eksplisit, bukan
-diasumsikan datang gratis dari `deepagents`.
+**A concrete warning for point 5 (Loop)**: `deepagents` raises LangGraph's
+`recursion_limit` from 25 (the default) to **9999**
+(`.with_config({"recursion_limit": 9_999, ...})`, installed automatically in
+`create_deep_agent`) — this is **not** a loop guardrail, it is a safety net
+so a legitimately long task isn't cut off by a `GraphRecursionError` at
+LangGraph's much smaller default. `[code]` — cited from
+`../systems/deepagents.md` §1 (`deepagents/graph.py` lines 935-944). The
+consequence: unless `ToolCallLimitMiddleware`/`ModelCallLimitMiddleware` are
+installed explicitly, the `deepagents` default effectively has **no**
+practical step limit — 9999 steps is a budget that can burn significant money
+before stopping on its own. Point 5's guardrails must be installed
+explicitly, not assumed to come free with `deepagents`.
 
-Semua middleware `langchain.agents.middleware.*` di tabel atas (`PIIMiddleware`,
-`ToolCallLimitMiddleware`, `ModelCallLimitMiddleware`, `ModelFallbackMiddleware`)
-bukan milik `deepagents` — sama seperti `TodoListMiddleware` yang sudah
-ditandai `../systems/deepagents.md` sebagai "bukan milik `deepagents`", ia
-diimpor dari `langchain.agents.middleware` dan disuntik manual lewat
-`create_deep_agent(middleware=[...])`, tidak masuk stack bawaan mana pun.
+Every `langchain.agents.middleware.*` middleware in the table above
+(`PIIMiddleware`, `ToolCallLimitMiddleware`, `ModelCallLimitMiddleware`,
+`ModelFallbackMiddleware`) does not belong to `deepagents` — like
+`TodoListMiddleware`, already marked in `../systems/deepagents.md` as "not
+`deepagents`'", it is imported from `langchain.agents.middleware` and
+injected manually through `create_deep_agent(middleware=[...])`, entering no
+built-in stack.
 
-## Sumber
+## Sources
 
-- `[docs]` NeMo Guardrails — dokumentasi resmi NVIDIA (`docs.nvidia.com/nemo/guardrails`),
-  taksonomi lima jenis rail (input/dialog/retrieval/execution/output).
-- `[docs]` Guardrails AI — `guardrailsai.com/docs`, Guard/validator sebagai
-  Input+Output Guards, Hub validator untuk deteksi/mitigasi risiko.
-- `[docs]` Llama Guard 3 — `huggingface.co/meta-llama/Llama-Guard-3-8B`, model
-  fine-tuned klasifikasi keamanan konten, taksonomi 14 kategori selaras
-  MLCommons, mendukung input maupun output, model-based (butuh inferensi).
-- `[docs]` Presidio — `presidio.dataprivacystack.org/analyzer/`, Analyzer
-  hybrid regex+NER (`ContextAwareEnhancer`), Anonymizer untuk strategi
-  redact/hash/encrypt.
-- `[code]` `langchain/agents/middleware/pii.py` (langchain 1.3.16, terinstal
-  lewat `pip install langchain==1.3.16` di venv riset terpisah) —
-  `PIIMiddleware`, parameter `apply_to_input`/`apply_to_output`/
-  `apply_to_tool_results`, strategi `block`/`redact`/`mask`/`hash`, hook
-  `before_model`.
-- `[code]` `langchain/agents/middleware/tool_call_limit.py` — `ToolCallLimitMiddleware`,
-  `thread_limit`/`run_limit`/`exit_behavior` (`"continue"`/`"error"`/`"end"`).
-- `[code]` `langchain/agents/middleware/model_call_limit.py` — `ModelCallLimitMiddleware`,
-  parameter sama, hook `before_model`/`after_model` dg `can_jump_to=["end"]`.
-- `[code]` `langchain/agents/middleware/model_fallback.py` — `ModelFallbackMiddleware`,
-  `wrap_model_call`, retry berurutan ke model fallback saat model utama error.
-- `[code]` `langchain/agents/middleware/types.py` — hook lengkap `AgentMiddleware`
-  (`before_agent`/`before_model`/`wrap_model_call`/`after_model`/`wrap_tool_call`/
-  `after_agent`), dasar semua mapping titik→middleware di atas.
-- `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §1 (recursion_limit
-  9999), §6 (Safety gate — `interrupt_on`/`permissions`/sandbox), §7
-  (`HarnessProfile`/`excluded_tools`), §Middleware bawaan (`RubricMiddleware`,
-  `AsyncSubAgentMiddleware`, `TodoListMiddleware` sebagai precedent "bukan
-  milik deepagents") — tier-1 reference terverifikasi Task 3, dikutip tanpa
-  membaca ulang source `deepagents` di task ini.
+- `[docs]` NeMo Guardrails — NVIDIA's official documentation
+  (`docs.nvidia.com/nemo/guardrails`), the five rail types taxonomy
+  (input/dialog/retrieval/execution/output).
+- `[docs]` Guardrails AI — `guardrailsai.com/docs`, Guards/validators as
+  Input+Output Guards, Hub validators for risk detection/mitigation.
+- `[docs]` Llama Guard 3 — `huggingface.co/meta-llama/Llama-Guard-3-8B`, a
+  fine-tuned content safety classification model, its 14-category taxonomy
+  aligned with MLCommons, supporting both input and output, model-based
+  (requiring inference).
+- `[docs]` Presidio — `presidio.dataprivacystack.org/analyzer/`, the hybrid
+  regex+NER Analyzer (`ContextAwareEnhancer`), the Anonymizer's
+  redact/hash/encrypt strategies.
+- `[code]` `langchain/agents/middleware/pii.py` (langchain 1.3.16, installed
+  through `pip install langchain==1.3.16` in a separate research venv) —
+  `PIIMiddleware`, the
+  `apply_to_input`/`apply_to_output`/`apply_to_tool_results` parameters, the
+  `block`/`redact`/`mask`/`hash` strategies, the `before_model` hook.
+- `[code]` `langchain/agents/middleware/tool_call_limit.py` —
+  `ToolCallLimitMiddleware`, `thread_limit`/`run_limit`/`exit_behavior`
+  (`"continue"`/`"error"`/`"end"`).
+- `[code]` `langchain/agents/middleware/model_call_limit.py` —
+  `ModelCallLimitMiddleware`, the same parameters, the
+  `before_model`/`after_model` hooks with `can_jump_to=["end"]`.
+- `[code]` `langchain/agents/middleware/model_fallback.py` —
+  `ModelFallbackMiddleware`, `wrap_model_call`, sequential retry into
+  fallback models when the primary errors.
+- `[code]` `langchain/agents/middleware/types.py` — the complete
+  `AgentMiddleware` hook set
+  (`before_agent`/`before_model`/`wrap_model_call`/`after_model`/`wrap_tool_call`/`after_agent`),
+  the basis for every point→middleware mapping above.
+- `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §1
+  (recursion_limit 9999), §6 (Safety gate —
+  `interrupt_on`/`permissions`/sandbox), §7
+  (`HarnessProfile`/`excluded_tools`), §Built-in middleware
+  (`RubricMiddleware`, `AsyncSubAgentMiddleware`, `TodoListMiddleware` as the
+  "not deepagents'" precedent) — a tier-1 reference verified in Task 3, cited
+  without re-reading the `deepagents` source in this task.
 - `[code]` [`persistence-schema.md`](persistence-schema.md) §checkpointer —
-  dasar klaim "checkpoint state per step sebagai jejak audit terdekat yang
-  gratis" di §6 Sistem.
-- `[code]` [`isolation-and-scoping.md`](isolation-and-scoping.md) — dasar
-  model scope `user_id`/RLS yang dirujuk di titik 2 (Retrieval/context),
-  tidak diusulkan ulang di file ini.
+  the basis for the "per-step state checkpoints as the closest free audit
+  trail" claim in §6 System.
+- `[code]` [`isolation-and-scoping.md`](isolation-and-scoping.md) — the basis
+  for the `user_id`/RLS scope model referenced at point 2
+  (Retrieval/context), not re-proposed in this file.
