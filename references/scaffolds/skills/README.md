@@ -1,181 +1,184 @@
-# Skill dasar: keluaran bertag (table, chart, diagram, formula)
+# Base skills: tagged output (table, chart, diagram, formula)
 
-Empat skill yang di-scaffold sebagai **himpunan dasar** ke project mana pun
-yang jawabannya kadang perlu berbentuk selain prosa. Isinya kontrak
-pemancaran, bukan komponen UI: skill memberi tahu model **kapan** dan
-**dalam bentuk apa** memancarkan, aplikasi yang memutuskan cara
-merendernya.
+Four skills scaffolded as a **base set** into any project whose answers
+sometimes need a shape other than prose. Their content is an emission
+contract, not UI components: a skill tells the model **when** and **in what
+shape** to emit; the application decides how to render it.
 
-| Skill | Tag pagar | Muatan | Dirender oleh |
+| Skill | Fence tag | Payload | Rendered by |
 |---|---|---|---|
-| [`tag-table/`](tag-table/SKILL.md) | ` ```table ` | JSON | komponen tabel aplikasi |
-| [`tag-chart/`](tag-chart/SKILL.md) | ` ```chart ` | JSON | pustaka chart aplikasi |
-| [`tag-diagram/`](tag-diagram/SKILL.md) | ` ```mermaid ` | sumber Mermaid | renderer Mermaid |
+| [`tag-table/`](tag-table/SKILL.md) | ` ```table ` | JSON | the application's table component |
+| [`tag-chart/`](tag-chart/SKILL.md) | ` ```chart ` | JSON | the application's chart library |
+| [`tag-diagram/`](tag-diagram/SKILL.md) | ` ```mermaid ` | Mermaid source | a Mermaid renderer |
 | [`tag-formula/`](tag-formula/SKILL.md) | ` ```math ` | LaTeX | KaTeX/MathJax |
 
-## Kenapa blok berpagar, bukan tag XML
+## Why fenced blocks rather than XML tags
 
-`[ours]` — Keputusan sintaksis ini milik kita; tidak ada konvensi bawaan di
-`deepagents` untuk keluaran terstruktur inline. Alternatif vanilla-nya
-adalah `response_format` pada `create_deep_agent`, yang memaksa **seluruh
-balasan** jadi satu objek berskema (lihat
+`[ours]` — This syntax decision is ours; `deepagents` has no built-in
+convention for inline structured output. The vanilla alternative is
+`response_format` on `create_deep_agent`, which forces the **whole reply**
+into one schema'd object (see
 [`../../concepts/structured-output.md`](../../concepts/structured-output.md)).
-Itu tepat untuk endpoint yang keluarannya memang satu objek, dan salah
-untuk asisten percakapan: jawabannya prosa yang **kadang** menyisipkan
-tabel, kadang dua diagram, kadang tidak sama sekali. Skema tunggal tidak
-bisa menyatakan "prosa dengan nol sampai n sisipan heterogen" tanpa
-menjadikan seluruh balasan sebagai array blok — yang mengorbankan
-streaming teks dan membuat model menulis lebih buruk.
+That is right for an endpoint whose output genuinely is one object, and wrong
+for a conversational assistant: its answer is prose that **sometimes** inserts
+a table, sometimes two diagrams, sometimes nothing at all. A single schema
+can't express "prose with zero to n heterogeneous insertions" without turning
+the entire reply into an array of blocks — which sacrifices text streaming and
+makes the model write worse.
 
-Tiga alasan memilih pagar (` ``` `) daripada tag bergaya XML:
+Three reasons for choosing fences (` ``` `) over XML-style tags:
 
-- **Batasnya sudah punya arti di Markdown.** Renderer chat mana pun sudah
-  memisahkan blok kode dari prosa. Tag XML dalam Markdown bertabrakan
-  dengan HTML dan bisa tersaring sanitizer.
-- **Bisa dideteksi saat streaming.** Baris pembuka menentukan jenis blok
-  sebelum isinya lengkap, jadi UI bisa langsung menampilkan placeholder
-  yang benar. Detail penanganannya di §Streaming.
-- **Satu sudah standar de facto.** Mermaid sudah bertag `mermaid` di
-  seluruh ekosistem. Menamainya ulang jadi `diagram` cuma memutus
-  kompatibilitas dengan renderer yang sudah ada — jadi nama skill-nya
-  `tag-diagram`, tapi tag pagarnya tetap `mermaid`.
+- **Their boundaries already mean something in Markdown.** Every chat renderer
+  already separates code blocks from prose. XML tags inside Markdown collide
+  with HTML and can be stripped by a sanitizer.
+- **They are detectable while streaming.** The opening line determines the
+  block type before its content is complete, so the UI can immediately show
+  the right placeholder. The handling details are in §Streaming.
+- **One is already a de facto standard.** Mermaid is already tagged `mermaid`
+  across the ecosystem. Renaming it to `diagram` would only break
+  compatibility with existing renderers — so the skill is named `tag-diagram`
+  while its fence tag stays `mermaid`.
 
-## Kontrak pemancaran
+## The emission contract
 
-Alurnya tiga langkah, dan langkah tengahnya tidak boleh dilewati:
+The flow has three steps, and the middle one must not be skipped:
 
 ```
-model memancarkan blok  →  aplikasi mem-parse & memvalidasi  →  render / degradasi
+the model emits a block  →  the app parses & validates  →  render / degrade
 ```
 
-**Validasi bukan opsional.** Keluaran model bukan input tepercaya, sekalipun
-skill-nya jelas. JSON bisa cacat, kolom bisa tidak cocok dengan baris,
-Mermaid bisa gagal parse, LaTeX bisa tak berujung. Aplikasi yang langsung
-menyuap blok ke pustaka render menyerahkan penanganan errornya ke pustaka
-itu, yang biasanya berarti komponen kosong tanpa penjelasan.
+**Validation isn't optional.** Model output isn't trusted input, however clear
+the skill is. JSON can be malformed, columns can mismatch rows, Mermaid can
+fail to parse, LaTeX can be unterminated. An application feeding a block
+straight to a rendering library delegates its error handling to that library,
+which usually means an empty component with no explanation.
 
-**Degradasi wajib terlihat, tidak pernah senyap.** Blok yang gagal
-divalidasi dirender sebagai blok kode biasa disertai satu baris keterangan
-kenapa. Membuangnya diam-diam adalah kegagalan yang paling mahal: user
-melihat jawaban yang terbaca utuh padahal separuh isinya hilang, dan tidak
-ada yang tahu — persis mode kegagalan yang dilarang
-[`../../concepts/guardrails.md`](../../concepts/guardrails.md).
+**Degradation must be visible, never silent.** A block failing validation is
+rendered as an ordinary code block with one line explaining why. Discarding it
+quietly is the most expensive failure: the user sees an answer that reads
+complete while half its content is missing, and nobody knows — exactly the
+failure mode [`../../concepts/guardrails.md`](../../concepts/guardrails.md)
+forbids.
 
 ## Streaming
 
-Blok tidak bisa dirender sebelum pagar penutupnya tiba. Ini konsekuensi
-langsung, bukan detail implementasi:
+A block can't be rendered before its closing fence arrives. That is a direct
+consequence, not an implementation detail:
 
-- Saat baris pembuka terlihat, UI sudah tahu **jenis** blok. Tampilkan
-  placeholder sesuai jenisnya (kerangka tabel, kotak chart) dan tahan
-  isinya.
-- Selama isi mengalir, jangan mencoba parse sebagian. JSON separuh selalu
-  invalid; Mermaid separuh bisa **valid tapi salah** (subgraph yang belum
-  ditutup) — merender lalu mengganti membuat diagram berkedip-kedip.
-- Blok yang tidak pernah tertutup (turn dibatalkan, model kehabisan token)
-  wajib ditutup oleh aplikasi sebagai blok gagal, bukan dibiarkan
-  menggantung sebagai placeholder abadi.
+- When the opening line appears, the UI already knows the block's **type**.
+  Show a type-appropriate placeholder (a table skeleton, a chart box) and hold
+  its content.
+- While the content streams, don't try to parse it partially. Half a JSON
+  document is always invalid; half a Mermaid diagram can be **valid but wrong**
+  (an unclosed subgraph) — rendering then replacing makes the diagram flicker.
+- A block that never closes (a cancelled turn, the model running out of
+  tokens) must be closed by the application as a failed block rather than left
+  hanging as an eternal placeholder.
 
-Bentuk event dan reattach-nya di
+The event shape and its reattach are in
 [`../../concepts/streaming-protocol.md`](../../concepts/streaming-protocol.md).
 
-## Keamanan
+## Security
 
-Dua dari empat tag ini dieksekusi oleh pustaka render di browser, dan
-keduanya punya permukaan yang bukan sekadar tampilan:
+Two of these four tags are executed by a rendering library in the browser, and
+both have a surface beyond display:
 
-- **Mermaid** mengenal direktif `click` yang bisa menautkan atau memanggil
-  callback, dan sebagian konfigurasi mengizinkan HTML dalam label. Jalankan
-  dengan `securityLevel: "strict"` dan tolak blok yang memuat `click`
-  kecuali memang diinginkan.
-- **LaTeX** lewat KaTeX/MathJax punya makro yang menjangkau di luar
-  matematika (`\href` yang paling jelas). Pakai daftar makro yang
-  di-allowlist, batasi kedalaman ekspansi, dan pasang batas waktu render.
+- **Mermaid** recognises a `click` directive that can link out or invoke a
+  callback, and some configurations allow HTML in labels. Run it with
+  `securityLevel: "strict"` and reject blocks containing `click` unless that
+  is genuinely wanted.
+- **LaTeX** through KaTeX/MathJax has macros reaching beyond mathematics
+  (`\href` the most obvious). Use an allowlisted macro set, bound expansion
+  depth, and set a render timeout.
 
-JSON pada `table`/`chart` inert, tapi **isinya string yang tampil ke user**.
-Label kolom dan caption bisa memuat markup; escape saat render, jangan
-percaya karena "kan cuma data".
+The JSON in `table`/`chart` is inert, but **its content is strings shown to
+the user**. Column labels and captions can contain markup; escape them at
+render time rather than trusting them because "it's only data".
 
-Ketiganya masuk kategori yang sama: konten yang ditulis model, dieksekusi
-di browser user. Perlakukan seperti input tak tepercaya —
+All three belong to the same category: model-written content executed in the
+user's browser. Treat it as untrusted input —
 [`../../concepts/security.md`](../../concepts/security.md).
 
 ## Multilingual
 
-Aturannya satu, dan ia memisahkan dua hal yang mudah tercampur:
+There is one rule, and it separates two things easily conflated:
 
-- **Kunci mesin selalu netral bahasa dan stabil** — `columns[].key`,
-  `series[].key`, `type`, `v`. Ini identifier, bukan teks.
-- **Teks yang dilihat manusia mengikuti locale sesi** — `label`,
-  `caption`, `note`, label node diagram.
+- **Machine keys are always language-neutral and stable** — `columns[].key`,
+  `series[].key`, `type`, `v`. These are identifiers, not text.
+- **Human-visible text follows the session's locale** — `label`, `caption`,
+  `note`, diagram node labels.
 
-Praktik yang salah dan sering terjadi: memakai label lokal sebagai kunci
-(`{"Pendapatan": 120}`). Begitu locale berganti, data yang sama jadi tidak
-bisa dicocokkan dengan dirinya sendiri. Penjelasan penuh pemisahan
-intent/ekspresi di
+The wrong practice, and a frequent one: using a localised label as a key
+(`{"Pendapatan": 120}`). As soon as the locale changes, the same data can no
+longer be matched against itself. The full explanation of intent/expression
+separation is in
 [`../../concepts/multilingual.md`](../../concepts/multilingual.md).
 
-Deskripsi frontmatter tiap skill ditulis dalam bahasa Inggris karena ia
-dicocokkan model, bukan dibaca user — tapi memuat kata pemicu lintas
-bahasa supaya permintaan berbahasa Indonesia tetap mengaktifkannya.
+Each skill's frontmatter description is written in English because it is
+matched by the model rather than read by the user — but it carries
+cross-language trigger words so an Indonesian-language request still activates
+it.
 
-## Kapan sisipan seharusnya jadi artefak
+## When an insertion should become an artifact
 
-Blok inline tepat untuk hasil yang **dibaca sekali di dalam percakapan**.
-Begitu keluarannya perlu bertahan, diberi versi, diunduh, atau disunting
-terpisah, ia bukan sisipan lagi melainkan artefak — disimpan by-reference
-dengan transkrip cuma memuat `artifact_id` + versi
+An inline block is right for a result **read once inside the conversation**.
+As soon as its output needs to persist, be versioned, be downloaded, or be
+edited separately, it isn't an insertion any more but an artifact — stored
+by-reference with the transcript holding only an `artifact_id` + a version
 ([`../../concepts/artifacts-and-canvas.md`](../../concepts/artifacts-and-canvas.md)).
 
-Ambang praktis yang dipakai keempat skill: tabel di atas ~50 baris atau
-data chart di atas ~200 titik dipancarkan sebagai artefak, bukan inline.
-`[ours]` — angka ini pilihan kami, bukan batas dari `deepagents` (yang
-ambang bawaannya beroperasi di lapisan lain: offload hasil tool di 20.000
-token, lihat [`../../deepagents/best-practices.md`](../../deepagents/best-practices.md)
-§3). Setel ulang sesuai lebar render dan biaya token project.
+The practical threshold all four skills use: a table above ~50 rows, or chart
+data above ~200 points, is emitted as an artifact rather than inline.
+`[ours]` — those numbers are our choice, not a `deepagents` limit (whose
+built-in thresholds operate at another layer: tool result offloading at 20,000
+tokens, see
+[`../../deepagents/best-practices.md`](../../deepagents/best-practices.md)
+§3). Retune them to the project's render width and token costs.
 
-## Memasang: skill atau memori?
+## Installing: a skill or memory?
 
-Keempatnya ditulis sebagai skill, dan pilihan itu perlu disadari
-konsekuensinya. Dokumentasi upstream menganjurkan **memori untuk konvensi
-yang selalu relevan, skill untuk kapabilitas per-tugas**
+All four are written as skills, and that choice's consequences deserve
+attention. The upstream documentation recommends **memory for conventions that
+are always relevant, skills for per-task capabilities**
 ([`../../deepagents/best-practices.md`](../../deepagents/best-practices.md)
-§3, §5). Memancarkan tabel memang per-tugas — hanya saat jawabannya
-menuntut — jadi skill adalah bentuk yang benar.
+§3, §5). Emitting a table is genuinely per-task — only when the answer demands
+it — so a skill is the correct shape.
 
-Ongkosnya tetap ada: frontmatter tiap skill masuk system prompt **tiap
-giliran**, jadi empat skill ini menambah empat deskripsi ke baseline
-selamanya. Kalau sebuah project hanya pernah memakai satu di antaranya,
-pasang yang satu itu saja. Kalau keempatnya nyaris selalu dipakai dan
-deskripsinya jadi beban, gabungkan jadi satu skill `tag-output` dengan
-empat bagian — dokumentasi upstream justru menganjurkan konsolidasi saat
-deskripsi mulai beririsan.
+The cost is still real: each skill's frontmatter enters the system prompt
+**every turn**, so these four skills add four descriptions to the baseline
+permanently. If a project only ever uses one of them, install only that one.
+If all four are used almost always and their descriptions become a burden,
+merge them into one `tag-output` skill with four sections — the upstream
+documentation itself recommends consolidation once descriptions start to
+overlap.
 
-Pemasangannya lewat `skills=` pada `create_deep_agent`; mekanisme discovery
-dan aktivasinya di
+Installation goes through `skills=` on `create_deep_agent`; the discovery and
+activation mechanism is in
 [`../../concepts/skill-composition.md`](../../concepts/skill-composition.md).
 
-## Menurunkan skill lain dari keempatnya
+## Deriving other skills from these four
 
-Skill turunan **tidak menyalin** format; ia merujuknya. Skill kuis
-misalnya menyatakan kapan hasilnya berbentuk tabel dan menyebut
-`tag-table`, bukan mengulang skemanya — begitu skema berubah, turunan yang
-menyalin jadi basi tanpa ada yang tahu. Pola dasar→turunan lewat manifest
-deklaratif ada di
+A derived skill **doesn't copy** the format; it references it. A quiz skill,
+say, states when its result takes a table shape and names `tag-table` rather
+than repeating its schema — as soon as the schema changes, a derived copy goes
+stale with nobody noticing. The base→derived pattern through a declarative
+manifest is in
 [`../../concepts/skill-composition.md`](../../concepts/skill-composition.md)
-§"Dasar → turunan lewat manifest deklaratif".
+§"Base → derived through a declarative manifest".
 
-## Sumber
+## Sources
 
-- `[ours]` Sintaksis tag, skema JSON `table`/`chart`, ambang inline→artefak,
-  dan aturan degradasi — keputusan kami; alternatif vanilla (`response_format`
-  untuk seluruh balasan) dinyatakan di §Kenapa blok berpagar. Terdaftar di
-  bagian roster di
+- `[ours]` The tag syntax, the `table`/`chart` JSON schemas, the
+  inline→artifact thresholds, and the degradation rules — our decisions; the
+  vanilla alternative (`response_format` for the whole reply) is stated in
+  §Why fenced blocks. Listed in the roster section of
   [`../../deepagents/conformance.md`](../../deepagents/conformance.md).
 - `[docs]` [`../../deepagents/best-practices.md`](../../deepagents/best-practices.md)
-  §3 (memori vs skill untuk konvensi selalu-relevan; ambang offload 20.000
-  token) dan §5 (anggaran frontmatter, konsolidasi skill yang beririsan) —
-  dasar §Memasang dan §Kapan sisipan seharusnya jadi artefak.
+  §3 (memory vs skills for always-relevant conventions; the 20,000-token
+  offload threshold) and §5 (the frontmatter budget, consolidating overlapping
+  skills) — the basis for §Installing and §When an insertion should become an
+  artifact.
 - `[code]` [`../../concepts/structured-output.md`](../../concepts/structured-output.md)
-  §Di deepagents — perilaku `response_format`, dasar penolakan skema
-  tunggal untuk balasan percakapan; dirujuk tanpa ditulis ulang.
+  §In deepagents — `response_format`'s behaviour, the basis for rejecting a
+  single schema for a conversational reply; referenced without being
+  rewritten.
