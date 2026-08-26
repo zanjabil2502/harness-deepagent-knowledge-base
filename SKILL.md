@@ -98,7 +98,7 @@ Copilot, Manus = General Task Agent + Computer-Use Agent).
 
 Cakupan ditentukan bidang, bukan topik yang kebetulan terpikirkan.
 
-- **Cognition** — [agent-loop](references/concepts/agent-loop.md), [planning](references/concepts/planning.md), [delegation](references/concepts/delegation.md), [context-engineering](references/concepts/context-engineering.md), [memory](references/concepts/memory.md), [policy-as-data](references/concepts/policy-as-data.md), [skill-composition](references/concepts/skill-composition.md)
+- **Cognition** — [agent-loop](references/concepts/agent-loop.md), [planning](references/concepts/planning.md), [delegation](references/concepts/delegation.md), [code-orchestration](references/concepts/code-orchestration.md), [context-engineering](references/concepts/context-engineering.md), [memory](references/concepts/memory.md), [policy-as-data](references/concepts/policy-as-data.md), [skill-composition](references/concepts/skill-composition.md)
 - **Interface** — [tool-design](references/concepts/tool-design.md), [mcp](references/concepts/mcp.md), [streaming-protocol](references/concepts/streaming-protocol.md), [human-in-the-loop](references/concepts/human-in-the-loop.md), [structured-output](references/concepts/structured-output.md), [multilingual](references/concepts/multilingual.md)
 - **Assurance** — [guardrails](references/concepts/guardrails.md), [evaluation](references/concepts/evaluation.md), [security](references/concepts/security.md), [observability](references/concepts/observability.md), [cost-control](references/concepts/cost-control.md), [replay-and-forensics](references/concepts/replay-and-forensics.md)
 

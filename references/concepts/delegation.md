@@ -43,6 +43,16 @@ rekursif yang biasanya jadi tanda ada yang salah.
   pemanggil bisa lanjut bekerja sambil menunggu. Butuh mekanisme
   tracking-nya sendiri (task ID, polling status) karena hasilnya tidak
   langsung tersedia di giliran yang sama.
+- **Didispatch dari kode** — subagent dipanggil dari dalam kode yang
+  ditulis model dan dijalankan interpreter di dalam loop, bukan dipilih
+  model satu-per-giliran. Membuat fan-out atas N item, verifikasi
+  berlapis, dan alur rekursif jadi struktur program alih-alih rangkaian
+  keputusan model. Sumbu pembedanya bukan sinkron/async melainkan **siapa
+  yang menyusun urutan dispatch** — dan karena dispatch-nya terjadi di
+  dalam satu tool call yang sudah disetujui, jalur ini melewati gerbang
+  approval per-dispatch. Kontrak hasil dan batas kedalaman di bawah tetap
+  berlaku penuh; yang berubah cuma penjadwalnya. Lihat
+  [`code-orchestration.md`](code-orchestration.md).
 
 ### Kontrak hasil adalah keputusan desain, bukan default kebetulan
 

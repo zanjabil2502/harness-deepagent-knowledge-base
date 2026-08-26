@@ -154,6 +154,28 @@ yang bawaan (ini yang diinginkan); mengirim **subclass** dengan nama kelas
 berbeda **tidak** mengganti, dan hasilnya dua filesystem middleware aktif.
 Lihat [`extension-points.md`](extension-points.md) anti-pattern #1.
 
+### 7. Middleware yang membuka jalur eksekusi kedua
+
+Middleware pihak ketiga yang memberi model cara memanggil tool **dari dalam
+satu tool call** (mis. `CodeInterpreterMiddleware` dari `langchain-quickjs`)
+melanggar asumsi diam-diam yang dipakai seluruh tabel di atas: bahwa tiap
+sentuhan ke dunia luar adalah satu tool call yang lewat `ToolNode`. Dua
+akibat langsung dari posisinya di **slot middleware user**:
+
+- Ia lebih **luar** daripada `_ToolExclusionMiddleware` (yang di-`append`
+  paling akhir), jadi ia membaca `request.tools` **sebelum** exclusion
+  berjalan — tool yang dibuang `HarnessProfile.excluded_tools` tetap bisa
+  masuk allowlist-nya.
+- Ia lebih **awal** daripada `HumanInTheLoopMiddleware` di tail, jadi
+  `interrupt_on` masih menggerbangi tool eksekusi kode itu sendiri, tapi
+  tidak satu pun panggilan di dalamnya.
+
+Aturan umumnya: middleware yang **menambah jalur pemanggilan**, bukan
+sekadar menambah atau menyaring tool, harus dinilai terhadap seluruh
+tail stack — bukan cuma terhadap tetangga di `middleware=[...]`. Rinciannya
+di [`../concepts/code-orchestration.md`](../concepts/code-orchestration.md)
+§Di deepagents.
+
 ## Exclusion: identitas slot, dua lintasan, dan fase verify
 
 Tiga perilaku yang tidak terlihat dari signature `create_deep_agent`, tapi
