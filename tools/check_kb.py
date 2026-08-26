@@ -43,6 +43,7 @@ DA_SRC = next(
     iter(sorted(ROOT.glob("references/recipes/.venv/lib/python*/site-packages/deepagents"))),
     None,
 )
+GLOSSARY = REF / "GLOSSARY.md"
 SKILL_ASSETS = REF / "scaffolds" / "skills"
 ASSET_MAX_LINES = 500
 ASSET_MAX_BYTES = 10 * 1024 * 1024
@@ -201,6 +202,29 @@ def check_graph_sync(errs):
             errs.append(f"graphify-out: {rel} ada di source tapi belum masuk graf")
 
 
+def check_glossary(errs):
+    """GLOSSARY.md dibangkitkan; ia harus identik dengan hasil bangun ulang."""
+    if not GLOSSARY.exists():
+        errs.append("references/GLOSSARY.md: belum dibangkitkan "
+                    "(python3 tools/build_glossary.py)")
+        return
+    sys.path.insert(0, str(ROOT / "tools"))
+    try:
+        import build_glossary
+    except ImportError:
+        errs.append("tools/build_glossary.py: tidak bisa diimpor")
+        return
+    for e in build_glossary.check_terms():
+        errs.append(f"GLOSSARY: {e}")
+    before = GLOSSARY.read_text(encoding="utf-8")
+    if build_glossary.main() != 0:
+        errs.append("GLOSSARY: build_glossary gagal")
+        return
+    if GLOSSARY.read_text(encoding="utf-8") != before:
+        errs.append("references/GLOSSARY.md: basi — hasil bangun ulang berbeda, "
+                    "commit ulang berkasnya")
+
+
 def main():
     errs = []
     check_frames(errs)
@@ -209,6 +233,7 @@ def main():
     check_ours_roster(errs)
     check_skill_assets(errs)
     check_graph_sync(errs)
+    check_glossary(errs)
     for e in errs:
         print("FAIL:", e)
     print(f"\n{len(errs)} masalah" if errs else "\nOK: semua cek lulus")

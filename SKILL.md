@@ -1,6 +1,6 @@
 ---
 name: agent-harness-kb
-description: Dipakai saat merancang harness agent atau membangun di atas deepagents — bentuk loop, context engineering, tool & delegasi, guardrail, dan konstruksi deepagents yang idiomatik. Dua mode: menimbang (brainstorming arah, trade-off, "ini jenis sistem apa", membandingkan dengan sistem yang sudah ada) dan membangun (blueprint lalu scaffold). Fokus pada harness itu sendiri; lapisan serving dan persistensi tersedia tapi bukan jalur utama.
+description: Dipakai saat merancang harness agent atau membangun di atas deepagents — bentuk loop, context engineering, tool & delegasi, guardrail, dan konstruksi deepagents yang idiomatik. Tiga mode: mencari (kamus istilah dan simbol deepagents ke lokasi definisinya), menimbang (brainstorming arah, trade-off, "ini jenis sistem apa"), dan membangun (blueprint lalu scaffold). Fokus pada harness itu sendiri; lapisan serving dan persistensi tersedia tapi bukan jalur utama.
 ---
 
 # Agent Harness Engineering Knowledge Base
@@ -68,6 +68,7 @@ Setiap tahap di atas mendarat di sini:
 | Scaffold delta per arketipe (lapis 2) | [scaffolds/deltas/](references/scaffolds/deltas/) |
 | Skill dasar keluaran bertag (table/chart/diagram/formula) | [scaffolds/skills/](references/scaffolds/skills/README.md) |
 | Scaffold serving/deploy (lapis 3) | [scaffolds/serving.md](references/scaffolds/serving.md) |
+| **Glosarium — istilah & simbol → lokasi** | [GLOSSARY.md](references/GLOSSARY.md) |
 | Ringkasan proyek, label sumber, instalasi | [README.md](README.md) |
 
 ## 6 sumbu pembeda (klasifikasi cepat)
@@ -112,16 +113,23 @@ diputuskan; membukanya lebih awal menenggelamkan keputusan harness.
 - **Data** — [session-state](references/concepts/session-state.md), [persistence-schema](references/concepts/persistence-schema.md), [artifacts-and-canvas](references/concepts/artifacts-and-canvas.md), [retention-and-deletion](references/concepts/retention-and-deletion.md)
 - **Runtime** — [serving-topology](references/concepts/serving-topology.md), [resource-profiling](references/concepts/resource-profiling.md), [isolation-and-scoping](references/concepts/isolation-and-scoping.md), [sandboxing](references/concepts/sandboxing.md), [queueing-and-backpressure](references/concepts/queueing-and-backpressure.md), [scaling](references/concepts/scaling.md)
 
-## Dua mode pemakaian
+## Tiga mode pemakaian
 
 Bahannya sama; yang berbeda **bagian mana yang dibaca** dan apa yang
-dihasilkan. Frame lima-bagian tiap file memang menyandikan keduanya.
+dihasilkan. Frame lima-bagian tiap file memang menyandikan ketiganya.
 
-| | **Menimbang** (brainstorming) | **Membangun** |
-|---|---|---|
-| Berangkat dari | pertanyaan, dugaan, ide yang belum berbentuk | deskripsi project yang sudah ada |
-| Bagian yang dibaca | `## Masalah`, `## Trade-off`; di arketipe: `## Sistem contoh`, `## Jebakan khas`; `systems/INDEX.md` | `## Pola`, `## Di deepagents`; di arketipe: `## Konsekuensi harness`, `## Bangun ini pakai deepagents` |
-| Keluaran | keputusan beserta alasan dan yang ditukar — belum tentu satu blueprint | Harness Blueprint, lalu scaffold |
+| | **Mencari** (kamus) | **Menimbang** (brainstorming) | **Membangun** |
+|---|---|---|---|
+| Berangkat dari | satu istilah atau nama simbol | pertanyaan, dugaan, ide yang belum berbentuk | deskripsi project yang sudah ada |
+| Bagian yang dibaca | [`GLOSSARY.md`](references/GLOSSARY.md), lalu berkas kanonik yang ditunjuknya | `## Masalah`, `## Trade-off`; di arketipe: `## Sistem contoh`, `## Jebakan khas`; `systems/INDEX.md` | `## Pola`, `## Di deepagents`; di arketipe: `## Konsekuensi harness`, `## Bangun ini pakai deepagents` |
+| Keluaran | arti istilah, atau `file:line` definisi simbol di source | keputusan beserta alasan dan yang ditukar — belum tentu satu blueprint | Harness Blueprint, lalu scaffold |
+
+**Mencari** adalah lookup, bukan alur. Untuk istilah kosakata KB
+(blast radius, fail-deferred, kontrak hasil) glosarium memberi arti satu
+baris plus berkas yang membahasnya tuntas; untuk simbol `deepagents`
+(`CompositeBackend`, `SubAgentMiddleware`) ia memberi lokasi definisinya
+di source — diturunkan dari graf AST, jadi parameter dan signature
+dibaca dari kode aslinya, bukan diingat.
 
 **Menimbang** dipakai saat pertanyaannya masih "sebenarnya ini jenis
 sistem apa", "apa konsekuensinya kalau loop-nya begini", atau "sudah ada
