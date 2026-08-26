@@ -66,6 +66,7 @@ Setiap tahap di atas mendarat di sini:
 | Dokumentasi upstream verbatim (bahan `[docs]`) | [upstream/deepagents-docs/](references/upstream/deepagents-docs/README.md) |
 | Scaffold base (keluaran #2, lapis 1) | [scaffolds/_base.md](references/scaffolds/_base.md) |
 | Scaffold delta per arketipe (lapis 2) | [scaffolds/deltas/](references/scaffolds/deltas/) |
+| Skill dasar keluaran bertag (table/chart/diagram/formula) | [scaffolds/skills/](references/scaffolds/skills/README.md) |
 | Scaffold serving/deploy (lapis 3) | [scaffolds/serving.md](references/scaffolds/serving.md) |
 | Ringkasan proyek, label sumber, instalasi | [README.md](README.md) |
 

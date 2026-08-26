@@ -203,16 +203,83 @@ ini menambah detail bentuk keputusan dan mekanisme resume:
   `langchain/agents/middleware/human_in_the_loop.py` (`interrupt(...)`
   dipanggil, hasilnya dibaca sebagai `decisions = interrupt(hitl_request)
   ["decisions"]`).
-- **Gerbang per nama tool, bukan per isi argumen** — `interrupt_on`
-  dikonfigurasi per nama tool (`{"execute": True}`), konsisten dengan
-  batasan yang sudah dinamai `tool-design.md` "Approval granular (HITL)":
-  tidak ada mekanisme bawaan untuk menggerbang berdasarkan isi argumen
-  tool call (mis. `execute` cuma digerbang kalau argumennya mengandung
-  `rm`) — kalau butuh itu, harus ditulis sebagai logika kustom di dalam
-  `_should_interrupt`/hook `wrap_tool_call` sendiri. `[code]` — dikutip
-  `langchain/agents/middleware/human_in_the_loop.py`
-  (`_should_interrupt`), tidak ditemukan parameter bawaan untuk kondisi
-  berbasis isi argumen di file itu.
+- **Kunci gerbangnya nama tool, tapi isi argumen bisa dipakai lewat
+  `when`** — `interrupt_on` di-key per nama tool (`{"execute": True}`),
+  namun `InterruptOnConfig` menerima field `when:
+  Callable[[ToolCallRequest], bool]` yang mengembalikan `True` untuk
+  menjeda dan `False` untuk meloloskan otomatis. Contoh di docstring-nya
+  persis kasus berbasis argumen: `when=lambda req:
+  req.tool_call["args"].get("path", "").startswith("/etc")`. `[code]` —
+  `langchain/agents/middleware/human_in_the_loop.py:194-213` (definisi
+  field), `:374,397` (predikat benar-benar dipanggil).
+
+  Satu batasan penting menyertainya. Docstring menyebut dua mode,
+  `"batch"` dan `"per_call"`; di versi terpasang (`langchain` di
+  `../recipes/.venv`) kelasnya **hanya** mengimplementasikan
+  `after_model`/`aafter_model` — tidak ada `wrap_tool_call` — jadi yang
+  berjalan adalah jalur batch, dan di jalur itu `ToolCallRequest`
+  dikonstruksi dengan `tool=None` serta `runtime` tingkat-node, sehingga
+  `request.runtime.tool_call_id` dan `request.runtime.tools` **tidak
+  tersedia**. Predikat yang bergantung pada keduanya akan gagal, bukan
+  meloloskan. Yang aman dibaca: `req.tool_call["name"]` dan
+  `req.tool_call["args"]`. `[code]` — `human_in_the_loop.py:194-203`
+  (kontrak mode), `:399,488` (hanya `after_model`/`aafter_model` yang
+  ada).
+
+- **Konfigurasi interrupt yang cacat gagal keras, bukan senyap.**
+  `InterruptOnConfig` tanpa `allowed_decisions` yang non-kosong — salah
+  ketik kunci, atau daftar kosong — melempar `ValueError` saat
+  konstruksi. Docstring menyebut alasannya eksplisit: config tanpa
+  keputusan "would otherwise be silently dropped, disabling the approval
+  gate for that tool". Ini pilihan fail-closed yang benar dan patut
+  ditiru saat menulis gerbang sendiri: konfigurasi guardrail yang tidak
+  terbaca harus menolak boot, bukan berjalan tanpa gerbang. `[code]` —
+  `human_in_the_loop.py:250-254` (kontrak `Raises`), `:257-265`
+  (resolusi config).
+
+- **`False` dan "tidak terdaftar" sama-sama berarti lolos otomatis.**
+  Tool tanpa entri di `interrupt_on` auto-approve; `False` menyatakan hal
+  yang sama secara eksplisit. Bedanya cuma keterbacaan — dan itu bukan
+  hal sepele: daftar yang menuliskan `False` untuk tool berisiko rendah
+  membuktikan keputusannya diambil, sementara ketiadaan entri tidak bisa
+  dibedakan dari kelupaan. `[code]` — `human_in_the_loop.py:228-237`.
+
+- **`respond` adalah jalur resmi untuk tool "tanya user", bukan sekadar
+  varian reject.** Keputusan `respond` melewatkan eksekusi tool dan
+  mengembalikan `ToolMessage` sintetis ber-`status="success"` berisi teks
+  manusia — docstring menyebutnya untuk "'ask user' style tools whose
+  real implementation is the human's response". Konsekuensinya: alur
+  bertanya ke pengguna tidak perlu (dan sebaiknya tidak) memakai
+  `interrupt()` berbentuk bebas; ia dimodelkan sebagai tool berskema yang
+  jawabannya datang dari manusia. Itu juga satu-satunya bentuk yang bisa
+  dirender klien protokol editor — lihat
+  [`agent-protocols.md`](agent-protocols.md) §Di deepagents. `[code]` —
+  `human_in_the_loop.py:111-127`.
+
+  `reject` berperilaku berbeda: bila `message` dihilangkan, model
+  diberi tahu tool tidak dijalankan **dan tidak boleh mengulang tool call
+  yang sama kecuali user memintanya**. `[code]` —
+  `human_in_the_loop.py:104-108`. Menghilangkan `message` karena itu
+  bukan kelalaian melainkan pilihan: ia menghasilkan penolakan yang
+  menghentikan pengulangan, sementara `message` yang menjelaskan alasan
+  mengundang model mencoba pendekatan lain.
+
+- **`args_schema` menentukan apakah `edit` layak ditawarkan.**
+  `InterruptOnConfig.args_schema` membawa JSON schema argumen "if edits
+  are allowed" — tanpa itu, UI approval tidak punya dasar untuk merender
+  formulir edit yang benar. Pasangkan: `allowed_decisions` yang memuat
+  `"edit"` tanpa `args_schema` berarti manusia menyunting argumen tanpa
+  panduan bentuk. `[code]` — `human_in_the_loop.py:191-192`.
+
+- **`description` boleh berupa callable, dan itu tempat yang benar untuk
+  merangkai teks approval.** Factory-nya menerima `(tool_call, state,
+  runtime)` sehingga teks permintaan bisa memuat argumen yang sudah
+  diformat dan konteks state. Bila tidak diisi, dipakai
+  `description_prefix` bawaan `"Tool execution requires approval"` — teks
+  Inggris yang akan muncul apa adanya di UI, jadi produk multilingual
+  wajib mengisinya sendiri (lihat [`multilingual.md`](multilingual.md)
+  §Tabel titik yang terkunci bahasa). `[code]` —
+  `human_in_the_loop.py:156-190`, `:223,243-248`.
 - **Rekaman keputusan tidak otomatis jadi baris audit** — hasil `interrupt()`
   (keputusan `approve`/`edit`/`reject`/`respond`, siapa yang memutuskan)
   hidup sebagai bagian dari **payload resume** yang dikirim aplikasi

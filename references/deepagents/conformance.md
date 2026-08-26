@@ -499,11 +499,12 @@ Dibangun dengan perintah ini, dijalankan dari root repo:
 grep -rn '\[ours\]' references/ --include='*.md'
 ```
 
-Hasilnya **74 baris** pada saat task ini selesai, terbagi tiga:
+Hasilnya **79 baris** pada hitungan terakhir, terbagi tiga:
 
-- **51** di luar `references/deepagents/` — inilah klaim yang sesungguhnya,
-  didaftar lengkap di tabel bawah. (Sebelum fix round 1 jumlahnya 53; dua
-  dicabut karena D-01 terbukti bukan penyimpangan.)
+- **56** di luar `references/deepagents/` — inilah klaim yang sesungguhnya,
+  didaftar lengkap di tabel bawah. (Audit pertama menghasilkan 53; dua
+  dicabut karena D-01 terbukti bukan penyimpangan, lalu bertambah lima:
+  baris 54, 55, dan 56-58.)
 - **10** di `references/deepagents/per-archetype.md` — semuanya **penunjuk**
   ke entri D-xx di file ini, bukan klaim baru.
 - **13** di file ini sendiri — seluruhnya meta (judul bagian, penjelasan,
@@ -550,6 +551,7 @@ tidak muncul di `grep`, sehingga nomor 1 dan 17 sengaja kosong.
 | 52 | `concepts/serving-topology.md:167` | Monolith dulu, split belakangan | di luar `deepagents` |
 | 53 | `concepts/streaming-protocol.md:142` | Granularitas stream per unit | di luar `deepagents` |
 | 54 | `concepts/guardrails.md:94` | Fail-deferred wajib dipasangkan timeout + kebijakan saat habis (vanilla: `await` tanpa batas, OpenWorker `inbox.py:362-371`) | di luar `deepagents` |
+| 56-58 | `scaffolds/skills/README.md:18,132,170` | Sintaksis blok berpagar untuk keluaran bertag (`table`/`chart` JSON, `mermaid`, `math`), skema JSON-nya, dan ambang inline→artefak ~50 baris / ~200 titik (vanilla: `response_format` yang memaksa **seluruh** balasan jadi satu objek berskema — tidak bisa menyatakan prosa dengan nol sampai n sisipan heterogen) | di luar `deepagents`; berdampingan dengan `SkillsMiddleware`, bukan menggantikannya |
 | 55 | `concepts/isolation-and-scoping.md:121` | Audit katalog RLS tidak cukup; bukti isolasi harus query lintas user sebagai role aplikasi non-superuser (vanilla: periksa `relrowsecurity`/`relforcerowsecurity` lalu nyatakan cukup) | di luar `deepagents` |
 
 Bacaan roster ini: dari 51 klaim, **12** benar-benar menyangkut cara memakai

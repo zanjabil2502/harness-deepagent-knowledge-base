@@ -36,7 +36,7 @@ kelas kemampuan yang diekspos.
 | Beban pilihan model | Model memilih dari daftar panjang tool yang mirip; makin banyak tool, makin besar peluang pilih yang mirip tapi salah | Model tidak perlu memilih tool yang tepat (cuma satu), tapi harus mengkonstruksi argumen yang benar sendiri — beban pindah dari "pilih yang benar" ke "susun yang benar" |
 | Blast radius kesalahan | Terbatasi bentuk tool itu sendiri — `delete_file` cuma bisa menghapus satu file yang disebut eksplisit di argumen | Tidak terbatasi tool — `execute("rm -rf /")` valid secara skema, salah secara niat; guardrail/sandbox harus menutup celah yang skema tidak tutup |
 | Biaya prompt | Skema+deskripsi tiap tool dikirim tiap call — tumbuh linear dengan jumlah tool | Tetap kecil — satu definisi tool terlepas dari seberapa luas kemampuannya |
-| Approval granular (HITL) | Bisa per-jenis-operasi (`interrupt_on={"delete_file": ...}` tanpa mengganggu `read_file`) — lihat [`human-in-the-loop.md`](human-in-the-loop.md) | Cuma bisa per-nama-tool luas itu — semua pemanggilan `execute` masuk approval yang sama meski isinya `ls` yang aman atau `rm -rf` yang destruktif, kecuali gerbang dibangun untuk membaca isi argumen |
+| Approval granular (HITL) | Bisa per-jenis-operasi (`interrupt_on={"delete_file": ...}` tanpa mengganggu `read_file`) — lihat [`human-in-the-loop.md`](human-in-the-loop.md) | Cuma bisa per-nama-tool luas itu — semua pemanggilan `execute` masuk approval yang sama meski isinya `ls` yang aman atau `rm -rf` yang destruktif, bisa dipersempit dengan predikat `InterruptOnConfig.when` atas isi argumen, tapi itu memindahkan pembedaan operasi ke kode aplikasi (parsing command) alih-alih ke skema tool yang model lihat |
 
 ### Heuristik pemilihan, bukan aturan tetap
 
