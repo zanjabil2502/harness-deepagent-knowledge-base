@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Validator struktur KB. Jalankan: python3 tools/check_kb.py"""
+import hashlib
+import json
 import re
 import sys
 from pathlib import Path
@@ -31,6 +33,16 @@ SKILL_MAX_LINES = 150
 # menganjurkan SKILL.md di bawah 500 baris; deepagents melewati berkas di
 # atas 10 MB saat discovery tanpa error. Ketiganya gagal diam-diam kalau
 # dilanggar, jadi dicek di sini. Lihat references/deepagents/best-practices.md §5.
+# graphify-out/ adalah indeks simbol→file:line dari source deepagents. Nilainya
+# bergantung sepenuhnya pada kesinkronan dengan source yang terpasang: begitu
+# paketnya berubah, sitasi `file.py:NNN` di seluruh KB bisa meleset tanpa satu
+# pun cek gagal. manifest.json menyimpan md5 tiap berkas saat graf dibangun,
+# jadi drift-nya bisa dibuktikan, bukan diasumsikan.
+MANIFEST = ROOT / "graphify-out" / "manifest.json"
+DA_SRC = next(
+    iter(sorted(ROOT.glob("references/recipes/.venv/lib/python*/site-packages/deepagents"))),
+    None,
+)
 SKILL_ASSETS = REF / "scaffolds" / "skills"
 ASSET_MAX_LINES = 500
 ASSET_MAX_BYTES = 10 * 1024 * 1024
@@ -163,6 +175,32 @@ def check_skill_assets(errs):
             errs.append(f"{rel}: melebihi 10 MB, akan dilewati saat discovery")
 
 
+def check_graph_sync(errs):
+    """Graf AST harus cocok dengan source deepagents yang terpasang."""
+    if not MANIFEST.exists():
+        errs.append("graphify-out/manifest.json: tidak ada")
+        return
+    if DA_SRC is None or not DA_SRC.is_dir():
+        print("LEWAT: venv references/recipes/ belum ada, sinkronisasi graf tidak dicek")
+        return
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    for rel, meta in sorted(manifest.items()):
+        f = DA_SRC / rel
+        if not f.exists():
+            errs.append(f"graphify-out: {rel} ada di graf tapi tidak di source terpasang")
+        elif hashlib.md5(f.read_bytes()).hexdigest() != meta.get("ast_hash"):
+            errs.append(
+                f"graphify-out: {rel} berubah sejak graf dibangun — "
+                "bangun ulang graf dan tinjau sitasi baris yang menunjuk berkas ini"
+            )
+    for f in sorted(DA_SRC.rglob("*.py")):
+        if "__pycache__" in f.parts:
+            continue
+        rel = f.relative_to(DA_SRC).as_posix()
+        if rel not in manifest:
+            errs.append(f"graphify-out: {rel} ada di source tapi belum masuk graf")
+
+
 def main():
     errs = []
     check_frames(errs)
@@ -170,6 +208,7 @@ def main():
     check_skill_size(errs)
     check_ours_roster(errs)
     check_skill_assets(errs)
+    check_graph_sync(errs)
     for e in errs:
         print("FAIL:", e)
     print(f"\n{len(errs)} masalah" if errs else "\nOK: semua cek lulus")
