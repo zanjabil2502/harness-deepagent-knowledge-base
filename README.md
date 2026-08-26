@@ -35,32 +35,42 @@ Repo ini **adalah** skill-nya: root repo = root skill, dengan `SKILL.md` di
 level atas. Tidak ada langkah build, tidak ada `pip install`, dan **tidak
 ada API key** — skill ini murni berkas markdown yang dibaca Claude Code.
 
-### 1. Clone
+### Cara biasa: pasang sebagai plugin
+
+Repo ini sekaligus **marketplace** dan **plugin**-nya sendiri. Tanpa clone,
+tanpa symlink — dua perintah di dalam Claude Code:
+
+```
+/plugin marketplace add zanjabil2502/harness-deepagent-knowledge-base
+/plugin install agent-harness-kb@harness-deepagent-kb
+```
+
+Claude Code yang mengunduh, menempatkan, dan memperbaruinya. Untuk
+mengambil versi terbaru nanti:
+
+```
+/plugin marketplace update harness-deepagent-kb
+```
+
+### Alternatif: symlink untuk yang ikut mengembangkan
+
+Pakai ini kalau kamu mau menyunting KB-nya, bukan sekadar memakainya —
+perubahan lokal langsung terpakai tanpa reinstall.
 
 ```bash
 git clone https://github.com/zanjabil2502/harness-deepagent-knowledge-base.git
 cd harness-deepagent-knowledge-base
-```
 
-### 2. Sambungkan ke Claude Code
-
-Pilih salah satu, tergantung mau tersedia di mana:
-
-```bash
-# A. Semua project (personal scope)
-mkdir -p ~/.claude/skills
+mkdir -p ~/.claude/skills                              # semua project
 ln -s "$(pwd)" ~/.claude/skills/agent-harness-kb
-
-# B. Satu project saja — jalankan dari root project itu
-mkdir -p .claude/skills
-ln -s /path/ke/harness-deepagent-knowledge-base .claude/skills/agent-harness-kb
+# atau, dari root satu project saja:
+# mkdir -p .claude/skills && ln -s /path/ke/repo .claude/skills/agent-harness-kb
 ```
 
-Symlink dipakai supaya `git pull` langsung memperbarui skill-nya tanpa
-menyalin ulang. Kalau lingkunganmu tidak mendukung symlink, salin
-direktorinya — konsekuensinya pembaruan harus disalin ulang tiap kali.
+Jangan pasang keduanya sekaligus — skill yang sama dari dua sumber membuat
+mana yang aktif jadi tidak jelas.
 
-### 3. Pastikan terbaca
+### Pastikan terbaca
 
 Mulai sesi Claude Code baru, lalu minta sesuatu yang masuk salah satu dari
 tiga mode di [`SKILL.md`](SKILL.md) §Tiga mode pemakaian, mis. *"apa itu
@@ -90,6 +100,14 @@ berkas source masih identik dengan keadaan saat graf AST dibangun. Tanpa
 venv, cek itu dilewati dan sisanya tetap jalan.
 
 ### Perbarui
+
+Kalau dipasang sebagai plugin, jalankan di dalam Claude Code:
+
+```
+/plugin marketplace update harness-deepagent-kb
+```
+
+Kalau memakai symlink:
 
 ```bash
 git pull

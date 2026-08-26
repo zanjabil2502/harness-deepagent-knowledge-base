@@ -1,0 +1,10 @@
+{
+  "name": "agent-harness-kb",
+  "description": "Knowledge base rekayasa harness agent di atas deepagents — tiga mode: mencari (kamus istilah & simbol), menimbang (arketipe, trade-off), membangun (blueprint lalu scaffold).",
+  "version": "1.0.0",
+  "author": {
+    "name": "zanjabila"
+  },
+  "homepage": "https://github.com/zanjabil2502/harness-deepagent-knowledge-base",
+  "repository": "https://github.com/zanjabil2502/harness-deepagent-knowledge-base"
+}
