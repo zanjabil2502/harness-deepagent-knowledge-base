@@ -1,54 +1,56 @@
 # Delta 02 — Generative Builder
 
-Basis: [`../_base.md`](../_base.md). File ini **hanya** selisihnya. Rasional
-lengkap: [`../../archetypes/02-generative-builder.md`](../../archetypes/02-generative-builder.md)
-§Bangun ini pakai deepagents.
+Base: [`../_base.md`](../_base.md). This file is **only** the difference.
+Full rationale:
+[`../../archetypes/02-generative-builder.md`](../../archetypes/02-generative-builder.md)
+§Building this with deepagents.
 
-## Ganti
+## Replace
 
-- **Backend**: `StoreBackend(namespace=...)` (`_base`) → backend keluarga
-  sandbox microVM, mis. `DaytonaSandbox` dari `langchain_daytona`
-  (`backend = DaytonaSandbox(sandbox=..., timeout=300)`), atau lewat
-  `agent.json` CLI deepagents dengan `{"backend": {"type": "sandbox", ...}}`.
-  `[code]` sumber `libs/partners/daytona/README.md`, `libs/cli/README.md`,
-  archetype 02. Semua operasi `FilesystemMiddleware` (termasuk `execute`)
-  otomatis terkurung ke sandbox tersebut, bukan disk lokal — beda dari
-  delta 01 yang backend-nya menyentuh host asli.
-- **Checkpointer**: `_base` selalu menyuntikkan checkpointer eksternal
-  (Postgres) untuk semua turn. Untuk sesi build/iterate yang sengaja
-  ephemeral, checkpointer **tetap dipasang** (dibutuhkan untuk resume kalau
-  graceful drain memotong sesi di tengah jalan, `../_base.md` §Graceful
-  drain) — yang berubah adalah `StoreBackend`/artefak lintas-sesi: `_base`
-  memasangnya sebagai backend utama, di sini ia **tidak ada** kecuali
-  ditambah eksplisit (lihat Tambah). `[code]`+`[ours]` archetype 02: vanilla
-  contoh dokumentasi kadang tanpa checkpointer/store sama sekali untuk sesi
-  pendek; kita tetap pertahankan checkpointer `_base` (beda dari archetype
-  yang membuang totalnya) karena `_base.md` sudah membuat graceful drain +
-  resumability jadi kontrak baku lintas arketipe — membuang checkpointer di
-  sini berarti sesi yang terpotong drain window hilang total, bukan cuma
-  "sesi pendek yang sengaja dibuang".
+- **Backend**: `StoreBackend(namespace=...)` (from `_base`) → a microVM
+  sandbox-family backend, e.g. `DaytonaSandbox` from `langchain_daytona`
+  (`backend = DaytonaSandbox(sandbox=..., timeout=300)`), or through the
+  deepagents CLI's `agent.json` with
+  `{"backend": {"type": "sandbox", ...}}`. `[code]` source
+  `libs/partners/daytona/README.md`, `libs/cli/README.md`, archetype 02.
+  Every `FilesystemMiddleware` operation (including `execute`) is
+  automatically confined to that sandbox rather than local disk — unlike
+  delta 01, whose backend touches the real host.
+- **Checkpointer**: `_base` always injects an external (Postgres)
+  checkpointer for every turn. For deliberately ephemeral build/iterate
+  sessions the checkpointer **stays installed** (it is needed to resume if
+  a graceful drain cuts the session midway, `../_base.md` §Graceful
+  drain) — what changes is `StoreBackend`/cross-session artifacts: `_base`
+  installs it as the primary backend, whereas here it is **absent** unless
+  added explicitly (see Add). `[code]`+`[ours]` archetype 02: vanilla
+  documentation examples sometimes use no checkpointer/store at all for
+  short sessions; we keep `_base`'s checkpointer (unlike the archetype,
+  which drops it entirely) because `_base.md` already makes graceful drain
+  plus resumability a standing contract across archetypes — dropping the
+  checkpointer here would mean a session cut off by the drain window is
+  lost completely, not merely "a short session we meant to discard".
 
-## Tambah
+## Add
 
-- **Safety gate minimal**: `interrupt_on={"publish": True, "deploy": True}`
-  — hanya di tool publish/deploy, bukan tiap `write_file`/`execute` seperti
-  delta 01. `[ours]` archetype 02: vanilla deepagents `interrupt_on=None`
-  (tidak memaksa HITL sama sekali); kita menambah gate sesempit mungkin
-  karena kendali manusia arketipe ini adalah "review di akhir lewat
-  preview", bukan approve tiap langkah.
-- **Persistence lintas-sesi (opsional)**: kalau produk butuh user kembali
-  besok untuk lanjut project yang sama, tambah `StoreBackend` lewat
+- **A minimal safety gate**: `interrupt_on={"publish": True, "deploy":
+  True}` — only on the publish/deploy tools, not on every `write_file`/
+  `execute` as in delta 01. `[ours]` archetype 02: vanilla deepagents uses
+  `interrupt_on=None` (no HITL forced at all); we add the narrowest
+  possible gate because this archetype's human control is "review at the
+  end through the preview", not approving every step.
+- **Cross-session persistence (optional)**: if the product needs users to
+  return tomorrow and continue the same project, add `StoreBackend` via
   `CompositeBackend(default=<sandbox backend>, routes={"/exports/":
-  StoreBackend(namespace=...)})` — pilihan eksplisit per-produk, bukan
-  default arketipe ini.
+  StoreBackend(namespace=...)})` — an explicit per-product choice, not
+  this archetype's default.
 
-## Buang
+## Remove
 
-- **`interrupt_on` seluas delta 01** — tidak relevan; approve per-`write_file`/
-  `execute` akan mematikan loop rewrite-cepat yang jadi inti arketipe ini
-  (`## Konsekuensi harness` archetype 02, poin loop shape rewrite-penuh vs
-  patch granular).
-- **Isolasi lewat "proses/container terpisah per user"** (pola delta 01) —
-  tidak dibutuhkan di sini karena backend sandbox microVM sudah menyediakan
-  isolasi per sesi secara bawaan (`sandboxing.md` — baris microVM, bukan
-  baris "tanpa isolasi").
+- **`interrupt_on` as broad as delta 01's** — irrelevant here; approving
+  every `write_file`/`execute` would kill the fast-rewrite loop that is
+  the core of this archetype (archetype 02 §Harness consequences, the
+  full-rewrite vs granular-patch loop shape point).
+- **Isolation through "a separate process/container per user"** (the delta
+  01 pattern) — not needed here, because a microVM sandbox backend already
+  provides per-session isolation out of the box (`sandboxing.md` — the
+  microVM row, not the "no isolation" row).

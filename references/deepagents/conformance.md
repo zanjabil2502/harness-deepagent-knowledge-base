@@ -532,7 +532,7 @@ tidak muncul di `grep`, sehingga nomor 1 dan 17 sengaja kosong.
 | 11 | `systems/INDEX.md:93` | Meta: kenapa label `[ours]` ada | meta |
 | 12-16 | `scaffolds/_base.md:56,77,160,450,493` | Protocol `Orchestrator`; `namespace` dari `Scope` aplikasi bukan `rt.server_info.user.identity`; `AsyncConnectionPool`; eksekusi turn inline di generator SSE | **:160 → D-08 (risiko tertinggi)**; sisanya arsitektur aplikasi, di luar `deepagents` |
 | — | `scaffolds/deltas/01-workspace-agent.md` | Turunan D-01 | **dicabut**, kini `[code]` |
-| 18-19 | `scaffolds/deltas/02-generative-builder.md:23,35` | Turunan dari #2 | D-02 |
+| 18-19 | `scaffolds/deltas/02-generative-builder.md:25,37` | Turunan dari #2 | D-02 |
 | 20 | `scaffolds/deltas/03-general-task-agent.md:22` | Turunan dari #3 | D-03 |
 | 21 | `scaffolds/deltas/04-research-agent.md:44` | Turunan dari #4 | D-04 |
 | 22 | `scaffolds/deltas/05-in-app-copilot.md:34` | Turunan dari #5 | D-05 |

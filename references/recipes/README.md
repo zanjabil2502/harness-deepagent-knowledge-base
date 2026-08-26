@@ -1,12 +1,12 @@
-# Recipes `deepagents`
+# `deepagents` recipes
 
-Kode `deepagents` yang benar-benar jalan (bukan cuplikan dari ingatan),
-dipasangkan dengan `references/systems/deepagents.md` (T1). Tiap skrip berdiri
-sendiri, punya blok `if __name__ == "__main__":`, dan diawali docstring yang
-menyebut apa yang didemokan, arketipe mana yang terbantu, dan konsep mana
-yang diilustrasikan.
+`deepagents` code that actually runs (not snippets written from memory),
+paired with `references/systems/deepagents.md` (T1). Each script stands on
+its own, has an `if __name__ == "__main__":` block, and opens with a
+docstring naming what it demonstrates, which archetype it serves, and
+which concept it illustrates.
 
-## Menjalankan
+## Running them
 
 ```bash
 cd references/recipes
@@ -17,20 +17,19 @@ uv run python 03_subagents.py
 uv run python 04_custom_backend.py
 ```
 
-## Aturan verifikasi
+## Verification rule
 
-Tiap skrip **selalu** membangun agent nyata — `create_deep_agent(...)`,
-middleware, backend, dan (bila relevan) config subagent nyata — lalu
-mencetak ringkasan konstruksi. Ini sudah cukup untuk membuktikan tiap nama
-API, signature, dan parameter yang dipakai benar-benar ada: kalau ada
-parameter yang salah, konstruksi akan raise dan kegagalannya langsung
-terlihat.
+Every script **always** builds a real agent — `create_deep_agent(...)`,
+real middleware, a real backend, and (where relevant) real subagent
+config — then prints a construction summary. That alone proves every API
+name, signature, and parameter it uses genuinely exists: a wrong parameter
+makes construction raise, and the failure is immediately visible.
 
-Konstruksi itulah verifikasinya, dan ia **tidak butuh kredensial apa pun**.
-Keempat skrip sengaja tidak memanggil model: tidak ada `agent.invoke(...)`,
-tidak ada environment variable yang dibaca, tidak ada yang menyentuh jaringan.
-Skill ini secara keseluruhan tidak pernah meminta API key.
+Construction *is* the verification, and it **needs no credentials at
+all**. The four scripts deliberately never call a model: no
+`agent.invoke(...)`, no environment variable is read, nothing touches the
+network. This skill as a whole never asks for an API key.
 
-Keempatnya harus selesai dengan `exit 0` di lingkungan mana pun, termasuk CI
-tanpa kredensial apa pun. Itulah yang diverifikasi — **bukan** bahwa model
-benar-benar dipanggil.
+All four must exit with `exit 0` in any environment, including CI with no
+credentials whatsoever. That is what is verified — **not** that a model
+was actually called.
