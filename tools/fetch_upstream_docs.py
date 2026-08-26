@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Ambil ulang snapshot dokumentasi upstream deepagents.
+"""Re-fetch the snapshot of the upstream deepagents documentation.
 
-Jalankan: python3 tools/fetch_upstream_docs.py
+Run: python3 tools/fetch_upstream_docs.py
 
-Mengambil markdown mentah per halaman — bukan ringkasan. Peringkas LLM pernah
-mengarang satu kalimat yang tak ada di sumber; sejak itu snapshot ini selalu
-diambil verbatim lewat HTTP biasa.
+It fetches each page's raw markdown -- not a summary. An LLM summariser once
+invented a sentence that wasn't in the source; ever since, this snapshot is
+always taken verbatim over plain HTTP.
 """
 import re
 import sys
@@ -19,8 +19,8 @@ DEST = ROOT / "references" / "upstream" / "deepagents-docs"
 INDEX = "https://docs.langchain.com/oss/python/deepagents/llms.txt"
 PAGE = re.compile(r"https://docs\.langchain\.com/oss/python/deepagents/[^)\s]+\.md")
 
-# Dua entri indeks ini me-redirect ke halaman kanonik dan mengembalikan HTML
-# lewat URL indeksnya; ambil langsung dari URL kanoniknya.
+# These two index entries redirect to a canonical page and return HTML
+# through their index URL; fetch them from the canonical URL directly.
 OVERRIDE = {
     "changelog-py.md": "https://docs.langchain.com/oss/python/releases/changelog.md",
     "changelog-js.md": "https://docs.langchain.com/oss/javascript/releases/changelog.md",
@@ -39,9 +39,9 @@ def fetch(url: str) -> tuple[str, str | None]:
     try:
         body = get(src)
     except (urllib.error.URLError, TimeoutError) as e:
-        return rel, f"gagal ambil: {e}"
+        return rel, f"fetch failed: {e}"
     if "<!DOCTYPE" in body[:2000] or "<html" in body[:2000]:
-        return rel, f"balasan HTML, bukan markdown (redirect?): {src}"
+        return rel, f"an HTML response, not markdown (a redirect?): {src}"
     path = DEST / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
@@ -49,19 +49,21 @@ def fetch(url: str) -> tuple[str, str | None]:
 
 
 def citing_files(page: str) -> list[str]:
-    """Berkas KB yang menyitasi nomor baris di halaman upstream ini.
+    """The KB files citing line numbers in this upstream page.
 
-    Sitasi berbentuk `nama.md` baris N menunjuk ke posisi, bukan ke isi.
-    Sekali halaman upstream berubah, nomornya bisa meleset tanpa satu pun
-    cek gagal — pernah terjadi, 32 sitasi sekaligus. Jadi setiap halaman
-    yang berubah harus menyebut siapa yang perlu ditinjau ulang.
+    A citation of the form `name.md` line(s) N points at a position, not at
+    content. Once an upstream page changes, those numbers can be off with no
+    check failing -- it happened once, to 32 citations at a time. So every
+    changed page must name who needs reviewing.
     """
-    needle = f"`{Path(page).name}` baris"
+    name = Path(page).name
+    needles = (f"`{name}` line", f"`{name}` baris")
     out = []
     for f in sorted((ROOT / "references").rglob("*.md")):
         if f.is_relative_to(DEST):
             continue
-        if needle in f.read_text(encoding="utf-8"):
+        txt = f.read_text(encoding="utf-8")
+        if any(n in txt for n in needles):
             out.append(f.relative_to(ROOT).as_posix())
     return out
 
@@ -69,7 +71,7 @@ def citing_files(page: str) -> list[str]:
 def main() -> int:
     urls = sorted(set(PAGE.findall(get(INDEX))))
     if not urls:
-        print("FAIL: indeks tidak memuat satu pun halaman .md")
+        print("FAIL: the index contains no .md page at all")
         return 1
 
     DEST.mkdir(parents=True, exist_ok=True)
@@ -81,7 +83,7 @@ def main() -> int:
     errs = [(rel, e) for rel, e in results if e]
     for rel, e in errs:
         print(f"FAIL: {rel}: {e}")
-    print(f"\n{len(results) - len(errs)}/{len(results)} halaman tersimpan di "
+    print(f"\n{len(results) - len(errs)}/{len(results)} pages saved in "
           f"{DEST.relative_to(ROOT)}")
     if errs:
         return 1
@@ -89,16 +91,16 @@ def main() -> int:
     changed = [rel for rel, _ in results if rel in before
                and before[rel] != (DEST / rel).read_text(encoding="utf-8")]
     if not changed:
-        print("Tidak ada halaman yang berubah.")
+        print("No page changed.")
         return 0
 
-    print(f"\n{len(changed)} halaman berubah:")
+    print(f"\n{len(changed)} pages changed:")
     for rel in changed:
         cites = citing_files(rel)
-        print(f"  {rel}" + (f"  -> tinjau ulang: {', '.join(cites)}" if cites
-                            else "  (tidak disitasi)"))
-    print("\nSitasi `baris N` ke halaman di atas mungkin meleset. Verifikasi "
-          "sebelum commit.")
+        print(f"  {rel}" + (f"  -> review: {', '.join(cites)}" if cites
+                            else "  (not cited)"))
+    print("\nLine-number citations into the pages above may be off. Verify "
+          "before committing.")
     return 0
 
 
