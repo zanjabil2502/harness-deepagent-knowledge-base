@@ -1,15 +1,15 @@
 # `deepagents` — middleware
 
-Middleware adalah *extension point* utama `deepagents`. File ini: apa saja
-yang bawaan, di tahap lifecycle mana masing-masing menyisip, urutannya, dan
-interaksi antar-middleware yang berbahaya kalau urutannya salah.
+Middleware is `deepagents`' primary *extension point*. This file: what is
+built in, which lifecycle stage each one hooks into, their ordering, and
+the middleware interactions that turn dangerous when the order is wrong.
 
-Untuk tahapan lifecycle-nya sendiri lihat [`lifecycle.md`](lifecycle.md).
+For the lifecycle stages themselves see [`lifecycle.md`](lifecycle.md).
 
-## Urutan stack yang dirakit `create_deep_agent`
+## The stack order `create_deep_agent` assembles
 
-Verifikasi runtime (`[code]`, dengan menyadap `create_agent` yang dipanggil
-`deepagents/graph.py` baris 922):
+Runtime verification (`[code]`, by intercepting the `create_agent` call at
+`deepagents/graph.py` line 922):
 
 ```
 minimal   : FilesystemMiddleware, SubAgentMiddleware, SummarizationMiddleware,
@@ -24,232 +24,240 @@ skills+memory+interrupt_on:
 + middleware=[TodoListMiddleware(), ModelCallLimitMiddleware(...)]:
             FilesystemMiddleware, SubAgentMiddleware, SummarizationMiddleware,
             PatchToolCallsMiddleware,
-            ▲ TodoListMiddleware, ModelCallLimitMiddleware ▲   ← disisipkan di sini
+            ▲ TodoListMiddleware, ModelCallLimitMiddleware ▲   ← inserted here
             AnthropicPromptCachingMiddleware, MemoryMiddleware
 ```
 
-Struktur formalnya: **base stack** → *middleware user* → **tail stack**.
-`[code]` — `deepagents/graph.py` baris 817-876 (perakitan), 361-406
-(docstring urutan resmi).
+The formal structure: **base stack** → *user middleware* → **tail stack**.
+`[code]` — `deepagents/graph.py` lines 817-876 (assembly), 361-406 (the
+docstring's official ordering).
 
-| Slot | Isi | Syarat |
+| Slot | Contents | Condition |
 |---|---|---|
-| base | `SkillsMiddleware` | `skills=` diisi |
-| base | `FilesystemMiddleware` | selalu (scaffolding wajib) |
-| base | `SubAgentMiddleware` | ada subagent inline (termasuk `general-purpose` default) |
-| base | `SummarizationMiddleware` | selalu |
-| base | `PatchToolCallsMiddleware` | selalu |
-| base | `AsyncSubAgentMiddleware` | ada `AsyncSubAgent` |
-| — | **middleware user** | `middleware=[...]` |
-| tail | `HarnessProfile.extra_middleware` | profil punya isi |
-| tail | `_ToolExclusionMiddleware` | profil punya `excluded_tools` |
-| tail | `AnthropicPromptCachingMiddleware` (+Bedrock/Fireworks bila paketnya ada) | selalu |
-| tail | `MemoryMiddleware` | `memory=` diisi |
-| tail | `HumanInTheLoopMiddleware` | `interrupt_on` gabungan tidak kosong |
+| base | `SkillsMiddleware` | `skills=` is set |
+| base | `FilesystemMiddleware` | always (required scaffolding) |
+| base | `SubAgentMiddleware` | any inline subagent exists (including the default `general-purpose`) |
+| base | `SummarizationMiddleware` | always |
+| base | `PatchToolCallsMiddleware` | always |
+| base | `AsyncSubAgentMiddleware` | any `AsyncSubAgent` exists |
+| — | **user middleware** | `middleware=[...]` |
+| tail | `HarnessProfile.extra_middleware` | the profile has entries |
+| tail | `_ToolExclusionMiddleware` | the profile has `excluded_tools` |
+| tail | `AnthropicPromptCachingMiddleware` (+Bedrock/Fireworks when installed) | always |
+| tail | `MemoryMiddleware` | `memory=` is set |
+| tail | `HumanInTheLoopMiddleware` | the merged `interrupt_on` is non-empty |
 
-Catatan: `_ToolExclusionMiddleware` di-`append` **setelah** merge middleware
-user (`graph.py` baris 892-893), jadi urutan efektifnya adalah paling akhir —
-lebih belakang daripada posisi tabel di atas. Komentar source-nya eksplisit:
-"so excluded tool names are stripped last and cannot be restored by a custom
-`wrap_model_call`".
+Note: `_ToolExclusionMiddleware` is `append`ed **after** the user
+middleware merge (`graph.py` lines 892-893), so its effective position is
+dead last — further back than the table above suggests. The source comment
+is explicit: "so excluded tool names are stripped last and cannot be
+restored by a custom `wrap_model_call`".
 
-## Tabel middleware bawaan
+## Built-in middleware table
 
-| Middleware | Hook yang dipakai | Yang dilakukan | `[code]` |
+| Middleware | Hooks used | What it does | `[code]` |
 |---|---|---|---|
-| `SkillsMiddleware` | `before_agent`, `wrap_model_call` | Muat index skill dari backend ke state, suntik ke system prompt | `middleware/skills.py:928,1018` |
-| `FilesystemMiddleware` | `wrap_model_call`, `wrap_tool_call` | Registrasi 8 tool file, saring tool tak didukung backend, tegakkan `permissions`, evict hasil tool & `HumanMessage` besar ke backend, scrub blok multimodal | `middleware/filesystem.py:3018,3066,3471` |
-| `SubAgentMiddleware` | `wrap_model_call` | Sediakan tool `task` + daftar subagent di deskripsinya | `middleware/subagents.py:722` |
-| `SummarizationMiddleware` (dari `create_summarization_middleware`) | `wrap_model_call` | Truncate arg tool lama, kompaksi riwayat bila lewat threshold, offload pesan ter-evict ke `/conversation_history/...`, fallback saat `ContextOverflowError` | `middleware/summarization.py:1335,1626` |
-| `PatchToolCallsMiddleware` | `before_agent` | Tambal `ToolMessage` sintetis untuk tool call dangling/invalid, lalu tulis ulang seluruh `messages` | `middleware/patch_tool_calls.py:14` |
-| `AsyncSubAgentMiddleware` | `wrap_model_call` | 5 tool background: `start/check/update/cancel/list_async_task(s)` | `middleware/async_subagents.py:908` |
-| `MemoryMiddleware` | `before_agent`, `wrap_model_call` | Muat `AGENTS.md` ke state, suntik ke system prompt dengan `cache_control` bila model Anthropic | `middleware/memory.py:274,380` |
-| `AnthropicPromptCachingMiddleware` | (langchain-anthropic) | Pasang breakpoint cache; `unsupported_model_behavior="ignore"` jadi no-op di provider lain | `middleware/_prompt_caching.py:42` |
-| `_ToolExclusionMiddleware` (privat) | `wrap_model_call` | Buang nama tool di `HarnessProfile.excluded_tools` dari `request.tools` | `middleware/_tool_exclusion.py:32` |
-| `HumanInTheLoopMiddleware` (langchain) | `after_model` | `interrupt()` sebelum tool berjalan | `langchain/agents/middleware/human_in_the_loop.py:219` |
-| `RubricMiddleware` | `before_agent`, `after_agent` | Nilai transkrip terhadap rubric, paksa iterasi ulang bila gagal — **tidak** di stack default | `middleware/rubric.py:522,573` |
-| `SummarizationToolMiddleware` | `wrap_model_call` | Tool `compact_conversation` yang dipanggil model sendiri — **tidak** di stack default | `middleware/summarization.py:1793,2110` |
-| `TodoListMiddleware` (langchain, **bukan** `deepagents`) | `after_model` | Tool `write_todos` + state `PlanningState.todos` — **tidak** di stack default | `langchain/agents/middleware/todo.py` |
+| `SkillsMiddleware` | `before_agent`, `wrap_model_call` | Loads the skill index from the backend into state and injects it into the system prompt | `middleware/skills.py:928,1018` |
+| `FilesystemMiddleware` | `wrap_model_call`, `wrap_tool_call` | Registers 8 file tools, filters out tools the backend can't support, enforces `permissions`, evicts large tool results and `HumanMessage`s to the backend, scrubs multimodal blocks | `middleware/filesystem.py:3018,3066,3471` |
+| `SubAgentMiddleware` | `wrap_model_call` | Provides the `task` tool plus the subagent list in its description | `middleware/subagents.py:722` |
+| `SummarizationMiddleware` (from `create_summarization_middleware`) | `wrap_model_call` | Truncates old tool args, compacts history past a threshold, offloads evicted messages to `/conversation_history/...`, falls back on `ContextOverflowError` | `middleware/summarization.py:1335,1626` |
+| `PatchToolCallsMiddleware` | `before_agent` | Patches synthetic `ToolMessage`s for dangling/invalid tool calls, then rewrites all `messages` | `middleware/patch_tool_calls.py:14` |
+| `AsyncSubAgentMiddleware` | `wrap_model_call` | 5 background tools: `start/check/update/cancel/list_async_task(s)` | `middleware/async_subagents.py:908` |
+| `MemoryMiddleware` | `before_agent`, `wrap_model_call` | Loads `AGENTS.md` into state and injects it into the system prompt with `cache_control` on Anthropic models | `middleware/memory.py:274,380` |
+| `AnthropicPromptCachingMiddleware` | (langchain-anthropic) | Installs cache breakpoints; `unsupported_model_behavior="ignore"` makes it a no-op on other providers | `middleware/_prompt_caching.py:42` |
+| `_ToolExclusionMiddleware` (private) | `wrap_model_call` | Removes tool names in `HarnessProfile.excluded_tools` from `request.tools` | `middleware/_tool_exclusion.py:32` |
+| `HumanInTheLoopMiddleware` (langchain) | `after_model` | `interrupt()` before the tool runs | `langchain/agents/middleware/human_in_the_loop.py:219` |
+| `RubricMiddleware` | `before_agent`, `after_agent` | Grades the transcript against a rubric, forcing another iteration on failure — **not** in the default stack | `middleware/rubric.py:522,573` |
+| `SummarizationToolMiddleware` | `wrap_model_call` | A `compact_conversation` tool the model calls itself — **not** in the default stack | `middleware/summarization.py:1793,2110` |
+| `TodoListMiddleware` (langchain, **not** `deepagents`) | `after_model` | The `write_todos` tool plus `PlanningState.todos` state — **not** in the default stack | `langchain/agents/middleware/todo.py` |
 
-## Interaksi berbahaya
+## Dangerous interactions
 
-Tiga aturan komposisi yang berbeda hidup berdampingan. Menyamakannya adalah
-sumber bug urutan:
+Three different composition rules coexist. Conflating them is the source
+of ordering bugs:
 
-| Hook | Komposisi | Konsekuensi |
+| Hook | Composition | Consequence |
 |---|---|---|
-| `before_agent`, `before_model` | **Berurutan, sesuai urutan list** | `m[0]` jalan duluan |
-| `after_model`, `after_agent` | **Berurutan, urutan TERBALIK** | `m[-1]` jalan duluan |
-| `wrap_model_call`, `wrap_tool_call` | **Onion, `m[0]` = terluar** | `m[-1]` yang paling dekat ke model/tool = kata terakhir atas `request` |
+| `before_agent`, `before_model` | **Sequential, in list order** | `m[0]` runs first |
+| `after_model`, `after_agent` | **Sequential, REVERSED order** | `m[-1]` runs first |
+| `wrap_model_call`, `wrap_tool_call` | **Onion, `m[0]` = outermost** | `m[-1]`, closest to the model/tool, gets the last word on `request` |
 
-`[code]` — `langchain/agents/factory.py` baris 1793 (`add_edge("model",
-m[-1].after_model)`), 349 (`for h in reversed(handlers[:-2])`, komentar
-"first in list becomes outermost layer"), 1758-1790 (rantai `before_*`).
+`[code]` — `langchain/agents/factory.py` line 1793 (`add_edge("model",
+m[-1].after_model)`), line 349 (`for h in reversed(handlers[:-2])`, with
+the comment "first in list becomes outermost layer"), lines 1758-1790 (the
+`before_*` chain).
 
-### 1. Middleware yang menyaring tool vs middleware yang menambah tool
+### 1. Tool-filtering middleware vs tool-adding middleware
 
-Penyaring harus **lebih dalam** (lebih belakang di list) daripada penambah.
-Kalau tidak, penyaring melihat `request.tools` sebelum tool baru masuk dan
-penyaringannya percuma. Inilah alasan `_ToolExclusionMiddleware`
-di-`append` setelah semua merge. Kalau ditulis middleware penyaring sendiri
-dan ditaruh lewat `middleware=[...]`, ia mendarat **sebelum** tail stack —
-cukup dalam untuk menyaring tool base stack, tapi **tidak** menyaring tool
-yang ditambahkan `extra_middleware` profil.
+The filter must be **deeper** (further back in the list) than the adder.
+Otherwise the filter sees `request.tools` before the new tools arrive and
+filters nothing. This is exactly why `_ToolExclusionMiddleware` is
+`append`ed after every merge. If you write your own filtering middleware
+and install it through `middleware=[...]`, it lands **before** the tail
+stack — deep enough to filter base stack tools, but **not** the tools a
+profile's `extra_middleware` adds.
 
-### 2. `MemoryMiddleware` vs middleware prompt-caching
+### 2. `MemoryMiddleware` vs the prompt-caching middleware
 
-Urutan terpasang: `AnthropicPromptCachingMiddleware` **lalu**
-`MemoryMiddleware`. Ini disengaja — komentar source
-(`graph.py` baris 856-858): profil dan caching ditaruh sebelum memory
-"so that memory updates (which change the system prompt) don't invalidate
-the Anthropic prompt cache prefix". Membalik urutannya (mis. dengan menaruh
-`MemoryMiddleware()` sendiri lewat `middleware=[...]`, yang akan mendarat
-**sebelum** tail stack) memindahkan konten yang berubah tiap sesi ke dalam
-prefix yang di-cache → cache miss tiap kali `AGENTS.md` berubah. Biayanya
-tagihan token, bukan crash — jadi tidak akan pernah terdeteksi tes.
+The installed order is `AnthropicPromptCachingMiddleware` **then**
+`MemoryMiddleware`. This is deliberate — the source comment (`graph.py`
+lines 856-858): profiles and caching are placed before memory "so that
+memory updates (which change the system prompt) don't invalidate the
+Anthropic prompt cache prefix". Reversing the order (e.g. by installing
+your own `MemoryMiddleware()` through `middleware=[...]`, which lands
+**before** the tail stack) moves content that changes every session into
+the cached prefix → a cache miss every time `AGENTS.md` changes. The cost
+is a token bill, not a crash — so no test will ever detect it.
 
-### 3. `SummarizationMiddleware` vs middleware yang membaca `state["messages"]`
+### 3. `SummarizationMiddleware` vs middleware that reads `state["messages"]`
 
-Versi `deepagents` **sengaja tidak memutasi** `state["messages"]`; kompaksi
-hanya berlaku pada `request.messages` di dalam `wrap_model_call` dan dilacak
-di field privat `_summarization_event`. Middleware `after_model`/`after_agent`
-yang membaca `state["messages"]` karena itu tetap melihat transkrip **penuh**,
-bukan versi terkompaksi — bagus untuk replay/eval, menyesatkan kalau dipakai
-untuk memperkirakan berapa token yang benar-benar dikirim.
-Sebaliknya `langchain.agents.middleware.SummarizationMiddleware` polos
-menulis ulang state lewat `before_model` + `RemoveMessage(REMOVE_ALL_MESSAGES)`.
-Mencampur keduanya = riwayat ditulis ulang dua kali.
-`[code]` — `middleware/summarization.py` baris 1636-1668 (docstring
-"Non-mutating message state").
+The `deepagents` version **deliberately does not mutate**
+`state["messages"]`; compaction applies only to `request.messages` inside
+`wrap_model_call` and is tracked in the private `_summarization_event`
+field. `after_model`/`after_agent` middleware reading `state["messages"]`
+therefore still sees the **full** transcript, not the compacted version —
+good for replay/eval, misleading if used to estimate how many tokens were
+actually sent.
+By contrast, plain `langchain.agents.middleware.SummarizationMiddleware`
+rewrites state through `before_model` plus
+`RemoveMessage(REMOVE_ALL_MESSAGES)`. Mixing the two = history rewritten
+twice.
+`[code]` — `middleware/summarization.py` lines 1636-1668 (the
+"Non-mutating message state" docstring).
 
-### 4. `PatchToolCallsMiddleware` vs middleware `before_agent` lain
+### 4. `PatchToolCallsMiddleware` vs other `before_agent` middleware
 
-`PatchToolCallsMiddleware.before_agent` mengembalikan
-`{"messages": [RemoveMessage(REMOVE_ALL_MESSAGES), *patched]}` — **seluruh**
-riwayat ditulis ulang. Middleware `before_agent` yang jalan **sebelumnya**
-dan menambahkan pesan akan melihat pesannya ikut ditulis ulang (masih ada,
-karena `patched_messages` menyalin semuanya) — tapi middleware yang
-mengandalkan identitas objek/ID pesan bisa kaget. `SkillsMiddleware` jalan
-sebelum `PatchToolCalls`; `MemoryMiddleware` sesudahnya.
+`PatchToolCallsMiddleware.before_agent` returns
+`{"messages": [RemoveMessage(REMOVE_ALL_MESSAGES), *patched]}` — **all**
+history is rewritten. `before_agent` middleware that ran **earlier** and
+appended messages will see those messages rewritten too (they survive,
+because `patched_messages` copies everything) — but middleware relying on
+message object identity or IDs may be surprised. `SkillsMiddleware` runs
+before `PatchToolCalls`; `MemoryMiddleware` runs after.
 
-### 5. `HumanInTheLoopMiddleware` selalu terakhir → `after_model` pertama
+### 5. `HumanInTheLoopMiddleware` is always last → `after_model` first
 
-Karena `create_deep_agent` menaruhnya di ujung tail stack, ia adalah
-`after_model` yang dieksekusi **paling awal**. Middleware `after_model`
-kustom yang ingin melihat/menyunting tool call *sebelum* manusia
-menyetujuinya harus ditaruh **lebih belakang lagi** dari HITL — dan itu
-tidak mungkin lewat `middleware=[...]` (yang mendarat sebelum tail).
-Jalurnya: `HarnessProfile.extra_middleware`? Bukan juga — itu pun sebelum
-HITL. Satu-satunya jalan resmi adalah `interrupt_on` dengan
-`InterruptOnConfig.when` (predikat per tool call) atau
-`description` berbentuk callable.
+Because `create_deep_agent` places it at the end of the tail stack, it is
+the **earliest** executed `after_model`. Custom `after_model` middleware
+wanting to see or edit tool calls *before* a human approves them would
+have to sit **even further back** than HITL — and that is impossible
+through `middleware=[...]` (which lands before the tail). What about
+`HarnessProfile.extra_middleware`? Also no — that too comes before HITL.
+The only official path is `interrupt_on` with `InterruptOnConfig.when` (a
+per-tool-call predicate) or a callable `description`.
 
-### 6. Nama duplikat = `AssertionError`
+### 6. Duplicate names = `AssertionError`
 
-`create_agent` menolak dua middleware dengan `.name` sama
-(`factory.py` baris 1108-1110). `_apply_custom_middleware` mencegah ini
-dengan **mengganti di tempat** entri yang namanya cocok. Efek sampingnya:
-mengirim `FilesystemMiddleware(...)` lewat `middleware=[...]` **mengganti**
-yang bawaan (ini yang diinginkan); mengirim **subclass** dengan nama kelas
-berbeda **tidak** mengganti, dan hasilnya dua filesystem middleware aktif.
-Lihat [`extension-points.md`](extension-points.md) anti-pattern #1.
+`create_agent` refuses two middleware with the same `.name`
+(`factory.py` lines 1108-1110). `_apply_custom_middleware` prevents this
+by **replacing in place** any entry whose name matches. The side effect:
+passing `FilesystemMiddleware(...)` through `middleware=[...]`
+**replaces** the built-in one (which is what you want); passing a
+**subclass** with a different class name does **not** replace it, leaving
+two filesystem middlewares active. See
+[`extension-points.md`](extension-points.md) anti-pattern #1.
 
-### 7. Middleware yang membuka jalur eksekusi kedua
+### 7. Middleware that opens a second execution path
 
-Middleware pihak ketiga yang memberi model cara memanggil tool **dari dalam
-satu tool call** (mis. `CodeInterpreterMiddleware` dari `langchain-quickjs`)
-melanggar asumsi diam-diam yang dipakai seluruh tabel di atas: bahwa tiap
-sentuhan ke dunia luar adalah satu tool call yang lewat `ToolNode`. Dua
-akibat langsung dari posisinya di **slot middleware user**:
+Third-party middleware giving the model a way to call tools **from inside
+a single tool call** (e.g. `CodeInterpreterMiddleware` from
+`langchain-quickjs`) violates the silent assumption behind the whole table
+above: that every touch of the outside world is one tool call passing
+through `ToolNode`. Two direct consequences of its position in the **user
+middleware slot**:
 
-- Ia lebih **luar** daripada `_ToolExclusionMiddleware` (yang di-`append`
-  paling akhir), jadi ia membaca `request.tools` **sebelum** exclusion
-  berjalan — tool yang dibuang `HarnessProfile.excluded_tools` tetap bisa
-  masuk allowlist-nya.
-- Ia lebih **awal** daripada `HumanInTheLoopMiddleware` di tail, jadi
-  `interrupt_on` masih menggerbangi tool eksekusi kode itu sendiri, tapi
-  tidak satu pun panggilan di dalamnya.
+- It is **outside** `_ToolExclusionMiddleware` (which is `append`ed last),
+  so it reads `request.tools` **before** exclusion runs — a tool removed
+  by `HarnessProfile.excluded_tools` can still enter its allowlist.
+- It is **earlier** than `HumanInTheLoopMiddleware` in the tail, so
+  `interrupt_on` still gates the code execution tool itself, but not a
+  single call inside it.
 
-Aturan umumnya: middleware yang **menambah jalur pemanggilan**, bukan
-sekadar menambah atau menyaring tool, harus dinilai terhadap seluruh
-tail stack — bukan cuma terhadap tetangga di `middleware=[...]`. Rinciannya
-di [`../concepts/code-orchestration.md`](../concepts/code-orchestration.md)
-§Di deepagents.
+The general rule: middleware that **adds a calling path**, rather than
+merely adding or filtering tools, must be evaluated against the entire
+tail stack — not just against its neighbours in `middleware=[...]`. The
+details are in
+[`../concepts/code-orchestration.md`](../concepts/code-orchestration.md)
+§In deepagents.
 
-## Exclusion: identitas slot, dua lintasan, dan fase verify
+## Exclusion: slot identity, two passes, and the verify phase
 
-Tiga perilaku yang tidak terlihat dari signature `create_deep_agent`, tapi
-menentukan apakah `HarnessProfile.excluded_middleware` benar-benar mengikat.
+Three behaviours invisible from `create_deep_agent`'s signature that
+determine whether `HarnessProfile.excluded_middleware` actually binds.
 
-### Aturan identitas slot — satu prinsip, dua perilaku
+### The slot identity rule — one principle, two behaviours
 
-`deepagents` mencocokkan middleware lewat **identitas persis**, bukan
-pewarisan. Entri class dicocokkan dengan tipe persis, entri string dengan
+`deepagents` matches middleware by **exact identity**, not inheritance.
+Class entries match on exact type, string entries on
 `AgentMiddleware.name`.
 
 `[code]` — `_excluded_middleware.py:90` (`_apply_excluded_middleware`),
-docstring-nya menyatakan: *"Class entries match on exact type (not
+whose docstring states: *"Class entries match on exact type (not
 `isinstance`), mirroring the slot-identity semantics of `_merge_middleware`
-so a subclass introduced by the caller is preserved when the profile excludes
-the base class."*
+so a subclass introduced by the caller is preserved when the profile
+excludes the base class."*
 
-Ini aturan yang **sama** dengan yang mengatur penggantian middleware bawaan
-lewat parameter `middleware=` (`graph.py:201`, `_apply_custom_middleware`) —
-dan itulah sebabnya anti-pattern #1 di
-[`extension-points.md`](extension-points.md) terjadi: subclass yang di-rename
-diam-diam **tidak** menggantikan middleware bawaan, karena namanya berbeda.
+This is the **same** rule that governs replacing built-in middleware
+through the `middleware=` parameter (`graph.py:201`,
+`_apply_custom_middleware`) — and that is why anti-pattern #1 in
+[`extension-points.md`](extension-points.md) happens: a renamed subclass
+silently **fails** to replace the built-in middleware, because its name
+differs.
 
-Dua perilaku yang tampak tak berhubungan — exclusion melewatkan subclass,
-custom middleware gagal menggantikan — adalah konsekuensi dari satu aturan.
-Kalau kamu mengandalkan pewarisan untuk salah satunya, kamu salah di
-dua-duanya.
+Two seemingly unrelated behaviours — exclusion skipping subclasses, custom
+middleware failing to replace — are consequences of one rule. If you rely
+on inheritance for either, you are wrong about both.
 
-### Filter dijalankan dua kali per stack
+### The filter runs twice per stack
 
-Exclusion tidak bisa dilewati dengan menyisipkan middleware lewat parameter
-`middleware=`. Saringan berjalan **sebelum dan sesudah** middleware custom
-disisipkan:
+Exclusion cannot be bypassed by inserting middleware through the
+`middleware=` parameter. The filter runs **both before and after** custom
+middleware is inserted:
 
 ```
 _apply_excluded_middleware(...)    # graph.py:877
-_apply_custom_middleware(...)      # graph.py:883 — user menyisipkan di sini
-_apply_excluded_middleware(...)    # graph.py:884 — disaring lagi
+_apply_custom_middleware(...)      # graph.py:883 — the user inserts here
+_apply_excluded_middleware(...)    # graph.py:884 — filtered again
 ```
 
-`[code]` — `graph.py:877-889`. Pola yang sama untuk tool: `_ToolExclusionMiddleware`
-sengaja di-append **paling akhir**, dengan alasan tertulis di source
-(`graph.py:890-893`): *"Tool exclusion runs after custom middleware so excluded
-tool names are stripped last and cannot be restored by a custom
-`wrap_model_call`."*
+`[code]` — `graph.py:877-889`. The same pattern applies to tools:
+`_ToolExclusionMiddleware` is deliberately appended **dead last**, with
+the reason written in source (`graph.py:890-893`): *"Tool exclusion runs
+after custom middleware so excluded tool names are stripped last and
+cannot be restored by a custom `wrap_model_call`."*
 
-### Fase verify: salah ketik gagal keras, bukan senyap
+### The verify phase: a typo fails loudly, not silently
 
-Exclusion bukan satu fungsi tapi **protokol tiga fase**, dijalankan berulang
-di empat scope (main, subagent deklaratif, GP subagent):
+Exclusion is not one function but a **three-phase protocol**, run
+repeatedly across four scopes (main, declarative subagents, GP subagent):
 
-| Fase | Fungsi | Perannya |
+| Phase | Function | Its role |
 |---|---|---|
-| 1 | `_validate_excluded_middleware_config` (`_excluded_middleware.py:23`) | Tolak entri yang menargetkan scaffolding wajib (`_REQUIRED_MIDDLEWARE`, `graph.py:238-265`) → `ValueError` |
-| 2 | `_apply_excluded_middleware` (`:90`) | Saring satu stack, **catat apa yang kena** ke set akumulator bersama |
-| 3 | `_verify_excluded_middleware_coverage` (`:168`) | Setelah semua stack disaring, pastikan tiap entri kena di **suatu tempat** |
+| 1 | `_validate_excluded_middleware_config` (`_excluded_middleware.py:23`) | Reject entries targeting required scaffolding (`_REQUIRED_MIDDLEWARE`, `graph.py:238-265`) → `ValueError` |
+| 2 | `_apply_excluded_middleware` (`:90`) | Filter one stack, **recording what it matched** into a shared accumulator set |
+| 3 | `_verify_excluded_middleware_coverage` (`:168`) | After every stack is filtered, ensure each entry matched **somewhere** |
 
-`[code]` — 15 titik panggil di `graph.py` (`:607` validate main; `:688,693,704,710`
-subagent; `:769,779` GP subagent; `:877,884,903` main).
+`[code]` — 15 call sites in `graph.py` (`:607` validate main;
+`:688,693,704,710` subagents; `:769,779` GP subagent; `:877,884,903`
+main).
 
-Fase 3 ada karena set `matched_classes`/`matched_names` **dibagi lintas semua
-pemanggilan** `_apply`, bukan dicek per-stack. Docstring-nya menyatakan alasan
-kedua sisi: *"An entry that matched nothing is almost always a typo or stale
-profile"*, dan *"Per-stack checking would be too strict — a profile
-legitimately targets middleware only one stack carries."*
+Phase 3 exists because the `matched_classes`/`matched_names` sets are
+**shared across all `_apply` calls** rather than checked per stack. Its
+docstring gives both sides of the reason: *"An entry that matched nothing
+is almost always a typo or stale profile"*, and *"Per-stack checking would
+be too strict — a profile legitimately targets middleware only one stack
+carries."*
 
-Konsekuensi praktis: `excluded_middleware=["FilesytemMiddleware"]` (salah ketik)
-melempar `ValueError` saat konstruksi. Tanpa fase ketiga itu akan jadi no-op
-senyap yang baru ketahuan di produksi.
+The practical consequence:
+`excluded_middleware=["FilesytemMiddleware"]` (a typo) raises `ValueError`
+at construction. Without that third phase it would be a silent no-op
+discovered only in production.
 
-## `artifacts_root`: ke mana middleware menulis, dan siapa yang menentukannya
+## `artifacts_root`: where middleware writes, and who decides
 
-Dua middleware bawaan menulis ke backend tanpa diminta — dan ke **tiga** prefix,
-bukan satu. Ini tidak terlihat dari signature `create_deep_agent` mana pun.
+Two built-in middlewares write to the backend unbidden — and to **three**
+prefixes, not one. None of this is visible from any `create_deep_agent`
+signature.
 
 ```python
 artifacts_root = backend.artifacts_root if isinstance(backend, CompositeBackend) else "/"
@@ -261,46 +269,48 @@ self._media_prefix              = f"{self._history_path_prefix}/media"
 
 `[code]` — `middleware/summarization.py:598-603`.
 
-| Prefix | Isinya | Ditulis oleh |
+| Prefix | Contents | Written by |
 |---|---|---|
-| `<root>/conversation_history/` | Ringkasan percakapan, satu file `.md` per sesi | `_DeepAgentsSummarizationMiddleware` (`summarization.py:1179` `_offload_to_backend`) |
-| `<root>/conversation_history/media/` | Gambar inline yang di-offload dari pesan | `summarization.py:1044` (`_offload_inline_media`) |
-| `<root>/large_tool_results/` | Output tool yang terlalu besar untuk konteks | `summarization.py:601` |
+| `<root>/conversation_history/` | Conversation summaries, one `.md` file per session | `_DeepAgentsSummarizationMiddleware` (`summarization.py:1179` `_offload_to_backend`) |
+| `<root>/conversation_history/media/` | Inline images offloaded from messages | `summarization.py:1044` (`_offload_inline_media`) |
+| `<root>/large_tool_results/` | Tool output too large for context | `summarization.py:601` |
 
-`FilesystemMiddleware` menulis ke direktori **yang sama** lewat jalur eviction
-pesan — `[code]` `middleware/filesystem.py:1705` (prefix), `:3324,3350`
-(penulisan). Jadi dua middleware berbeda berbagi satu ruang nama artefak.
+`FilesystemMiddleware` writes to the **same** directories through its
+message eviction path — `[code]` `middleware/filesystem.py:1705` (the
+prefix), `:3324,3350` (the writes). So two different middlewares share one
+artifact namespace.
 
-### Aturan yang menentukan isolasi
+### The rule that determines isolation
 
-`artifacts_root` **berperilaku berbeda tergantung jenis backend**, dan ini
-menentukan apakah artefak di atas ter-scope per user:
+`artifacts_root` **behaves differently depending on backend type**, and
+this determines whether the artifacts above are scoped per user:
 
-| Backend | `artifacts_root` | Akibatnya |
+| Backend | `artifacts_root` | Consequence |
 |---|---|---|
-| Backend polos (`StoreBackend`, `FilesystemBackend`, …) | `"/"` — cabang `else` di `:598` | Artefak mendarat di root backend itu. Untuk `StoreBackend(namespace=...)` berarti **di dalam namespace user** → ikut ter-scope otomatis |
-| `CompositeBackend` | `self.artifacts_root`, default `"/"` (`backends/composite.py:212,235`) | Artefak mengikuti aturan `routes`. Kalau `/conversation_history/` dan `/large_tool_results/` **tidak** di-route eksplisit, keduanya jatuh ke `default` |
+| A plain backend (`StoreBackend`, `FilesystemBackend`, …) | `"/"` — the `else` branch at `:598` | Artifacts land at that backend's root. For `StoreBackend(namespace=...)` that means **inside the user's namespace** → automatically scoped |
+| `CompositeBackend` | `self.artifacts_root`, default `"/"` (`backends/composite.py:212,235`) | Artifacts follow the `routes` rules. If `/conversation_history/` and `/large_tool_results/` are **not** routed explicitly, both fall to `default` |
 
-Konsekuensi yang mudah terlewat: menyusun
+The easily missed consequence: composing
 `CompositeBackend(default=StateBackend(), routes={"/memories/": StoreBackend(namespace=...)})`
-membuat `/memories/` durable dan ter-scope, tapi **ringkasan percakapan tetap
-jatuh ke `StateBackend`** — ephemeral, hilang tiap turn. Backend sudah
-di-namespace tidak berarti seluruh artefak ikut ter-namespace; yang menentukan
-adalah apakah `routes` menutupi prefix-prefix di atas.
+makes `/memories/` durable and scoped, but **conversation summaries still
+fall to `StateBackend`** — ephemeral, lost every turn. A namespaced
+backend does not mean every artifact is namespaced; what decides is
+whether `routes` covers the prefixes above.
 
-Lihat [`conformance.md`](conformance.md) §D-08 untuk implikasi isolasi
-multi-user-nya.
+See [`conformance.md`](conformance.md) §D-08 for the multi-user isolation
+implications.
 
-## Menulis middleware sendiri
+## Writing your own middleware
 
-Kontrak: subclass `langchain.agents.middleware.AgentMiddleware`, override
-hook yang dibutuhkan saja. Atribut kelas yang relevan: `state_schema`,
-`tools`, `name` (property, default `__class__.__name__`), `trace_policy`.
+The contract: subclass `langchain.agents.middleware.AgentMiddleware` and
+override only the hooks you need. The relevant class attributes:
+`state_schema`, `tools`, `name` (a property, defaulting to
+`__class__.__name__`), `trace_policy`.
 
-Contoh minimal yang benar-benar jalan — membatasi berapa kali satu nama tool
-boleh dipanggil berturut-turut dengan argumen identik (kasus "agent berputar
-di tempat" yang tidak ditangkap `ToolCallLimitMiddleware`, karena yang itu
-menghitung total panggilan, bukan pengulangan):
+A minimal example that genuinely runs — limiting how many times one tool
+name may be called consecutively with identical arguments (the "agent
+spinning in place" case `ToolCallLimitMiddleware` doesn't catch, because
+that one counts total calls rather than repetitions):
 
 ```python
 import json
@@ -310,7 +320,7 @@ from langchain_core.messages import ToolMessage
 
 
 class RepeatedToolCallGuard(AgentMiddleware):
-    """Tolak tool call yang identik dengan N panggilan sebelumnya berturut-turut."""
+    """Refuse a tool call identical to the previous N consecutive ones."""
 
     def __init__(self, *, max_repeats: int = 3) -> None:
         super().__init__()
@@ -326,9 +336,9 @@ class RepeatedToolCallGuard(AgentMiddleware):
         if self._streak > self._max_repeats:
             return ToolMessage(
                 content=(
-                    f"Tool `{call['name']}` sudah dipanggil {self._streak} kali "
-                    "berturut-turut dengan argumen yang sama. Ubah pendekatan "
-                    "atau laporkan kebuntuan ke pengguna."
+                    f"Tool `{call['name']}` has been called {self._streak} times "
+                    "in a row with the same arguments. Change approach or report "
+                    "the impasse to the user."
                 ),
                 tool_call_id=call["id"],
                 status="error",
@@ -343,47 +353,48 @@ agent = create_deep_agent(
 )
 ```
 
-Yang membuat contoh ini idiomatik:
+What makes this example idiomatic:
 
-- Memakai `wrap_tool_call`, bukan membungkus fungsi tool satu per satu.
-- Mengembalikan `ToolMessage` berstatus `error`, bukan raise — model
-  mendapat umpan balik dan bisa berbelok, sesuai pola
-  `ShellAllowListMiddleware` di `libs/code/deepagents_code/agent.py`
-  (repo maintainer) yang persis melakukan ini untuk command shell.
-- Tidak memberi `name` kustom, sehingga tidak sengaja bertabrakan/mengganti
-  middleware bawaan.
-- State per-instance disimpan di atribut instance karena tidak perlu
-  bertahan lintas checkpoint; kalau perlu bertahan, deklarasikan
-  `state_schema` dengan field bertanda `PrivateStateAttr` dan kembalikan
-  update lewat `Command`.
+- It uses `wrap_tool_call` rather than wrapping tool functions one by one.
+- It returns a `ToolMessage` with status `error` rather than raising — the
+  model gets feedback and can change course, matching the
+  `ShellAllowListMiddleware` pattern in
+  `libs/code/deepagents_code/agent.py` (the maintainers' repo), which does
+  exactly this for shell commands.
+- It sets no custom `name`, so it cannot accidentally collide with or
+  replace built-in middleware.
+- Per-instance state lives in instance attributes because it needn't
+  survive checkpoints; if it must survive, declare a `state_schema` with
+  a `PrivateStateAttr`-marked field and return updates through a
+  `Command`.
 
-⚠️ Middleware dengan state instance seperti di atas **tidak** aman kalau
-satu objek agent dipakai bersamaan oleh banyak thread. Untuk itu simpan
-hitungan di `state_schema`, bukan di `self`.
+⚠️ Middleware with instance state like the above is **not** safe when one
+agent object is shared across threads concurrently. For that, keep the
+count in `state_schema` rather than on `self`.
 
-Untuk kasus sederhana tersedia juga decorator: `@before_agent`,
+For simple cases there are also decorators: `@before_agent`,
 `@before_model`, `@after_model`, `@after_agent`, `@wrap_model_call`,
-`@wrap_tool_call`, `@dynamic_prompt` — semuanya dari
+`@wrap_tool_call`, `@dynamic_prompt` — all from
 `langchain.agents.middleware`. `[code]` —
-`langchain/agents/middleware/types.py` baris 934-2175.
+`langchain/agents/middleware/types.py` lines 934-2175.
 
-## Sumber
+## Sources
 
-**Versi yang dibaca**: `deepagents==0.7.8`, `langchain==1.3.16`.
+**Versions read**: `deepagents==0.7.8`, `langchain==1.3.16`.
 
-`[code]` dari `references/recipes/.venv/lib/python3.13/site-packages/`:
-`deepagents/graph.py`, `deepagents/middleware/*.py` (semua),
+`[code]` from `references/recipes/.venv/lib/python3.13/site-packages/`:
+`deepagents/graph.py`, `deepagents/middleware/*.py` (all),
 `langchain/agents/factory.py`,
 `langchain/agents/middleware/types.py`,
-`langchain/agents/middleware/__init__.py` (daftar `__all__`),
+`langchain/agents/middleware/__init__.py` (the `__all__` list),
 `langchain/agents/middleware/human_in_the_loop.py`,
 `langchain/agents/middleware/todo.py`.
 
-`[code]` dari `git clone --depth 1 langchain-ai/deepagents` (commit
-`23b83ad`, 2026-08-21): `libs/code/deepagents_code/agent.py` baris 774-845
-(`ShellAllowListMiddleware`) sebagai contoh middleware kustom tulisan
-maintainer sendiri.
+`[code]` from `git clone --depth 1 langchain-ai/deepagents` (commit
+`23b83ad`, 2026-08-21): `libs/code/deepagents_code/agent.py` lines 774-845
+(`ShellAllowListMiddleware`) as an example of custom middleware written by
+the maintainers themselves.
 
-Verifikasi runtime `[code]`: urutan stack di atas dicetak dengan menyadap
-`deepagents.graph.create_agent` dan membaca `[m.name for m in
-kw["middleware"]]`.
+Runtime verification `[code]`: the stack orders above were printed by
+intercepting `deepagents.graph.create_agent` and reading
+`[m.name for m in kw["middleware"]]`.
