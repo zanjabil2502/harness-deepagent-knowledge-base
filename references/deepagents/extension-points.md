@@ -1,46 +1,48 @@
-# `deepagents` — extension point
+# `deepagents` — extension points
 
-## Aturan keras
+## The hard rule
 
-> **Jangan menulis kode custom di lapisan yang sudah punya extension point.**
+> **Don't write custom code at a layer that already has an extension
+> point.**
 
-Kode custom di lapisan yang salah biasanya **tetap jalan**. Itu masalahnya:
-ia lolos tes, lolos review, dan baru terlihat salah saat perilaku bawaan
-diam-diam dilewati — tool yang dikira sudah dibatasi ternyata masih terpasang,
-permission yang dikira ditegakkan ternyata tidak dilewati sama sekali,
-prompt cache yang dikira aktif ternyata miss tiap sesi. Semuanya gagal tanpa
-error.
+Custom code at the wrong layer usually **still runs**. That is the
+problem: it passes tests, passes review, and only looks wrong once
+built-in behaviour is silently bypassed — a tool you thought was
+restricted is still installed, a permission you thought was enforced is
+never consulted, a prompt cache you thought was active misses every
+session. All of them fail with no error.
 
-Sebelum menulis kelas/fungsi baru, cocokkan dulu kebutuhannya ke tabel di
-bawah. Kalau ada barisnya, pakai itu.
+Before writing a new class or function, match the need against the table
+below. If there is a row for it, use that.
 
-## Inventaris extension point resmi
+## Inventory of official extension points
 
-| # | Extension point | Bentuk | Untuk kebutuhan | `[code]` |
+| # | Extension point | Shape | For | `[code]` |
 |---|---|---|---|---|
-| 1 | **Middleware** | subclass `AgentMiddleware` atau decorator `@before_model`/`@wrap_tool_call`/dst, dipasang lewat `middleware=[...]` | mengubah prompt, tool, request, hasil tool, state, atau menghentikan loop | `langchain/agents/middleware/types.py:385` |
-| 2 | **Backend** | implementasi `BackendProtocol` (atau `SandboxBackendProtocol` untuk `execute`), dipasang lewat `backend=` | ke mana file dibaca/ditulis dan di mana shell berjalan | `deepagents/backends/protocol.py:378,840` |
-| 3 | **Composite backend** | `CompositeBackend(default=..., routes={prefix: backend})` | sebagian path ephemeral, sebagian durable/ter-scope | `deepagents/backends/composite.py:180` |
-| 4 | **Subagent** | `SubAgent` / `CompiledSubAgent` / `AsyncSubAgent` lewat `subagents=` | isolasi context per subtugas, tool surface berbeda, model berbeda | `deepagents/middleware/subagents.py:36,166` |
-| 5 | **Tool** | fungsi/`BaseTool` lewat `tools=` | kemampuan baru yang dipanggil model | `deepagents/graph.py:270` |
-| 6 | **State schema** | `state_schema` pada middleware (disarankan) atau `create_deep_agent(state_schema=)` (global) | field state tambahan lintas turn; `PrivateStateAttr` untuk yang tidak boleh menyeberang ke subagent | `deepagents/middleware/_state.py:14`, `graph.py:281` |
-| 7 | **Handler / hook** | `interrupt_on`, `permissions`, `InterruptOnConfig.when` | jeda approval manusia dan aturan izin filesystem | `deepagents/middleware/_fs_interrupt.py`, `graph.py:277,279` |
-| 8 | **Harness profile** | `register_harness_profile(key, HarnessProfile(...))` | buang tool bawaan, timpa deskripsi tool, tambah middleware ke **semua** stack (main + GP subagent + subagent deklaratif), atur base/suffix prompt per model | `deepagents/profiles/harness/harness_profiles.py:483,977` |
-| 9 | **Provider profile** | `register_provider_profile(key, ProviderProfile(...))` | mengubah cara model dikonstruksi per provider | `deepagents/profiles/provider/provider_profiles.py:38` |
-| 10 | **Graph config** | `.with_config({...})` / `invoke(config=...)` | `recursion_limit`, `thread_id`, metadata, callback | `deepagents/graph.py:935-944` |
-| 11 | **Skill** | direktori `SKILL.md` lewat `skills=` | instruksi berjenjang (progressive disclosure) tanpa membengkakkan system prompt | `deepagents/middleware/skills.py:764` |
-| 12 | **Memory** | file `AGENTS.md` lewat `memory=` | konteks persisten yang selalu masuk system prompt | `deepagents/middleware/memory.py:178` |
+| 1 | **Middleware** | subclass `AgentMiddleware` or the `@before_model`/`@wrap_tool_call`/etc. decorators, installed via `middleware=[...]` | changing the prompt, tools, request, tool results, state, or stopping the loop | `langchain/agents/middleware/types.py:385` |
+| 2 | **Backend** | an implementation of `BackendProtocol` (or `SandboxBackendProtocol` for `execute`), installed via `backend=` | where files are read/written and where the shell runs | `deepagents/backends/protocol.py:378,840` |
+| 3 | **Composite backend** | `CompositeBackend(default=..., routes={prefix: backend})` | some paths ephemeral, others durable/scoped | `deepagents/backends/composite.py:180` |
+| 4 | **Subagent** | `SubAgent` / `CompiledSubAgent` / `AsyncSubAgent` via `subagents=` | per-subtask context isolation, a different tool surface, a different model | `deepagents/middleware/subagents.py:36,166` |
+| 5 | **Tool** | a function or `BaseTool` via `tools=` | a new capability the model can call | `deepagents/graph.py:270` |
+| 6 | **State schema** | a middleware's `state_schema` (recommended) or `create_deep_agent(state_schema=)` (global) | extra state fields across turns; `PrivateStateAttr` for fields that must not cross into a subagent | `deepagents/middleware/_state.py:14`, `graph.py:281` |
+| 7 | **Handler / hook** | `interrupt_on`, `permissions`, `InterruptOnConfig.when` | human approval pauses and filesystem permission rules | `deepagents/middleware/_fs_interrupt.py`, `graph.py:277,279` |
+| 8 | **Harness profile** | `register_harness_profile(key, HarnessProfile(...))` | drop built-in tools, override tool descriptions, add middleware to **every** stack (main + GP subagent + declarative subagents), set base/suffix prompts per model | `deepagents/profiles/harness/harness_profiles.py:483,977` |
+| 9 | **Provider profile** | `register_provider_profile(key, ProviderProfile(...))` | changing how the model is constructed per provider | `deepagents/profiles/provider/provider_profiles.py:38` |
+| 10 | **Graph config** | `.with_config({...})` / `invoke(config=...)` | `recursion_limit`, `thread_id`, metadata, callbacks | `deepagents/graph.py:935-944` |
+| 11 | **Skill** | a `SKILL.md` directory via `skills=` | layered instructions (progressive disclosure) without bloating the system prompt | `deepagents/middleware/skills.py:764` |
+| 12 | **Memory** | an `AGENTS.md` file via `memory=` | persistent context that always enters the system prompt | `deepagents/middleware/memory.py:178` |
 
-Yang **bukan** extension point (dan karena itu boleh/harus ditulis sendiri di
-lapisan aplikasi): trigger (kapan agent dipanggil), antrian, kill switch
-armada, autentikasi/penentuan identitas user, dan storage checkpointer/store
-itu sendiri. `deepagents` sengaja tidak menyentuh keempatnya.
+What is **not** an extension point (and therefore may and must be written
+yourself at the application layer): triggers (when the agent is called),
+queues, a fleet kill switch, authentication/user identity resolution, and
+the checkpointer/store storage itself. `deepagents` deliberately touches
+none of those four.
 
-## Anti-pattern
+## Anti-patterns
 
-### 1. Menyubclass middleware bawaan untuk mempersempit tool
+### 1. Subclassing built-in middleware to narrow its tools
 
-**Yang biasa ditulis**
+**What people usually write**
 
 ```python
 class RestrictedFilesystem(FilesystemMiddleware):
@@ -50,13 +52,13 @@ class RestrictedFilesystem(FilesystemMiddleware):
 agent = create_deep_agent(model=m, middleware=[RestrictedFilesystem()])
 ```
 
-**Kenapa salah**: `_apply_custom_middleware` mengganti entri stack
-**berdasarkan `.name`**, dan `.name` default adalah nama kelas. Kelas
-`RestrictedFilesystem` namanya berbeda dari `FilesystemMiddleware`, jadi ia
-**ditambahkan**, bukan menggantikan. `FilesystemMiddleware` bawaan tetap
-terpasang dengan seluruh 8 tool-nya.
+**Why it's wrong**: `_apply_custom_middleware` replaces stack entries
+**by `.name`**, and the default `.name` is the class name. The class
+`RestrictedFilesystem` has a different name from `FilesystemMiddleware`,
+so it is **added**, not substituted. The built-in `FilesystemMiddleware`
+stays installed with all 8 of its tools.
 
-Verifikasi runtime `[code]`:
+Runtime verification `[code]`:
 
 ```
 default                                    → delete, edit_file, execute, glob,
@@ -64,35 +66,36 @@ default                                    → delete, edit_file, execute, glob,
 middleware=[FilesystemMiddleware(          → ls, read_file, task
     tools=["read_file","ls"])]
 middleware=[MyFS(tools=["read_file"])]     → delete, edit_file, execute, glob,
-  (subclass, nama kelas berbeda)             grep, ls, read_file, task, write_file
+  (subclass, different class name)           grep, ls, read_file, task, write_file
 ```
 
-Pembatasan pada baris ketiga **hilang tanpa jejak** — tidak ada warning,
-tidak ada error.
+The restriction on the third line **vanishes without a trace** — no
+warning, no error.
 
-**Cara resmi**: kirim **instance kelas aslinya** dengan konfigurasi berbeda.
+**The official way**: pass an **instance of the original class** with
+different configuration.
 
 ```python
 agent = create_deep_agent(
     model=m,
-    backend=backend,                      # backend yang sama, wajib
+    backend=backend,                      # the same backend, mandatory
     middleware=[FilesystemMiddleware(backend=backend, tools=["read_file", "ls"])],
 )
 ```
 
-Untuk per-subagent, taruh instance yang sama di `spec["middleware"]` —
-docstring `SubAgent` menyebut ini eksplisit: *"To restrict filesystem tools,
+For per-subagent, put the same instance in `spec["middleware"]` — the
+`SubAgent` docstring says so explicitly: *"To restrict filesystem tools,
 include a `FilesystemMiddleware(tools=...)` instance here."*
-Untuk menyembunyikan tool dari **semua** stack sekaligus, pakai
+To hide a tool from **every** stack at once, use
 `HarnessProfile(excluded_tools=frozenset({"execute", "delete"}))`.
 
-`[code]` — `deepagents/graph.py` baris 201-235 (`_apply_custom_middleware`);
-`deepagents/middleware/subagents.py` baris 62-66;
-`deepagents/middleware/filesystem.py` baris 1714-1744.
+`[code]` — `deepagents/graph.py` lines 201-235
+(`_apply_custom_middleware`); `deepagents/middleware/subagents.py` lines
+62-66; `deepagents/middleware/filesystem.py` lines 1714-1744.
 
-### 2. Membungkus fungsi tool satu per satu untuk audit/guard/retry
+### 2. Wrapping tool functions one by one for audit/guard/retry
 
-**Yang biasa ditulis**
+**What people usually write**
 
 ```python
 def audited(fn):
@@ -107,14 +110,15 @@ def audited(fn):
 tools = [audited(search), audited(fetch), audited(publish)]
 ```
 
-**Kenapa salah**: tiga masalah sekaligus. (a) Tool bawaan middleware
-(`read_file`, `write_file`, `execute`, `task`) tidak pernah lewat wrapper ini
-— justru tool paling berisiko yang luput. (b) Wrapper kehilangan `tool_call_id`
-sehingga tidak bisa mengembalikan `ToolMessage` yang benar. (c) Setiap tool
-baru harus diingat untuk dibungkus; yang terlupa gagal diam-diam.
+**Why it's wrong**: three problems at once. (a) Middleware's built-in
+tools (`read_file`, `write_file`, `execute`, `task`) never pass through
+this wrapper — precisely the riskiest tools are missed. (b) The wrapper
+loses `tool_call_id`, so it cannot return a correct `ToolMessage`. (c)
+Every new tool must be remembered and wrapped; the ones forgotten fail
+silently.
 
-**Cara resmi**: `wrap_tool_call` melihat **setiap** tool call, termasuk yang
-diinjeksi middleware, dan menerima `ToolCallRequest` lengkap.
+**The official way**: `wrap_tool_call` sees **every** tool call, including
+middleware-injected ones, and receives a complete `ToolCallRequest`.
 
 ```python
 class AuditMiddleware(AgentMiddleware):
@@ -123,18 +127,18 @@ class AuditMiddleware(AgentMiddleware):
         return handler(request)
 ```
 
-Untuk error dan retry jangan tulis sendiri sama sekali — sudah ada
-`ToolErrorMiddleware(on_error=...)` dan
-`ToolRetryMiddleware(max_retries=..., backoff_factor=...)`. Maintainer
-sendiri memakai jalur `wrap_tool_call` untuk hal ini
+For errors and retries, don't write anything yourself —
+`ToolErrorMiddleware(on_error=...)` and
+`ToolRetryMiddleware(max_retries=..., backoff_factor=...)` already exist.
+The maintainers themselves use the `wrap_tool_call` path for this
 (`ShellAllowListMiddleware`, `libs/code/deepagents_code/agent.py:774`).
 
-`[code]` — `deepagents/middleware/filesystem.py` baris 3471;
+`[code]` — `deepagents/middleware/filesystem.py` line 3471;
 `langchain/agents/middleware/tool_error.py:75`, `tool_retry.py:133`.
 
-### 3. Loop `while` sendiri untuk membatasi jumlah langkah
+### 3. Writing your own `while` loop to bound step count
 
-**Yang biasa ditulis**
+**What people usually write**
 
 ```python
 for i in range(20):
@@ -144,20 +148,21 @@ for i in range(20):
     state = result
 ```
 
-**Kenapa salah**: `agent.invoke` **sudah** menjalankan loop sampai selesai;
-membungkusnya lagi berarti menjalankan agent 20 kali dari awal, masing-masing
-dengan riwayat yang tumbuh. `recursion_limit` default `9_999` tetap berlaku
-di dalam tiap panggilan, jadi batas 20 di luar tidak membatasi apa-apa.
-Ini juga merusak akuntansi `run_limit` pada middleware limit, karena tiap
-`invoke` adalah run baru.
+**Why it's wrong**: `agent.invoke` **already** runs the loop to
+completion; wrapping it again means running the agent 20 times from the
+start, each with a growing history. The default `recursion_limit` of
+`9_999` still applies inside each call, so the outer bound of 20
+constrains nothing. It also breaks `run_limit` accounting in the limit
+middleware, because each `invoke` is a new run.
 
-**Cara resmi**: satu `invoke`, batas ditaruh di config atau middleware.
+**The official way**: one `invoke`, with the bound in config or
+middleware.
 
 ```python
 agent = create_deep_agent(model=m, tools=tools).with_config(
     {"recursion_limit": 60}
 )
-# atau, dengan pesan yang bisa dibaca model:
+# or, with a message the model can read:
 agent = create_deep_agent(
     model=m,
     tools=tools,
@@ -165,28 +170,29 @@ agent = create_deep_agent(
 )
 ```
 
-Keduanya adalah pola maintainer, dalam dua varian yang setara.
-`libs/code/deepagents_code/agent.py:3110` memakai
-`.with_config({**config, "recursion_limit": effective_recursion_limit})` pada
-agent yang baru dibangun; `examples/better-harness/better_harness/agent.py:225`
-memakai varian per-panggilan
+Both are maintainer patterns, in two equivalent variants.
+`libs/code/deepagents_code/agent.py:3110` uses
+`.with_config({**config, "recursion_limit": effective_recursion_limit})`
+on a freshly built agent;
+`examples/better-harness/better_harness/agent.py:225` uses the per-call
+variant
 `agent.invoke(..., config={"recursion_limit": experiment.better_agent_max_turns})`.
-Pakai `.with_config` kalau batasnya melekat pada agent, `config=` kalau
-berbeda tiap invokasi.
+Use `.with_config` when the bound belongs to the agent, `config=` when it
+differs per invocation.
 
-Pengecualian yang **memang** loop luar: pola Ralph (`examples/ralph_mode/`) —
-tiap iterasi sengaja mulai dari **thread baru dengan context kosong**, dan
-filesystem yang jadi memori antar-iterasi. Itu bukan pembatas langkah, itu
-strategi context. Loop luar yang hanya "membatasi jumlah langkah" tidak punya
-alasan seperti itu.
+The exception that **is** a legitimate outer loop: the Ralph pattern
+(`examples/ralph_mode/`) — each iteration deliberately starts from a
+**fresh thread with empty context**, with the filesystem as memory between
+iterations. That isn't a step bound, it's a context strategy. An outer
+loop whose only purpose is "bound the step count" has no such reason.
 
-`[code]` — `deepagents/graph.py` baris 935-944;
-`langchain/agents/middleware/model_call_limit.py:126`;
-repo `langchain-ai/deepagents` commit `23b83ad`.
+`[code]` — `deepagents/graph.py` lines 935-944;
+`langchain/agents/middleware/model_call_limit.py:126`; repo
+`langchain-ai/deepagents` commit `23b83ad`.
 
-### 4. Filter path/izin di dalam fungsi tool
+### 4. Filtering paths/permissions inside a tool function
 
-**Yang biasa ditulis**
+**What people usually write**
 
 ```python
 @tool
@@ -196,14 +202,16 @@ def safe_write(path: str, content: str) -> str:
     return backend.write(path, content)
 ```
 
-**Kenapa salah**: hanya berlaku untuk tool tulisan sendiri. `write_file`,
-`edit_file`, `delete`, `execute`, `glob`, dan `grep` bawaan tidak lewat sini.
-Dan `grep(path=None)` bisa mengembalikan isi file yang sedang "dilindungi".
+**Why it's wrong**: it only applies to tools you wrote. The built-in
+`write_file`, `edit_file`, `delete`, `execute`, `glob`, and `grep` never
+pass through here. And `grep(path=None)` can return the contents of the
+very file being "protected".
 
-**Cara resmi**: `permissions=[FilesystemPermission(...)]`. Rule dievaluasi
-berurutan (match pertama menang), berlaku ke semua tool filesystem bawaan,
-dan `mode="interrupt"` otomatis menyambung ke HITL — termasuk untuk tool bulk
-(`ls`/`glob`/`grep`) yang subtree pencariannya bersinggungan dengan pola rule.
+**The official way**: `permissions=[FilesystemPermission(...)]`. Rules are
+evaluated in order (first match wins), apply to every built-in filesystem
+tool, and `mode="interrupt"` automatically wires into HITL — including for
+bulk tools (`ls`/`glob`/`grep`) whose search subtree intersects the rule's
+pattern.
 
 ```python
 permissions = [
@@ -212,34 +220,34 @@ permissions = [
 ]
 ```
 
-⚠️ Batasnya nyata dan harus diketahui: `permissions` **tidak** berlaku pada
-tool `execute` — `FilesystemMiddleware.__init__` malah **raise
-`NotImplementedError`** kalau `permissions` dipasang bersama backend
-`SandboxBackendProtocol` yang path-nya tidak ter-scope ke route. Untuk backend
-ber-shell, penegakan izin harus di lapisan lain (allow-list command lewat
-`wrap_tool_call`, atau sandbox itu sendiri).
+⚠️ Its limit is real and must be known: `permissions` does **not** apply
+to the `execute` tool — `FilesystemMiddleware.__init__` in fact **raises
+`NotImplementedError`** if `permissions` is combined with a
+`SandboxBackendProtocol` backend whose paths aren't scoped to a route. For
+shell-capable backends, permission enforcement must live at another layer
+(a command allow-list through `wrap_tool_call`, or the sandbox itself).
 
-`[code]` — `deepagents/middleware/filesystem.py` baris 384-417, 1691-1700;
-`deepagents/middleware/_fs_interrupt.py` baris 20-46.
+`[code]` — `deepagents/middleware/filesystem.py` lines 384-417, 1691-1700;
+`deepagents/middleware/_fs_interrupt.py` lines 20-46.
 
-### 5. Menyalin-tempel `create_deep_agent` untuk mengubah stack
+### 5. Copy-pasting `create_deep_agent` to change the stack
 
-**Yang biasa ditulis**: menyalin isi `graph.py` ke `my_agent.py` lalu
-menghapus/menukar beberapa baris middleware, karena "tidak ada parameter
-untuk membuang X".
+**What people usually write**: copying the contents of `graph.py` into
+`my_agent.py`, then deleting or swapping a few middleware lines, because
+"there's no parameter for removing X".
 
-**Kenapa salah**: begitu disalin, agent berhenti mengikuti versi library —
-perbaikan bug, middleware baru, dan perubahan urutan tail stack tidak ikut.
-Dan `_REQUIRED_MIDDLEWARE` ada justru untuk mencegah agent yang "diam-diam
-terdegradasi"; salinan manual kehilangan penjagaan itu.
+**Why it's wrong**: once copied, the agent stops following the library —
+bug fixes, new middleware, and tail-stack ordering changes no longer
+arrive. And `_REQUIRED_MIDDLEWARE` exists precisely to prevent agents that
+"silently degrade"; a manual copy loses that protection.
 
-**Cara resmi**: `HarnessProfile`.
+**The official way**: `HarnessProfile`.
 
 ```python
 register_harness_profile(
     "anthropic:claude-sonnet-4-6",
     HarnessProfile(
-        system_prompt_suffix="Jawab dalam Bahasa Indonesia.",
+        system_prompt_suffix="Answer in Indonesian.",
         excluded_tools=frozenset({"execute"}),
         excluded_middleware=frozenset({"SummarizationMiddleware"}),
         extra_middleware=[AuditMiddleware()],
@@ -248,32 +256,34 @@ register_harness_profile(
 )
 ```
 
-Profil berlaku ke main agent **dan** subagent deklaratif **dan** GP subagent
-sekaligus — cakupan yang tidak bisa dicapai `middleware=[...]`. Registrasi
-bersifat merge, jadi beberapa modul boleh melapisinya.
+A profile applies to the main agent **and** declarative subagents **and**
+the GP subagent all at once — a reach `middleware=[...]` cannot achieve.
+Registration merges, so several modules may layer onto it.
 
-⚠️ `excluded_middleware` menolak `FilesystemMiddleware` dan
-`SubAgentMiddleware` dengan `ValueError` (scaffolding wajib), dan menolak
-entri yang tidak match apa pun di stack (indikasi typo/profil basi). Untuk
-menghilangkan tool `task`, pakai
-`general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)` +
-tidak mengirim subagent sinkron.
+⚠️ `excluded_middleware` refuses `FilesystemMiddleware` and
+`SubAgentMiddleware` with a `ValueError` (required scaffolding), and
+refuses entries matching nothing in the stack (a sign of a typo or a stale
+profile). To remove the `task` tool, use
+`general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)`
+plus passing no synchronous subagents.
 
-`[code]` — `deepagents/graph.py` baris 238-265;
-`deepagents/profiles/harness/harness_profiles.py` baris 483-700 (field `HarnessProfile`), 977-1026 (`register_harness_profile`).
+`[code]` — `deepagents/graph.py` lines 238-265;
+`deepagents/profiles/harness/harness_profiles.py` lines 483-700 (the
+`HarnessProfile` fields), 977-1026 (`register_harness_profile`).
 
-### 6. Menyimpan file agent lewat modul storage sendiri
+### 6. Storing agent files through your own storage module
 
-**Yang biasa ditulis**: fungsi `save_artifact(user_id, path, content)` yang
-menulis ke S3/Postgres, dipanggil dari dalam tool custom, sementara agent
-tetap memakai `StateBackend` default.
+**What people usually write**: a `save_artifact(user_id, path, content)`
+function writing to S3/Postgres, called from inside a custom tool, while
+the agent still uses the default `StateBackend`.
 
-**Kenapa salah**: agent jadi punya dua filesystem yang tidak saling tahu.
-`read_file`/`glob`/`grep` tidak melihat artefak yang disimpan jalur kedua;
-eviction hasil tool besar menulis ke backend pertama; skill dan memory
-dimuat dari backend pertama. Model akan menulis file, lalu tidak menemukannya.
+**Why it's wrong**: the agent ends up with two filesystems unaware of each
+other. `read_file`/`glob`/`grep` cannot see artifacts saved through the
+second path; large tool result eviction writes to the first backend; and
+skills and memory load from the first backend. The model will write a file
+and then fail to find it.
 
-**Cara resmi**: satu backend, dirutekan.
+**The official way**: one backend, routed.
 
 ```python
 backend = CompositeBackend(
@@ -282,39 +292,42 @@ backend = CompositeBackend(
 )
 ```
 
-Storage yang benar-benar baru = implementasi `BackendProtocol` baru, bukan
-modul di samping. `namespace` pada `StoreBackend` adalah satu-satunya *hook*
-scoping per-user yang resmi.
+Genuinely new storage = a new `BackendProtocol` implementation, not a
+module beside it. `StoreBackend`'s `namespace` is the only official
+per-user scoping *hook*.
 
-`[code]` — `deepagents/backends/composite.py` baris 180-240;
-`deepagents/backends/store.py` baris 89-120;
-`deepagents/middleware/filesystem.py` baris 1602-1614 (contoh di docstring).
+`[code]` — `deepagents/backends/composite.py` lines 180-240;
+`deepagents/backends/store.py` lines 89-120;
+`deepagents/middleware/filesystem.py` lines 1602-1614 (the docstring
+example).
 
-## Catatan: dua arti kata "middleware"
+## A note: two meanings of the word "middleware"
 
-Di scaffold [`../scaffolds/_base.md`](../scaffolds/_base.md) ada
-`ScopeMiddleware`, dan itu **bukan** `AgentMiddleware` — itu
-`starlette.middleware.base.BaseHTTPMiddleware`, lapisan HTTP yang
-me-resolve identitas dari request sebelum agent dipanggil sama sekali.
-Dua hal berbeda dengan nama sama. Aturan keras di atas hanya berlaku untuk
+The scaffold [`../scaffolds/_base.md`](../scaffolds/_base.md) has a
+`ScopeMiddleware`, and that is **not** an `AgentMiddleware` — it is a
+`starlette.middleware.base.BaseHTTPMiddleware`, an HTTP layer resolving
+identity from the request before the agent is called at all. Two different
+things with the same name. The hard rule above applies only to
 `AgentMiddleware`.
 
-## Sumber
+## Sources
 
-**Versi yang dibaca**: `deepagents==0.7.8`, `langchain==1.3.16`, dari
+**Versions read**: `deepagents==0.7.8`, `langchain==1.3.16`, from
 `references/recipes/.venv/lib/python3.13/site-packages/`.
 
-`[code]`: `deepagents/graph.py`, `deepagents/backends/{protocol,composite,store,state,filesystem,local_shell}.py`,
+`[code]`: `deepagents/graph.py`,
+`deepagents/backends/{protocol,composite,store,state,filesystem,local_shell}.py`,
 `deepagents/middleware/{filesystem,subagents,_state,_fs_interrupt,_tool_exclusion,skills,memory}.py`,
 `deepagents/profiles/harness/harness_profiles.py`,
 `langchain/agents/middleware/{types,tool_error,tool_retry,model_call_limit}.py`.
 
-`[code]` dari `git clone --depth 1 langchain-ai/deepagents` (commit
+`[code]` from `git clone --depth 1 langchain-ai/deepagents` (commit
 `23b83ad`, 2026-08-21): `libs/code/deepagents_code/agent.py`,
 `examples/better-harness/better_harness/agent.py`,
 `examples/ralph_mode/ralph_mode.py`.
 
-Verifikasi runtime `[code]` untuk anti-pattern #1: tiga agent dibangun
-(`default`, `FilesystemMiddleware(tools=[...])`, dan subclass dengan nama
-kelas berbeda) lalu `sorted(agent.nodes["tools"].bound.tools_by_name)`
-dibandingkan — hasilnya persis seperti tabel di anti-pattern #1.
+Runtime verification `[code]` for anti-pattern #1: three agents were built
+(`default`, `FilesystemMiddleware(tools=[...])`, and a subclass with a
+different class name), then
+`sorted(agent.nodes["tools"].bound.tools_by_name)` was compared — the
+result is exactly the table in anti-pattern #1.
