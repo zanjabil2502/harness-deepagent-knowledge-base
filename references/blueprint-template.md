@@ -1,115 +1,118 @@
-# Template Harness Blueprint
+# Harness Blueprint template
 
-Salin file ini per project. Isi tiap bagian — jangan hapus baris kerangka
-yang sudah terisi dari framework KB, tambahkan keputusan spesifik project di
-kolom yang disediakan.
+Copy this file per project. Fill in every section — don't delete the frame
+lines already filled in from the KB's framework; add the project's specific
+decisions in the columns provided.
 
-## Ringkasan project
+## Project summary
 
-- **Nama:**
-- **Deskripsi singkat:**
-- **Domain (general/vertikal):**
+- **Name:**
+- **Short description:**
+- **Domain (general/vertical):**
 
-## Arketipe
+## Archetype
 
-- **Arketipe utama:**
-- **Arketipe sekunder (jika hibrida):**
+- **Primary archetype:**
+- **Secondary archetype (if hybrid):**
 
-| Sumbu | Nilai project ini |
+| Axis | This project's value |
 |---|---|
 | Blast radius | |
-| Artefak | |
+| Artifact | |
 | Horizon | |
-| Kendali manusia | |
-| Permukaan domain | |
-| Antarmuka | |
+| Human control | |
+| Domain surface | |
+| Interface | |
 
-## 7 sumbu harness
+## The 7 harness axes
 
-Kolom terakhir adalah bacaan sebelum mengisi kolom keputusan — tanpa itu
-sumbu diisi dari kebiasaan, bukan dari trade-off yang sudah dipetakan.
+The last column is the reading to do before filling in the decision column —
+without it, an axis gets filled from habit rather than from an already-mapped
+trade-off.
 
-| # | Sumbu | Keputusan | Timbang dulu |
+| # | Axis | Decision | Weigh first |
 |---|---|---|---|
 | 1 | Loop shape | | [`agent-loop`](concepts/agent-loop.md), [`planning`](concepts/planning.md) |
 | 2 | Context | | [`context-engineering`](concepts/context-engineering.md), [`memory`](concepts/memory.md) |
 | 3 | Tool surface | | [`tool-design`](concepts/tool-design.md), [`mcp`](concepts/mcp.md), [`structured-output`](concepts/structured-output.md) |
-| 4 | Delegation | | [`delegation`](concepts/delegation.md), [`code-orchestration`](concepts/code-orchestration.md) — subagent dipilih model per giliran, atau di-dispatch dari kode? |
+| 4 | Delegation | | [`delegation`](concepts/delegation.md), [`code-orchestration`](concepts/code-orchestration.md) — are subagents chosen by the model per turn, or dispatched from code? |
 | 5 | State & resume | | [`session-state`](concepts/session-state.md), [`streaming-protocol`](concepts/streaming-protocol.md) |
-| 6 | Safety gate | | [`human-in-the-loop`](concepts/human-in-the-loop.md), [`guardrails`](concepts/guardrails.md) — tiap titik: kebijakan + titik + mode kegagalan |
+| 6 | Safety gate | | [`human-in-the-loop`](concepts/human-in-the-loop.md), [`guardrails`](concepts/guardrails.md) — each point: policy + enforcement point + failure mode |
 | 7 | Capability routing & policy | | [`policy-as-data`](concepts/policy-as-data.md), [`skill-composition`](concepts/skill-composition.md), [`multilingual`](concepts/multilingual.md) |
 
-## Antarmuka & keluaran
+## Interface & output
 
-| Pertanyaan | Keputusan | Timbang dulu |
+| Question | Decision | Weigh first |
 |---|---|---|
-| Siapa yang memanggil harness ini — UI sendiri, editor, atau agent lain? | | [`agent-protocols`](concepts/agent-protocols.md) |
-| Keluaran selain prosa yang perlu dirender (tabel, chart, diagram, rumus)? | | [`scaffolds/skills/`](scaffolds/skills/README.md) |
+| Who calls this harness — our own UI, an editor, or another agent? | | [`agent-protocols`](concepts/agent-protocols.md) |
+| Any output beyond prose that needs rendering (tables, charts, diagrams, formulas)? | | [`scaffolds/skills/`](scaffolds/skills/README.md) |
 
 ## State & data
 
-Lima lapis, garis batas: BE punya kebenaran, AI punya proyeksi.
+Five layers, with one dividing line: the BE owns the truth, the AI owns a
+projection.
 
-| Lapis | Store | Lifetime | Pemilik | Keputusan project |
+| Layer | Store | Lifetime | Owner | Project decision |
 |---|---|---|---|---|
-| Transcript | Postgres append-only | permanen | BE | |
-| Model context | dihitung, cache Redis | 1 call | Harness | |
+| Transcript | Append-only Postgres | permanent | BE | |
+| Model context | Computed, Redis cache | 1 call | Harness | |
 | Run state | Checkpointer (Postgres) | 1 run, resumable | Harness | |
-| Memory | Postgres + vector | lintas sesi | BE + AI | |
-| Artefak | S3/GCS + row metadata | permanen, berversi | BE | |
+| Memory | Postgres + vector | cross-session | BE + AI | |
+| Artifacts | S3/GCS + metadata rows | permanent, versioned | BE | |
 
-## Guardrail
+## Guardrails
 
-Tiap titik wajib punya kebijakan + titik penegakan + mode kegagalan. Fail-open
-untuk moderasi, fail-closed untuk otorisasi — kalau tidak diputuskan, defaultnya
-jadi kebetulan.
+Every point must have a policy + an enforcement point + a failure mode.
+Fail-open for moderation, fail-closed for authorisation — undecided, the
+default becomes an accident.
 
-| # | Titik | Kebijakan | Titik penegakan | Mode kegagalan |
+| # | Point | Policy | Enforcement point | Failure mode |
 |---|---|---|---|---|
 | 1 | Input | | | |
 | 2 | Retrieval/context | | | |
-| 3 | Tool/aksi | | | |
+| 3 | Tool/action | | | |
 | 4 | Output | | | |
 | 5 | Loop | | | |
-| 6 | Sistem | | | |
+| 6 | System | | | |
 
-## Deployment & resource
+## Deployment & resources
 
-Satu turn agent adalah workload campuran — jangan paksa satu pod untuk semua.
+One agent turn is a mixed workload — don't force one pod to do all of it.
 
-| Komponen | Bound | Sinyal HPA | Keputusan project |
+| Component | Bound | HPA signal | Project decision |
 |---|---|---|---|
-| Gateway / SSE | IO | koneksi aktif | |
-| Orchestrator | IO dominan | in-flight turns | |
-| Tool executor | CPU + mem | queue depth, CPU | |
-| Retrieval / embedding | GPU atau CPU | batch queue, GPU util | |
-| State store | IO/disk | bukan pod | |
+| Gateway / SSE | IO | active connections | |
+| Orchestrator | IO-dominant | in-flight turns | |
+| Tool executor | CPU + memory | queue depth, CPU | |
+| Retrieval / embedding | GPU or CPU | batch queue, GPU utilisation | |
+| State store | IO/disk | not a pod | |
 
-- **Topologi awal (monolith/split):**
+- **Initial topology (monolith/split):**
 
 ## Isolation & scoping
 
-- **Default:** multi-user (`user_id`), bukan multi-tenant kecuali dinyatakan lain.
-- **Scope object project ini:**
-- **Penegakan (RLS/lainnya):**
+- **Default:** multi-user (`user_id`), not multi-tenant unless stated otherwise.
+- **This project's scope object:**
+- **Enforcement (RLS/other):**
 
-## Config deepagents
+## The deepagents config
 
 ```yaml
-# isi konfigurasi deepagents aktual: subagents, middleware, tools, checkpointer
+# fill in the actual deepagents configuration: subagents, middleware, tools, checkpointer
 ```
 
-## Checklist production-readiness
+## Production-readiness checklist
 
-Gerbang wajib sebelum scaffold dianggap selesai. Ini satu-satunya salinan
-checklist ini di KB — referensikan section ini dari file lain, jangan disalin.
+The mandatory gate before a scaffold counts as finished. This is the KB's only
+copy of this checklist — reference this section from other files rather than
+copying it.
 
 - [ ] Tracing & observability
-- [ ] Eval harness (termasuk multibahasa)
-- [ ] Budget & cost guard
+- [ ] An eval harness (including multilingual)
+- [ ] Budget & cost guards
 - [ ] Retry, timeout, idempotency
-- [ ] Context overflow policy
+- [ ] A context overflow policy
 - [ ] Secrets & config management
-- [ ] Human gate + audit log
+- [ ] A human gate + audit log
 - [ ] Prompt & policy versioning
-- [ ] Kill switch & sandbox
+- [ ] A kill switch & sandbox
