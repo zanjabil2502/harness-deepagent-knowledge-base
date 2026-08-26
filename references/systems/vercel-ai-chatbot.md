@@ -1,165 +1,162 @@
 # Vercel `ai-chatbot`
 
-> Label tiap klaim: [code] / [docs] / [inferred]
+> Label every claim: [code] / [docs] / [inferred]
 
-Tier **T2**. `vercel/ai-chatbot`, Next.js App Router + Vercel AI SDK
-(`ai@7.0.15`, `@ai-sdk/react@4.0.16`) + Postgres (Drizzle) + opsional Redis.
-Dipilih sebagai eksemplar **artefak/canvas** sesuai kandidat T2 spec §10.
-Catatan penamaan: GitHub API mengonfirmasi `vercel/ai-chatbot` sudah
-di-rename jadi `vercel/chatbot` (`api.github.com/repos/vercel/ai-chatbot`
-mengembalikan `"message": "Moved Permanently"`) — konsisten dengan yang
-sudah dicatat `references/concepts/artifacts-and-canvas.md` §Sumber. Repo
-tetap dikloning lewat URL lama (`git clone` mengikuti redirect otomatis),
-jadi isi yang dibaca file ini adalah konten `vercel/chatbot` terkini; nama
-file `vercel-ai-chatbot.md` dipertahankan sesuai daftar file di task brief.
+Tier **T2**. `vercel/ai-chatbot`, Next.js App Router + the Vercel AI SDK
+(`ai@7.0.15`, `@ai-sdk/react@4.0.16`) + Postgres (Drizzle) + optional Redis.
+Chosen as the **artifact/canvas** exemplar per the T2 candidates in spec §10.
+A naming note: the GitHub API confirms `vercel/ai-chatbot` has been renamed to
+`vercel/chatbot` (`api.github.com/repos/vercel/ai-chatbot` returns
+`"message": "Moved Permanently"`) — consistent with what
+`references/concepts/artifacts-and-canvas.md` §Sources already records. The repo
+was still cloned through the old URL (`git clone` follows the redirect
+automatically), so what this file reads is the current `vercel/chatbot` content;
+the filename `vercel-ai-chatbot.md` is kept per the file list in the task brief.
 
-## Arketipe
+## Archetype
 
-**In-App Copilot (05)** dengan elemen **Generative Builder (02)** lewat
-sistem *artifact* (dokumen kode/teks/sheet yang dibuat & diedit sebagai
-objek terpisah dari transkrip chat, mirip kanvas). Horizon pendek per giliran
-HTTP (`maxDuration = 60`), tool surface sempit dan tetap (5 tool bernama),
-tanpa delegasi subagent. `[code]` — `app/(chat)/api/chat/route.ts` baris 49,
+**In-App Copilot (05)** with **Generative Builder (02)** elements through its
+*artifact* system (code/text/sheet documents created and edited as objects
+separate from the chat transcript, canvas-like). A short horizon per HTTP turn
+(`maxDuration = 60`), a narrow and fixed tool surface (5 named tools), no
+subagent delegation. `[code]` — `app/(chat)/api/chat/route.ts` lines 49,
 271-278.
 
 ## 1. Loop shape
 
-ReAct terbatas: `streamText({ ..., stopWhen: isStepCount(5), tools: {...} })`
-dari Vercel AI SDK — harness memasang **batas keras 5 langkah** tool-call
-per giliran (`isStepCount(5)`), bukan cuma jaring pengaman jauh di atas
-(beda dari `recursion_limit=9999` `deepagents` atau
-`max_iteration_per_run=500` OpenHands — di sini 5 adalah batas operasional
-normal, bukan darurat). Dalam 5 langkah itu, model yang memutuskan berhenti
-lebih awal dengan tidak memanggil tool lagi; SDK yang menegakkan batas atas.
-`[code]` — `app/(chat)/api/chat/route.ts` baris 269, 305.
+Bounded ReAct: `streamText({ ..., stopWhen: isStepCount(5), tools: {...} })`
+from the Vercel AI SDK — the harness installs a **hard 5-step limit** on tool
+calls per turn (`isStepCount(5)`), not merely a far-off safety net (unlike
+`deepagents`' `recursion_limit=9999` or OpenHands'
+`max_iteration_per_run=500` — here 5 is the normal operating limit, not an
+emergency one). Within those 5 steps the model decides to stop earlier by not
+calling another tool; the SDK enforces the ceiling. `[code]` —
+`app/(chat)/api/chat/route.ts` lines 269, 305.
 
 ## 2. Context
 
-Tidak ada compaction/summarization di jalur ini — `messages: modelMessages`
-diteruskan langsung dari `convertToModelMessages(uiMessages)` tanpa
-condenser. Tidak ditemukan modul ringkas riwayat di `lib/ai/` yang dibaca.
-`[inferred]` — dari tidak ditemukannya import summarizer/condenser di
-`app/(chat)/api/chat/route.ts` maupun `lib/ai/*`.
+There is no compaction/summarisation on this path — `messages: modelMessages`
+is passed straight from `convertToModelMessages(uiMessages)` with no condenser.
+No history-summarising module was found in the `lib/ai/` read. `[inferred]` —
+from the absence of any summariser/condenser import in
+`app/(chat)/api/chat/route.ts` or `lib/ai/*`.
 
-Sebaliknya, sistem **artifact** memindahkan konten besar (dokumen kode/
-teks/sheet) **keluar** dari transkrip chat sejak awal, bukan lewat eviction
-belakangan: `createDocument`/`updateDocument` tool menulis ke tabel
-`document` (Postgres), transkrip hanya menyimpan hasil tool (biasanya
-ringkasan/diff) — pola *artefak-by-reference* yang persis diargumentasikan
-`references/concepts/artifacts-and-canvas.md` dan aturan turunan §8.1 spec
-desain. `[code]` — `lib/artifacts/server.ts` baris 1-45 (`DocumentHandler`,
-`saveDocument`), `lib/db/schema.ts` baris 73-90 (tabel `document`).
+Instead, the **artifact** system moves large content (code/text/sheet
+documents) **out** of the chat transcript from the start rather than through
+later eviction: the `createDocument`/`updateDocument` tools write to the
+`document` table (Postgres), and the transcript holds only the tool result
+(usually a summary/diff) — the *artifact-by-reference* pattern argued in
+`references/concepts/artifacts-and-canvas.md` and the derived rule in design
+spec §8.1. `[code]` — `lib/artifacts/server.ts` lines 1-45 (`DocumentHandler`,
+`saveDocument`), `lib/db/schema.ts` lines 73-90 (the `document` table).
 
 ## 3. Tool surface
 
-Sedikit tool bernama-eksplisit dan tetap, tidak berubah per giliran:
-`getWeather`, `createDocument`, `editDocument`, `updateDocument`,
-`requestSuggestions`. Kecuali satu pengecualian **deterministik**: kalau
-model adalah *reasoning model* yang tidak mendukung tool-calling
-(`isReasoningModel && !supportsTools`), `activeTools` diset ke array kosong
-— tool surface dipangkas total berdasar kapabilitas model, dicek di kode,
-bukan diputuskan model. `[code]` — `app/(chat)/api/chat/route.ts` baris
-269-278, 306-316.
+A few explicitly named, fixed tools that don't change per turn: `getWeather`,
+`createDocument`, `editDocument`, `updateDocument`, `requestSuggestions`. With
+one **deterministic** exception: if the model is a *reasoning model* that
+doesn't support tool calling (`isReasoningModel && !supportsTools`),
+`activeTools` is set to an empty array — the tool surface is cut entirely based
+on model capability, checked in code rather than decided by the model. `[code]`
+— `app/(chat)/api/chat/route.ts` lines 269-278, 306-316.
 
 ## 4. Delegation
 
-**Flat, tidak ada subagent.** Tidak ditemukan mekanisme spawn-agent-lain,
-task-tool, atau handoff di `app/(chat)/api/chat/route.ts` maupun `lib/ai/`
-— satu `streamText` call, satu model, tool dijalankan inline dalam loop SDK
-yang sama. `[inferred]` — dari tidak ditemukannya modul subagent/delegation
-di direktori yang dibaca.
+**Flat, no subagents.** No spawn-another-agent mechanism, task tool, or handoff
+was found in `app/(chat)/api/chat/route.ts` or `lib/ai/` — one `streamText`
+call, one model, tools executed inline within the same SDK loop. `[inferred]` —
+from the absence of any subagent/delegation module in the directories read.
 
 ## 5. State & resume
 
-- **Transkrip**: tabel `message` (`Message_v2`) di Postgres, dikonversi
-  bolak-balik lewat `convertToModelMessages`/`convertToUIMessages`. `[code]`
-  — `lib/db/schema.ts` baris 42, `lib/utils.ts` (fungsi `convertToUIMessages`
-  dirujuk di import `route.ts` baris 43).
-- **Artefak berversi**: tabel `document` pakai **composite primary key
-  `(id, createdAt)`** — tiap edit dokumen adalah **row baru**, bukan
-  `UPDATE` di tempat; `suggestion` mereferensikan versi dokumen spesifik
-  lewat `(documentId, documentCreatedAt)`. Ini pola versioning
-  append-only yang persis cocok dengan "S3/GCS + row metadata, permanen,
-  berversi" di §8.1 spec desain (di sini row Postgres, bukan object
-  store, tapi prinsip append-only-nya sama). `[code]` — `lib/db/schema.ts`
-  baris 73-114.
-- **Resume stream**: tabel `stream` + `createStreamId({chatId, streamId})`
-  + `resumable-stream` (paket npm `resumable-stream`,
-  `createResumableStreamContext`). **Bersyarat eksplisit ke `REDIS_URL`**:
-  `if (!process.env.REDIS_URL) { return; }` sebelum
-  `streamContext.createNewResumableStream(...)` dipanggil — tanpa Redis,
-  resume stream **diam-diam tidak aktif** (bukan error, bukan fallback
-  otomatis). `[code]` — `app/(chat)/api/chat/route.ts` baris 405-421.
-  Endpoint reattach `GET /api/chat/[id]/stream` di source yang dibaca
-  **hanya mengembalikan `Response(null, {status: 204})`** — badan endpoint
-  yang biasanya membaca `streamContext.resumableStream(...)` untuk
-  menyambung koneksi terputus tidak ada isinya di snapshot yang dikloning.
-  `[code]` — `app/(chat)/api/chat/[id]/stream/route.ts` (utuh, 3 baris).
-  **Temuan kejujuran**: ini kontras dengan ekspektasi umum "Vercel
-  ai-chatbot = contoh resumable stream lengkap" — di commit yang dibaca,
-  jalur reattach GET tampak sebagai stub/placeholder, bukan implementasi
-  aktif. Tidak diverifikasi apakah ini regresi sementara, refactor
-  sedang berjalan, atau reattach sudah dipindah ke mekanisme lain
-  (mis. client polling `getMessagesByChatId`) — disebut sebagai
-  ketidakpastian, bukan diklaim sebagai bug. `[code]` (isi file apa
-  adanya) + `[inferred]` (interpretasi penyebab).
+- **The transcript**: the `message` table (`Message_v2`) in Postgres, converted
+  back and forth through `convertToModelMessages`/`convertToUIMessages`.
+  `[code]` — `lib/db/schema.ts` line 42, `lib/utils.ts` (the
+  `convertToUIMessages` function referenced in the `route.ts` import at line
+  43).
+- **Versioned artifacts**: the `document` table uses a **composite primary key
+  `(id, createdAt)`** — every document edit is a **new row**, not an in-place
+  `UPDATE`; `suggestion` references a specific document version through
+  `(documentId, documentCreatedAt)`. This is an append-only versioning pattern
+  matching "S3/GCS + metadata rows, permanent, versioned" in design spec §8.1
+  exactly (here Postgres rows rather than an object store, but the append-only
+  principle is the same). `[code]` — `lib/db/schema.ts` lines 73-114.
+- **Stream resume**: a `stream` table + `createStreamId({chatId, streamId})` +
+  `resumable-stream` (the npm package `resumable-stream`,
+  `createResumableStreamContext`). **Explicitly conditional on `REDIS_URL`**:
+  `if (!process.env.REDIS_URL) { return; }` before
+  `streamContext.createNewResumableStream(...)` is called — without Redis,
+  stream resume is **silently inactive** (not an error, not an automatic
+  fallback). `[code]` — `app/(chat)/api/chat/route.ts` lines 405-421. The
+  reattach endpoint `GET /api/chat/[id]/stream` in the source read **only
+  returns `Response(null, {status: 204})`** — the endpoint body that would
+  normally read `streamContext.resumableStream(...)` to splice a dropped
+  connection has no content in the cloned snapshot. `[code]` —
+  `app/(chat)/api/chat/[id]/stream/route.ts` (in full, 3 lines). **An honest
+  finding**: this contrasts with the common expectation of "Vercel ai-chatbot =
+  the complete resumable stream example" — at the commit read, the GET reattach
+  path appears to be a stub/placeholder rather than an active implementation.
+  Whether this is a temporary regression, a refactor in progress, or reattach
+  having moved to another mechanism (e.g. client polling of
+  `getMessagesByChatId`) was not verified — stated as an uncertainty rather
+  than claimed as a bug. `[code]` (the file's contents as they are) +
+  `[inferred]` (the interpretation of its cause).
 
 ## 6. Safety gate
 
-Tidak ada gerbang approval per-tool (tool yang tersedia adalah pembuatan
-konten, bukan aksi destruktif/shell). Gerbang yang ada beroperasi di level
-**request**, bukan level tool-call: `checkBotId` (deteksi bot sebelum proses
-jalan) dan `checkIpRateLimit` dipanggil di awal `POST` handler, plus
-`entitlementsByUserType` yang membatasi kuota model per tipe user. `[code]`
-— import `botid/server`, `checkIpRateLimit`,
-`entitlementsByUserType` di `app/(chat)/api/chat/route.ts` baris 15, 40-41.
-Tidak ada sandbox eksekusi kode — artifact "code" hanya *menyimpan* teks
-kode, tidak ada bukti eksekusi kode di server dalam file yang dibaca.
+There is no per-tool approval gate (the available tools create content rather
+than performing destructive/shell actions). The gates that exist operate at the
+**request** level rather than the tool-call level: `checkBotId` (bot detection
+before processing runs) and `checkIpRateLimit` are called at the start of the
+`POST` handler, plus `entitlementsByUserType` limiting model quota per user
+type. `[code]` — the `botid/server`, `checkIpRateLimit`, and
+`entitlementsByUserType` imports in `app/(chat)/api/chat/route.ts` lines 15,
+40-41. There is no code execution sandbox — a "code" artifact merely *stores*
+code text, with no evidence of server-side code execution in the files read.
 `[inferred]`.
 
 ## 7. Capability routing & policy
 
-**Deterministik di kode, berbasis metadata model — bukan judgment model,
-bukan classifier terlatih, bukan manifest per-request.** Satu-satunya
-percabangan kapabilitas yang ditemukan: `activeTools: isReasoningModel &&
-!supportsTools ? [] : [...5 tool tetap]` — properti model
-(`isReasoningModel`, `supportsTools`, keduanya field statis dari katalog
-model di `lib/ai/models.ts`) menentukan tool surface, dievaluasi tiap
-request tapi hasilnya deterministik untuk model yang sama. `[code]` —
-`app/(chat)/api/chat/route.ts` baris 269-278; `getCapabilities`,
-`getModelAvailability` diimpor dari `lib/ai/models.ts` (baris 18-19).
+**Deterministic in code, based on model metadata — not model judgement, not a
+trained classifier, not a per-request manifest.** The only capability branch
+found: `activeTools: isReasoningModel && !supportsTools ? [] : [...5 fixed
+tools]` — model properties (`isReasoningModel`, `supportsTools`, both static
+fields from the model catalogue in `lib/ai/models.ts`) determine the tool
+surface, evaluated per request but deterministic for the same model. `[code]` —
+`app/(chat)/api/chat/route.ts` lines 269-278; `getCapabilities` and
+`getModelAvailability` imported from `lib/ai/models.ts` (lines 18-19).
 
-Tidak ada mekanisme skill/mode routing tambahan (tidak ada registry skill,
-tidak ada handoff antar-agent) — cakupan capability routing di sistem ini
-jauh lebih sempit dibanding `deepagents`/OpenHands/LibreChat karena memang
-hanya satu agent, satu tool set tetap. `[inferred]` — dari cakupan
-`lib/ai/` yang dibaca (`tools/`, `models.ts`, `prompts.ts`, `providers.ts`).
+There is no additional skill/mode routing mechanism (no skill registry, no
+inter-agent handoff) — this system's capability routing scope is far narrower
+than `deepagents`/OpenHands/LibreChat's because it genuinely has one agent and
+one fixed tool set. `[inferred]` — from the scope of `lib/ai/` read (`tools/`,
+`models.ts`, `prompts.ts`, `providers.ts`).
 
-## Sumber
+## Sources
 
-Repo `vercel/ai-chatbot` dikloning shallow (`git clone --depth 1`)
-2026-08-23 dan dibaca langsung sebagai file:
+The `vercel/ai-chatbot` repo was shallow-cloned (`git clone --depth 1`) on
+2026-08-23 and read directly as files:
 
-- `app/(chat)/api/chat/route.ts` — utuh (470 baris): import (1-45),
-  `getStreamContext`/`createResumableStreamContext` (13, 60-68),
-  `POST` handler, `streamText` call (260-330), `consumeSseStream` +
-  gate `REDIS_URL` (405-425)
-- `app/(chat)/api/chat/[id]/stream/route.ts` — utuh (3 baris)
-- `app/(chat)/api/chat/schema.ts` — nama file dikonfirmasi, isi tak dibaca
-  detail
-- `lib/artifacts/server.ts` — baris 1-50 (`DocumentHandler`,
-  `createDocumentHandler`, tipe `CreateDocumentCallbackProps`)
-- `lib/db/schema.ts` — baris 28-134 (`chat`, `message`, `vote`,
-  `document`, `suggestion`, `stream` — nama tabel & primary key)
-- `lib/ai/tools/*.ts` — listing (`create-document.ts`, `edit-document.ts`,
+- `app/(chat)/api/chat/route.ts` — in full (470 lines): the imports (1-45),
+  `getStreamContext`/`createResumableStreamContext` (13, 60-68), the `POST`
+  handler, the `streamText` call (260-330), `consumeSseStream` + the
+  `REDIS_URL` gate (405-425)
+- `app/(chat)/api/chat/[id]/stream/route.ts` — in full (3 lines)
+- `app/(chat)/api/chat/schema.ts` — its filename confirmed, contents not read
+  in detail
+- `lib/artifacts/server.ts` — lines 1-50 (`DocumentHandler`,
+  `createDocumentHandler`, the `CreateDocumentCallbackProps` type)
+- `lib/db/schema.ts` — lines 28-134 (`chat`, `message`, `vote`, `document`,
+  `suggestion`, `stream` — table names & primary keys)
+- `lib/ai/tools/*.ts` — a listing (`create-document.ts`, `edit-document.ts`,
   `get-weather.ts`, `request-suggestions.ts`, `update-document.ts`)
-- `package.json` baris 22-40 (`ai@7.0.15`, `@ai-sdk/react@4.0.16`,
+- `package.json` lines 22-40 (`ai@7.0.15`, `@ai-sdk/react@4.0.16`,
   `@ai-sdk/provider@4.0.2`, `@ai-sdk/otel@1.0.15`)
 
-Catatan kejujuran: `lib/ai/models.ts`, `lib/ai/prompts.ts`,
-`lib/ai/providers.ts`, dan isi tiga `artifacts/*/server.ts`
-(`code/server.ts`, `sheet/server.ts`, `text/server.ts`) hanya dikutip lewat
-import/listing, **tidak** dibaca isinya penuh — klaim `isReasoningModel`/
-`supportsTools` sebagai field statis di `models.ts` disimpulkan dari nama
-fungsi `getCapabilities`/`getModelAvailability`, bukan dari membaca definisi
-tipe langsung.
+An honesty note: `lib/ai/models.ts`, `lib/ai/prompts.ts`,
+`lib/ai/providers.ts`, and the contents of the three `artifacts/*/server.ts`
+files (`code/server.ts`, `sheet/server.ts`, `text/server.ts`) were only cited
+through imports/listings and **not** read in full — the claim that
+`isReasoningModel`/`supportsTools` are static fields in `models.ts` is inferred
+from the `getCapabilities`/`getModelAvailability` function names rather than
+from reading the type definitions directly.
