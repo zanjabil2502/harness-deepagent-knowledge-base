@@ -5,20 +5,21 @@ description: Emit quantitative data as a validated ```chart JSON block so the ap
 
 # Emit quantitative data as a `chart` block
 
-## Kapan dipakai
+## When to use it
 
-Pakai saat yang penting adalah **bentuk angkanya**, bukan angka persisnya:
-tren sepanjang waktu, perbandingan besaran antar kategori, komposisi sebuah
-total.
+Use it when what matters is the **shape of the numbers** rather than their
+exact values: a trend over time, a comparison of magnitudes across categories,
+the composition of a total.
 
-Jangan pakai kalau pembaca butuh membaca nilai persis — itu tabel
-(`tag-table`). Jangan pakai untuk satu-dua angka; kalimat lebih jelas.
-Kalau dua-duanya perlu (bentuk **dan** nilai), pancarkan chart lalu tabel,
-bukan chart dengan label nilai di tiap titik.
+Don't use it when the reader needs to read exact values — that is a table
+(`tag-table`). Don't use it for one or two numbers; a sentence is clearer. If
+both are needed (the shape **and** the values), emit a chart then a table
+rather than a chart with a value label on every point.
 
-## Bentuk
+## The shape
 
-Blok berpagar dengan info string `chart`, isinya JSON tunggal.
+A fenced block with the info string `chart`, its content a single JSON
+document.
 
 ````
 ```chart
@@ -40,46 +41,50 @@ Blok berpagar dengan info string `chart`, isinya JSON tunggal.
 ```
 ````
 
-### Field
+(As in `tag-table`, the example's labels are Indonesian on purpose while its
+keys stay language-neutral.)
 
-| Field | Wajib | Isi |
+### The fields
+
+| Field | Required | Content |
 |---|---|---|
-| `v` | ya | Versi skema. Selalu `1`. |
-| `type` | ya | `line` \| `bar` \| `area` \| `pie` \| `scatter`. |
-| `x.key` | ya | Identifier netral bahasa untuk sumbu kategori/waktu. |
-| `x.label` | ya | Teks sumbu, dalam bahasa percakapan. |
-| `x.type` | tidak | `date` \| `text` \| `number`. Default `text`. |
-| `series[].key` | ya | Identifier netral bahasa; jadi kunci di tiap objek `data`. |
-| `series[].label` | ya | Nama seri di legenda, dalam bahasa percakapan. |
-| `series[].unit` | tidak | Satuan (`user`, `IDR`, `%`, `ms`). Renderer memakainya untuk sumbu dan tooltip. |
-| `data[]` | ya | Objek berisi `x.key` plus tiap `series[].key`. |
-| `caption` | tidak | Satu baris penjelas. |
-| `note` | tidak | Sumber, asumsi, atau batasan data. |
+| `v` | yes | The schema version. Always `1`. |
+| `type` | yes | `line` \| `bar` \| `area` \| `pie` \| `scatter`. |
+| `x.key` | yes | A language-neutral identifier for the category/time axis. |
+| `x.label` | yes | The axis text, in the conversation's language. |
+| `x.type` | no | `date` \| `text` \| `number`. Defaults to `text`. |
+| `series[].key` | yes | A language-neutral identifier; it becomes the key in each `data` object. |
+| `series[].label` | yes | The series name in the legend, in the conversation's language. |
+| `series[].unit` | no | The unit (`user`, `IDR`, `%`, `ms`). The renderer uses it for the axis and tooltips. |
+| `data[]` | yes | Objects containing `x.key` plus each `series[].key`. |
+| `caption` | no | One explanatory line. |
+| `note` | no | The data's source, assumptions, or limits. |
 
-Untuk `pie`, pakai tepat **satu** seri; tiap entri `data` jadi satu irisan.
+For `pie`, use exactly **one** series; each `data` entry becomes one slice.
 
-## Aturan
+## The rules
 
-**Kunci netral bahasa, label ikut bahasa percakapan** — sama persis dengan
-`tag-table`. Ganti bahasa berarti mengganti `label`, tidak pernah `key`.
+**Keys are language-neutral, labels follow the conversation's language** —
+exactly as in `tag-table`. Changing language means changing `label`, never
+`key`.
 
-**Satuan campur butuh sumbu terpisah atau chart terpisah.** Menaruh rupiah
-dan persen di satu sumbu menghasilkan grafik yang menyesatkan. Kalau
-satuannya berbeda skala, pancarkan dua blok.
+**Mixed units need separate axes or separate charts.** Putting currency and
+percentages on one axis produces a misleading graph. If the units differ in
+scale, emit two blocks.
 
-**Angka mentah, tanpa format.** `1240`, bukan `"1.240"`. Persen sebagai
-angka apa adanya (`12.4` dengan `"unit": "%"`), bukan `0.124`.
+**Raw numbers, unformatted.** `1240`, not `"1,240"`. Percentages as the number
+itself (`12.4` with `"unit": "%"`), not `0.124`.
 
-**Titik data terurut** menurut `x`. Renderer tidak mengurutkan ulang.
+**Data points ordered** by `x`. The renderer doesn't re-sort them.
 
-**Nilai hilang ditulis `null`**, bukan `0`. Nol adalah pengukuran; `null`
-adalah ketiadaan pengukuran, dan garis yang menukik ke nol karena data
-belum masuk adalah kebohongan grafis.
+**Missing values are written `null`**, not `0`. Zero is a measurement; `null`
+is the absence of one, and a line diving to zero because the data hasn't
+arrived yet is a graphical lie.
 
-**Di atas ~200 titik data, jangan inline** — agregasi dulu (per minggu, per
-bulan), atau simpan sebagai artefak.
+**Above ~200 data points, don't inline it** — aggregate first (per week, per
+month), or store it as an artifact.
 
-## Setelah blok
+## After the block
 
-Satu-dua kalimat yang menyatakan apa yang ditunjukkan bentuknya — arah
-tren, titik belok, kesenjangan antar seri. Bukan pembacaan ulang angka.
+One or two sentences stating what the shape shows — the trend's direction, an
+inflection point, a gap between series. Not a re-reading of the numbers.

@@ -5,20 +5,20 @@ description: Emit structure and process as a ```mermaid block so the app renders
 
 # Emit structure as a `mermaid` block
 
-## Kapan dipakai
+## When to use it
 
-Pakai saat yang dijelaskan adalah **hubungan antar hal**, dan hubungan itu
-sulit diikuti dalam kalimat: percabangan alur, urutan pesan antar
-komponen, transisi state, relasi entitas, hierarki.
+Use it when what is being explained is **the relationships between things**,
+and those relationships are hard to follow in sentences: branching flows, the
+order of messages between components, state transitions, entity
+relationships, hierarchies.
 
-Jangan pakai untuk daftar berurutan sederhana — daftar bernomor lebih
-mudah dibaca dan lebih murah. Jangan pakai untuk data kuantitatif; itu
-`tag-chart`.
+Don't use it for a simple ordered list — a numbered list reads more easily and
+costs less. Don't use it for quantitative data; that is `tag-chart`.
 
-## Bentuk
+## The shape
 
-Blok berpagar dengan info string `mermaid` — bukan `diagram`. Tag ini
-sudah standar de facto dan renderer di mana-mana sudah mengenalinya.
+A fenced block with the info string `mermaid` — not `diagram`. That tag is
+already a de facto standard and renderers everywhere recognise it.
 
 ````
 ```mermaid
@@ -33,37 +33,38 @@ flowchart TD
 ```
 ````
 
-Jenis yang dipakai paling sering: `flowchart` (alur dan percabangan),
-`sequenceDiagram` (urutan pesan antar aktor), `stateDiagram-v2` (transisi
-state), `erDiagram` (relasi entitas), `classDiagram` (struktur tipe).
+(The example's labels are Indonesian on purpose while its node IDs stay
+language-neutral — the rule below.)
 
-## Aturan
+The most frequently used kinds: `flowchart` (flows and branching),
+`sequenceDiagram` (the order of messages between actors), `stateDiagram-v2`
+(state transitions), `erDiagram` (entity relationships), `classDiagram` (type
+structure).
 
-**ID node netral bahasa, label ikut bahasa percakapan.** ID (`submit`,
-`validate`) adalah identifier; teks dalam kurung yang dibaca manusia.
-Diagram yang sama diterjemahkan dengan mengganti label saja.
+## The rules
 
-**Jangan pakai `click`.** Direktif itu menautkan atau memanggil callback
-di browser pembaca, dan renderer yang aman menolaknya. Kalau sebuah node
-perlu tautan, tulis tautannya di prosa setelah blok.
+**Node IDs are language-neutral, labels follow the conversation's language.**
+An ID (`submit`, `validate`) is an identifier; the text in brackets is what a
+human reads. Translating the same diagram means changing only its labels.
 
-**Jangan menyisipkan HTML di label.** Sebagian konfigurasi Mermaid
-mengizinkannya; renderer yang benar tidak. Label adalah teks polos.
+**Don't use `click`.** That directive links out or invokes a callback in the
+reader's browser, and a safe renderer refuses it. If a node needs a link,
+write that link in the prose after the block.
 
-**Tanda kutip untuk label yang memuat karakter khusus.** Kurung, koma,
-titik dua, dan `-` di dalam label mematahkan parser kecuali dibungkus
-`["..."]`.
+**Don't embed HTML in labels.** Some Mermaid configurations allow it; a
+correct renderer doesn't. Labels are plain text.
 
-**Batasi sekitar 15-20 node.** Di atas itu diagram jadi tidak terbaca di
-lebar chat. Pecah jadi beberapa diagram menurut lapisan atau fase, atau
-simpan sebagai artefak.
+**Quote labels containing special characters.** Brackets, commas, colons, and
+`-` inside a label break the parser unless wrapped in `["..."]`.
 
-**Arah yang konsisten.** `TD` untuk alur dan hierarki, `LR` untuk pipeline
-dan lini masa. Mencampurnya dalam satu jawaban membuat pembaca kehilangan
-orientasi.
+**Keep it to around 15-20 nodes.** Beyond that a diagram becomes unreadable at
+chat width. Split it into several diagrams by layer or phase, or store it as
+an artifact.
 
-## Setelah blok
+**Consistent direction.** `TD` for flows and hierarchies, `LR` for pipelines
+and timelines. Mixing them within one answer disorients the reader.
 
-Satu-dua kalimat yang menunjuk **jalur yang penting** — cabang mana yang
-biasa terjadi, di mana letak keputusannya. Bukan penyebutan ulang tiap
-node.
+## After the block
+
+One or two sentences pointing at **the path that matters** — which branch is
+the common one, where the decision sits. Not a re-listing of every node.

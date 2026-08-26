@@ -5,19 +5,19 @@ description: Emit mathematical expressions as LaTeX in a ```math block so the ap
 
 # Emit mathematics as a `math` block
 
-## Kapan dipakai
+## When to use it
 
-Pakai saat notasinya **membawa arti** yang hilang kalau ditulis sebagai
-teks biasa: pecahan, akar, sigma, integral, matriks, subskrip/superskrip,
-huruf Yunani.
+Use it when the notation **carries meaning** that is lost written as ordinary
+text: fractions, roots, sigmas, integrals, matrices, subscripts/superscripts,
+Greek letters.
 
-Jangan pakai untuk aritmetika sederhana yang terbaca jelas dalam kalimat
-("naik 12% dari 1.240 jadi 1.390"). Notasi untuk hal yang tidak butuh
-notasi memperlambat pembaca.
+Don't use it for simple arithmetic that reads clearly in a sentence ("up 12%
+from 1,240 to 1,390"). Notation for something that needs no notation slows the
+reader down.
 
-## Bentuk
+## The shape
 
-Persamaan tersendiri memakai blok berpagar `math`, tanpa `$$` di dalamnya:
+A standalone equation uses a fenced `math` block, with no `$$` inside it:
 
 ````
 ```math
@@ -25,34 +25,32 @@ Persamaan tersendiri memakai blok berpagar `math`, tanpa `$$` di dalamnya:
 ```
 ````
 
-Simbol yang menyatu dalam kalimat memakai `$…$` inline: "bobot $w_i$
-menormalkan tiap komponen". Jangan memakai blok untuk satu simbol; jangan
-memakai inline untuk persamaan bertingkat.
+A symbol embedded in a sentence uses inline `$…$`: "the weight $w_i$
+normalises each component". Don't use a block for a single symbol; don't use
+inline for a multi-level equation.
 
-## Aturan
+## The rules
 
-**Definisikan tiap simbol.** Setelah blok, sebutkan arti tiap variabel dan
-satuannya. Rumus tanpa daftar simbol tidak bisa diverifikasi pembaca.
+**Define every symbol.** After the block, state what each variable means and
+its units. A formula with no symbol list can't be verified by the reader.
 
-**Nama variabel netral bahasa, penjelasannya ikut bahasa percakapan.**
-Simbol matematika sudah universal — jangan menerjemahkan $x$ jadi $k$
-karena bahasanya berganti. Yang diterjemahkan cuma prosa penjelasnya dan
-isi `\text{…}`.
+**Variable names are language-neutral, their explanation follows the
+conversation's language.** Mathematical symbols are already universal — don't
+translate $x$ into $k$ because the language changed. What gets translated is
+only the explanatory prose and the content of `\text{…}`.
 
-**Bungkus kata dengan `\text{…}`.** Kata polos dalam mode matematika
-dirender sebagai perkalian huruf demi huruf: `skor` jadi $s\cdot k\cdot
-o\cdot r$.
+**Wrap words in `\text{…}`.** A bare word in math mode renders as a
+letter-by-letter multiplication: `skor` becomes $s\cdot k\cdot o\cdot r$.
 
-**Jangan pakai `\href`, `\includegraphics`, `\input`, atau `\write`.**
-Semuanya menjangkau di luar matematika dan ditolak renderer yang aman.
+**Don't use `\href`, `\includegraphics`, `\input`, or `\write`.** All of them
+reach beyond mathematics and are refused by a safe renderer.
 
-**Batasi pada makro standar** yang dikenal KaTeX/MathJax. Paket LaTeX
-lengkap (`amsmath` di luar himpunan umum, `tikz`, environment kustom)
-tidak tersedia di renderer web dan gagal diam-diam atau memunculkan blok
-merah.
+**Stick to the standard macros** KaTeX/MathJax knows. Full LaTeX packages
+(`amsmath` beyond the common set, `tikz`, custom environments) aren't
+available in a web renderer and either fail silently or produce a red block.
 
-**Turunan bertahap memakai `aligned`**, satu langkah per baris,
-disejajarkan pada tanda `=`:
+**Step-by-step derivations use `aligned`**, one step per line, aligned on the
+`=`:
 
 ````
 ```math
@@ -63,11 +61,10 @@ disejajarkan pada tanda `=`:
 ```
 ````
 
-**Satu persamaan satu blok.** Dua rumus yang tidak berhubungan adalah dua
-blok dengan prosa di antaranya, bukan satu blok berbaris ganda.
+**One equation per block.** Two unrelated formulas are two blocks with prose
+between them, not one block with multiple lines.
 
-## Setelah blok
+## After the block
 
-Nyatakan **apa yang dilakukan rumus itu** dalam satu kalimat, lalu daftar
-simbolnya. Pembaca yang tidak bisa mengurai notasinya tetap harus paham
-maksudnya.
+State **what the formula does** in one sentence, then list its symbols. A
+reader who can't parse the notation must still understand its point.
