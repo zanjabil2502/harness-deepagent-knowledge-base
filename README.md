@@ -111,7 +111,7 @@ If using the symlink:
 
 ```bash
 git pull
-python3 tools/check_kb.py     # the structural gate; must print "OK: semua cek lulus"
+python3 tools/check_kb.py     # the structural gate; must print "OK: all checks passed"
 ```
 
 ## How to use it
@@ -228,7 +228,7 @@ Run it from the repo root:
 python3 tools/check_kb.py
 ```
 
-A successful run prints `OK: semua cek lulus`, exit code 0. Run it after
+A successful run prints `OK: all checks passed`, exit code 0. Run it after
 adding or editing any file under `references/`, `SKILL.md`, or `README.md`.
 
 ## The deepagents source graph (optional)
