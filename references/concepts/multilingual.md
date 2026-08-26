@@ -1,248 +1,252 @@
 # Multilingual
 
-## Masalah
+## Problem
 
-Multilingual biasanya direduksi jadi "terjemahkan UI-nya" — string tombol dan
-label diterjemahkan, lalu tim menganggap sistem sudah multibahasa. Itu
-menutup satu permukaan dari sebuah loop agent yang punya banyak titik yang
-diam-diam mengasumsikan satu bahasa (dan hampir selalu, bahasa Inggris):
-regex guardrail yang divalidasi terhadap format identitas AS, classifier
-deteksi injection yang dilatih dominan korpus Inggris, golden test yang
-cuma ditulis dalam satu bahasa, dan kalkulasi budget token yang diam-diam
-mengasumsikan rasio token-per-kata bahasa Latin. Tiap titik ini gagal
-**senyap** — tidak ada error, cuma perilaku yang lebih buruk untuk user di
-bahasa yang kalah cakupan, dan itu baru ketahuan setelah user melapor.
+Multilingual is usually reduced to "translate the UI" — button strings and
+labels are translated, and the team considers the system multilingual. That
+covers one surface of an agent loop with many points quietly assuming one
+language (and almost always English): guardrail regexes validated against US
+identity formats, injection detection classifiers trained predominantly on
+English corpora, golden tests written in only one language, and token budget
+calculations quietly assuming a Latin-language tokens-per-word ratio. Each of
+these fails **silently** — no error, only worse behaviour for users in the
+under-covered language, discovered only after a user reports it.
 
-Masalah kedua, independen: kalau routing/kebijakan digantungkan ke *frasa*
-bahasa alami ("kalau user bilang X, lakukan Y"), setiap penambahan bahasa
-baru berarti menulis ulang seluruh permukaan yang menggantung ke frasa itu.
-[`skill-composition.md`](skill-composition.md) §Masalah sudah menamai versi
-sempit masalah ini untuk trigger skill; file ini memperluasnya ke pipeline
-penuh (spec §8.6): masalahnya bukan cuma skill mana yang dipicu, tapi *tiap*
-titik keputusan sepanjang loop yang kebetulan dibaca dari teks bahasa
-pengguna alih-alih dari kode yang sudah dinetralkan.
+The second problem, independent of the first: if routing/policy hangs on
+natural language *phrases* ("if the user says X, do Y"), every new language
+means rewriting every surface hanging on those phrases.
+[`skill-composition.md`](skill-composition.md) §Problem already names the
+narrow version of this for skill triggering; this file widens it to the full
+pipeline (spec §8.6): the problem isn't only which skill is triggered but
+*every* decision point along the loop that happens to read the user's
+language text rather than an already-neutralised code.
 
-Asumsi proyek ini (multi-user, cloud + on-prem) berarti basis user
-lintas-bahasa adalah kasus **default**, bukan edge case yang ditambal
-belakangan. Spec §9 menegaskan ini lewat cara lain: multilingual bukan salah
-satu dari 7 sumbu `systems/`, ia kolom catatan di INDEX — **ketiadaan**
-desain multilingual di sebuah sistem itu sendiri temuan yang wajib dicatat,
-bukan default yang aman.
+This project's assumption (multi-user, cloud + on-prem) makes a
+cross-language user base the **default** case, not an edge case patched
+later. Spec §9 stresses this another way: multilingual isn't one of the 7
+`systems/` axes, it is a notes column in the INDEX — the **absence** of
+multilingual design in a system is itself a finding worth recording, not a
+safe default.
 
-## Pola
+## Pattern
 
-### Pipeline: pisahkan intent dari ekspresi (spec §8.6)
+### The pipeline: separate intent from expression (spec §8.6)
 
 ```
-input (bahasa apa pun)
+input (any language)
    │
    ▼
-[1] klasifikasi intent          — model/classifier baca teks apa adanya
-   │                               (bahasa apa pun, campuran sekalipun)
+[1] intent classification       — a model/classifier reads the text as-is
+   │                               (any language, even mixed)
    ▼
-[2] kode netral (mis. "deploy.request", "research.legal")
-   │                               ── nol bahasa mulai titik ini ──
+[2] a neutral code (e.g. "deploy.request", "research.legal")
+   │                               ── zero languages from this point on ──
    ▼
-[3] lookup policy/skill BY KODE  — pencocokan string, bukan pencocokan frasa
-   │                               (lihat skill-composition.md §`intents`
-   │                               memakai kode netral)
+[3] policy/skill lookup BY CODE  — string matching, not phrase matching
+   │                               (see skill-composition.md §`intents`
+   │                               uses neutral codes)
    ▼
-[4] eksekusi                     — tool beroperasi atas nilai terstruktur/
-   │                               kode, tidak pernah atas teks bahasa mentah
+[4] execution                    — tools operate on structured values/codes,
+   │                               never on raw language text
    ▼
-[5] render output di locale user — lokalisasi terjadi SEKALI, di ujung
+[5] render output in the user's locale — localisation happens ONCE, at the end
 ```
 
-Titik krusial: garis antara [2] dan [3] adalah garis "nol bahasa" — begitu
-teks user sudah menjadi kode intent, tidak ada satu pun keputusan kebijakan/
-routing di sisa pipeline yang boleh membaca teks bahasa lagi. Ini `[ours]` —
-mengikuti spec §8.6 proyek ini secara literal; vanilla-nya (dan yang kita
-simpang) adalah pipeline satu-lapis yang umum di produk chatbot: prompt
-sistem berisi instruksi routing dalam bahasa alami ("kalau user minta X,
-panggil tool Y"), dan model membaca instruksi + pesan user dalam bahasa yang
-sama sepanjang alur — bahasa bocor ke setiap keputusan karena tidak pernah
-ada titik potong eksplisit. Kita menyimpang karena vanilla itu berarti
-menguji *setiap* keputusan kebijakan terhadap *setiap* bahasa yang didukung
-untuk tahu apakah routing masih benar — biaya uji tumbuh kali jumlah bahasa
-di titik yang seharusnya tidak peduli bahasa sama sekali.
+The crucial point: the line between [2] and [3] is the "zero language" line
+— once the user's text has become an intent code, no policy/routing decision
+in the remainder of the pipeline may read language text again. This is
+`[ours]` — following this project's spec §8.6 literally; vanilla (and what
+we diverge from) is the single-layer pipeline common in chatbot products: a
+system prompt holding routing instructions in natural language ("if the user
+asks for X, call tool Y"), with the model reading instructions + user
+messages in the same language throughout — language leaks into every
+decision because there is never an explicit cut point. We diverge because
+that vanilla means testing *every* policy decision against *every* supported
+language to know whether routing is still correct — test cost multiplying by
+language count at points that should not care about language at all.
 
-Detail mekanisme kode intent dan manifest skill (`intents: [...]`, resolusi
-`extends`/`precedence`) **dimiliki penuh oleh
-[`skill-composition.md`](skill-composition.md)** — file ini tidak
-mengulanginya, cuma menempatkannya sebagai satu simpul ([3]) dalam pipeline
-yang lebih besar. Bentuk data policy yang dituju lookup [3] dimiliki
+The intent code mechanism's details and the skill manifest (`intents: [...]`,
+`extends`/`precedence` resolution) are **owned entirely by
+[`skill-composition.md`](skill-composition.md)** — this file doesn't repeat
+them, only places them as one node ([3]) in a larger pipeline. The policy
+data shape that lookup [3] targets is owned by
 [`policy-as-data.md`](policy-as-data.md).
 
-### Locale adalah konteks kelas satu di session, bukan tebakan per turn
+### Locale is first-class session context, not a per-turn guess
 
-Locale (preferensi bahasa render output user — `id`, `en`, dst.) **ditetapkan
-sekali** saat sesi/percakapan dibuat (dari profil user, header
-`Accept-Language`, atau pilihan eksplisit), lalu **dibawa sebagai bagian
-konteks session**, bukan disimpulkan ulang dari tiap pesan yang masuk.
+The locale (the user's output rendering language preference — `id`, `en`,
+etc.) is **set once** when the session/conversation is created (from the user
+profile, the `Accept-Language` header, or an explicit choice), then **carried
+as part of the session context** rather than re-inferred from each incoming
+message.
 
-Alasan ini bukan preferensi gaya: dua sumber sinyal yang berbeda gampang
-tertukar kalau locale ditebak ulang per turn —
+The reason isn't stylistic preference: two different signal sources are
+easily conflated if the locale is re-guessed per turn —
 
-- **Bahasa pesan** — bahasa yang kebetulan dipakai user di satu turn
-  tertentu. Input pipeline (tahap [1] di atas) memang harus menangani ini
-  apa adanya, termasuk campuran bahasa dalam satu pesan.
-- **Locale render** — bahasa yang user *harapkan* dipakai sistem untuk
-  membalas, menampilkan pesan error, dan seterusnya.
+- **The message's language** — whichever language the user happened to use
+  in one particular turn. The pipeline's input (stage [1] above) must handle
+  this as-is, including mixed languages within one message.
+- **The rendering locale** — the language the user *expects* the system to
+  reply in, display error messages in, and so on.
 
-Kalau locale ditebak ulang dari bahasa pesan terakhir, satu kalimat berbahasa
-Inggris di tengah percakapan Indonesia (mis. user menempel potongan log
-error berbahasa Inggris) bisa membuat balasan sistem berikutnya diam-diam
-berganti bahasa — bug yang terlihat seperti "fitur pintar" tapi sebenarnya
-locale yang tidak stabil. Locale sebagai field session yang dipersist
-memutus ketergantungan itu: bahasa pesan individual tetap bebas berganti-
-ganti (ditangani classifier intent), tapi locale render tidak ikut berubah
-kecuali user mengubahnya secara eksplisit.
+If the locale is re-guessed from the last message's language, one English
+sentence in the middle of an Indonesian conversation (e.g. the user pasting
+an English error log) can silently switch the system's next reply's language
+— a bug that looks like a "smart feature" but is really an unstable locale.
+A persisted session field for the locale breaks that dependency: individual
+message languages remain free to vary (handled by the intent classifier),
+but the rendering locale doesn't change unless the user changes it
+explicitly.
 
-Secara skema, ini artinya locale layak jadi kolom di lapis session/percakapan
-milik [`persistence-schema.md`](persistence-schema.md) (mis. `conversations.
-locale` atau `users.locale` sebagai default, bisa di-override per
-percakapan) — file itu belum mendeklarasikan kolom ini di DDL-nya; ini
-tambahan yang disarankan file ini, bukan koreksi atas skema yang sudah ada.
+Schema-wise, this means the locale deserves a column in the
+session/conversation layer owned by
+[`persistence-schema.md`](persistence-schema.md) (e.g. `conversations.locale`,
+or `users.locale` as a default overridable per conversation) — that file
+doesn't yet declare this column in its DDL; it is an addition this file
+recommends, not a correction to the existing schema.
 
-### Yang dilokalkan, dan yang tidak (spec §8.6)
+### What is localised, and what isn't (spec §8.6)
 
-| Dilokalkan | Tidak dilokalkan |
+| Localised | Not localised |
 |---|---|
-| Leksikon guardrail (regex, daftar kata moderasi) | Instruksi sistem/prompt inti |
-| Few-shot example | Nama kode intent, nama tool, skema data |
-| Template output (format tanggal/mata uang, salam) | Skema policy/manifest skill |
-| Pesan error user-facing | Log internal, trace observability |
+| Guardrail lexicons (regexes, moderation word lists) | Core system/prompt instructions |
+| Few-shot examples | Intent code names, tool names, data schemas |
+| Output templates (date/currency formats, greetings) | Policy/skill manifest schemas |
+| User-facing error messages | Internal logs, observability traces |
 
-Instruksi sistem **tidak perlu diterjemahkan** — ini konsekuensi langsung
-dari pipeline di atas: model yang sama membaca satu system prompt (bahasa
-apa pun ia ditulis, biasanya bahasa tim) dan tetap bisa mengklasifikasi
-intent dari input berbahasa apa pun serta merender output di locale yang
-diminta, karena instruksi routing/kebijakan sudah dipindah ke kode netral,
-bukan hidup sebagai prosa yang harus "dipahami" model dalam bahasa yang sama
-dengan user. Yang **wajib** dilokalkan adalah permukaan yang langsung
-membaca atau ditampilkan ke user: leksikon guardrail, few-shot, template
-output, pesan error.
+System instructions **need no translation** — a direct consequence of the
+pipeline above: the same model reads one system prompt (in whatever language
+it is written, usually the team's) and can still classify intent from input
+in any language and render output in the requested locale, because
+routing/policy instructions have been moved into neutral codes rather than
+living as prose the model must "understand" in the same language as the
+user. What **must** be localised is the surface that directly reads from or
+is shown to the user: guardrail lexicons, few-shots, output templates, error
+messages.
 
-### Tabel titik yang terkunci bahasa
+### The table of language-locked points
 
-Tiap baris adalah satu titik penegakan/keputusan yang berperilaku beda per
-bahasa kalau tidak ditangani eksplisit. Kolom "Pemilik" menunjuk file yang
-memegang detail teknis titik itu — file ini tidak mengulanginya, cuma
-menegaskan sudut pandang multibahasa-nya.
+Each row is an enforcement/decision point that behaves differently per
+language unless handled explicitly. The "Owner" column names the file
+holding that point's technical detail — this file doesn't repeat it, only
+stresses the multilingual angle.
 
-| # | Titik | Kenapa terkunci bahasa | Pemilik detail |
+| # | Point | Why it is language-locked | Detail owner |
 |---|---|---|---|
-| 1 | Trigger skill | Deskripsi skill yang jadi dasar judgment model (`SkillsMiddleware`) atau frasa `intents` yang ditulis satu bahasa gagal cocok untuk ekspresi setara di bahasa lain — lihat `## Di deepagents` untuk kenapa mekanisme bawaan `deepagents` sendiri murni judgment model atas teks, bukan kode | [`skill-composition.md`](skill-composition.md) §`intents` memakai kode netral |
-| 2 | Regex guardrail | Format identitas nasional berbeda struktur, bukan cuma beda panjang — NIK (16 digit: kode provinsi+kab/kota+kecamatan+tanggal lahir+nomor urut) dan NPWP (format `XX.XXX.XXX.X-XXX.XXX`, 15 digit lama / 16 digit NIK-terpadu baru) **bukan** SSN AS (`XXX-XX-XXXX`, 9 digit). `[inferred]` — format NIK/NPWP di sini pengetahuan umum, tidak diverifikasi terhadap dokumen resmi Ditjen Dukcapil/Ditjen Pajak di task ini; poin strukturalnya (beda format, bukan cuma beda panjang, jadi regex SSN tidak otomatis menutupnya) yang wajib dipegang, bukan digit persisnya. Regex yang divalidasi cuma terhadap pola SSN akan false-negative total terhadap NIK/NPWP (tidak pernah cocok, jadi tidak pernah meredaksi data yang sebenarnya PII) dan berpotensi false-positive kebetulan (9 digit acak di tengah NIK 16 digit bisa kebetulan cocok pola lain yang tidak relevan). Daftar/lexicon moderasi konten juga overwhelmingly berbahasa Inggris — kata kunci abuse/kekerasan yang di-curate untuk Inggris tidak otomatis menutup padanan di bahasa lain | [`guardrails.md`](guardrails.md) titik 1 & 4 (PII, moderasi) — file itu memiliki mekanisme enforcement (`PIIMiddleware`, dsb.); file ini menambahkan syarat: leksikon/regex per bahasa/negara wajib eksplisit, bukan satu set generik yang kebetulan ditulis untuk satu negara |
-| 3 | Deteksi injection & jailbreak | Classifier keamanan (Llama Guard dkk., lihat `guardrails.md` §Bertingkat) dilatih dominan korpus Inggris; payload injection yang ditulis dalam bahasa lain, atau di-*code-switch* di tengah kalimat, punya recall lebih rendah pada model yang sama — bukan karena model "tidak paham" bahasa itu, tapi karena distribusi data latih untuk *tugas keamanan spesifik* ini condong ke Inggris `[inferred]` (pola umum kinerja model keamanan lintas-bahasa; klaim spesifik "Llama Guard mendukung 8 bahasa" ada di `guardrails.md`, akurasi per-bahasa untuk kelas serangan ini tidak diklaim di sana) | [`security.md`](security.md) §Prompt injection, [`guardrails.md`](guardrails.md) titik 1 |
-| 4 | Golden-test eval | Golden set satu bahasa buta total (bukan cuma kurang sensitif) terhadap regresi di bahasa lain — perubahan yang merusak bahasa Indonesia sambil bahasa Inggris tetap baik menghasilkan nol sinyal di suite berbahasa Inggris saja | [`evaluation.md`](evaluation.md) §Kewajiban eval multibahasa — dimiliki penuh di sana, dikutip di sini sebagai satu baris tabel karena ia instrumen **pengukuran** untuk seluruh baris lain di tabel ini (butir 1-3, 5 semuanya butuh golden set berlabel bahasa untuk tahu apakah mereka sungguh berfungsi lintas bahasa) |
-| 5 | Kalibrasi budget token | Bahasa non-Latin/non-spasi (aksara Jawa, Han, Thai, dst.) dan bahasa aglutinatif memakan token jauh lebih banyak per kata/karakter dibanding bahasa Latin berspasi — tokenizer BPE yang di-fit dominan korpus Inggris memecah kata non-Inggris jadi lebih banyak subword token. Threshold yang dikalibrasi dari contoh berbahasa Inggris (batas kompaksi `SummarizationMiddleware`, `ToolCallLimitMiddleware`/`ModelCallLimitMiddleware` yang dihitung dari estimasi token per giliran, lihat `cost-control.md` dan `context-engineering.md`) memicu kompaksi/pemotongan lebih cepat untuk percakapan bahasa lain pada jumlah *kata* yang setara — pengalaman user jadi berbeda kualitasnya semata karena bahasa yang mereka pakai, bukan isi percakapannya | Tidak dimiliki file lain di KB ini — ground baru; `context-engineering.md`/`cost-control.md` memiliki mekanisme kompaksi/limitnya, file ini menambahkan syarat: threshold itu wajib dikalibrasi (atau diukur) per bahasa yang benar-benar dipakai produksi, bukan diwarisi dari default yang dihitung dari korpus contoh berbahasa Inggris |
+| 1 | Skill triggering | The skill description underpinning the model's judgement (`SkillsMiddleware`), or `intents` phrases written in one language, fails to match an equivalent expression in another — see `## In deepagents` for why `deepagents`' own built-in mechanism is purely model judgement over text, not codes | [`skill-composition.md`](skill-composition.md) §`intents` uses neutral codes |
+| 2 | Guardrail regexes | National identity formats differ in structure, not just length — Indonesia's NIK (16 digits: province+regency/city+district codes+date of birth+sequence) and NPWP (the format `XX.XXX.XXX.X-XXX.XXX`, 15 digits in the old form / 16 digits in the new NIK-integrated form) are **not** a US SSN (`XXX-XX-XXXX`, 9 digits). `[inferred]` — the NIK/NPWP formats here are general knowledge, not verified against official Ditjen Dukcapil/Ditjen Pajak documents in this task; what matters is the structural point (a different format, not merely a different length, so an SSN regex doesn't automatically cover it), not the exact digits. A regex validated only against the SSN pattern will false-negative entirely against NIK/NPWP (never matching, therefore never redacting data that genuinely is PII) and can incidentally false-positive (9 random digits inside a 16-digit NIK can coincidentally match another irrelevant pattern). Content moderation lists/lexicons are also overwhelmingly English — abuse/violence keywords curated for English don't automatically cover their equivalents in other languages | [`guardrails.md`](guardrails.md) points 1 & 4 (PII, moderation) — that file owns the enforcement mechanisms (`PIIMiddleware`, etc.); this file adds the requirement: per-language/per-country lexicons and regexes must be explicit, not one generic set that happens to have been written for one country |
+| 3 | Injection & jailbreak detection | Security classifiers (Llama Guard and peers, see `guardrails.md` §Tiered) are trained predominantly on English corpora; an injection payload written in another language, or *code-switched* mid-sentence, has lower recall on the same model — not because the model "doesn't understand" that language, but because the training data distribution for *this specific security task* skews English `[inferred]` (a general pattern in cross-language security model performance; the specific "Llama Guard supports 8 languages" claim is in `guardrails.md`, which claims no per-language accuracy for this attack class) | [`security.md`](security.md) §Prompt injection, [`guardrails.md`](guardrails.md) point 1 |
+| 4 | Golden-test eval | A single-language golden set is entirely blind (not merely less sensitive) to regressions in other languages — a change breaking Indonesian while English stays fine produces zero signal in an English-only suite | [`evaluation.md`](evaluation.md) §The multilingual eval obligation — owned in full there, cited here as one table row because it is the **measurement** instrument for every other row in this table (points 1-3 and 5 all need a language-labelled golden set to know whether they genuinely work across languages) |
+| 5 | Token budget calibration | Non-Latin/non-space-separated languages (Javanese script, Han, Thai, etc.) and agglutinative languages consume far more tokens per word/character than space-separated Latin ones — a BPE tokenizer fitted predominantly on English corpora splits non-English words into more subword tokens. Thresholds calibrated from English examples (`SummarizationMiddleware`'s compaction limit, `ToolCallLimitMiddleware`/`ModelCallLimitMiddleware` computed from per-turn token estimates, see `cost-control.md` and `context-engineering.md`) trigger compaction/truncation sooner for conversations in other languages at an equivalent *word* count — the user's experience differs in quality purely because of the language they use, not the conversation's content | Not owned by another file in this KB — new ground; `context-engineering.md`/`cost-control.md` own the compaction/limit mechanisms, and this file adds the requirement: those thresholds must be calibrated (or measured) per language actually used in production, not inherited from defaults computed on an English example corpus |
 
-## Trade-off
+## Trade-offs
 
-- **Klasifikasi intent + deteksi bahasa dalam satu panggilan model vs dua
-  langkah terpisah** — satu panggilan gabungan lebih murah (satu round-trip)
-  tapi mencampur dua mode kegagalan berbeda jadi satu sinyal: kalau hasilnya
-  salah, tidak langsung jelas apakah kode intent-nya salah atau bahasa yang
-  terdeteksi salah, menyulitkan debug per-bahasa dari eval golden set (butir
-  4 di atas). Dua langkah terpisah bisa didiagnosis independen (ukur akurasi
-  deteksi bahasa dan akurasi klasifikasi intent secara terpisah) dengan
-  biaya latensi/token dua kali lipat di setiap turn.
-- **Locale dipersist sekali di session vs disimpulkan ulang tiap turn** —
-  dipersist stabil dan murah (satu lookup, bukan satu klasifikasi per turn)
-  tapi butuh mekanisme eksplisit untuk user mengubahnya (tidak otomatis
-  mengikuti kalau user pindah bahasa secara sengaja untuk seluruh sesi
-  berikutnya); disimpulkan ulang otomatis adaptif terhadap perubahan itu tapi
-  rentan flip-flop dari satu kalimat campuran bahasa seperti dijelaskan di
-  atas — proyek ini memilih dipersist karena flip-flop locale render dinilai
-  lebih mengganggu daripada friksi kecil "ubah locale lewat pengaturan".
-- **Lokalkan seluruh system prompt per locale vs lokalkan cuma leksikon/
-  template/error (keputusan spec §8.6)** `[ours]` — vanilla di banyak
-  produk multibahasa: system prompt diterjemahkan penuh ke tiap locale yang
-  didukung, satu file per bahasa. Itu gampang dinalar (satu prompt = satu
-  bahasa, konsisten) tapi biayanya kali jumlah locale untuk setiap perubahan
-  prompt (skill baru, kebijakan baru → tulis ulang N terjemahan, jaga tetap
-  sinkron — persis penyakit duplikasi yang dinamai `skill-composition.md`
-  §Masalah, cuma di lapis prompt bukan lapis skill), dan kualitas
-  instruction-following model untuk prompt yang diterjemahkan tidak
-  terjamin setara dengan prompt aslinya. Kita menyimpang: system prompt
-  tetap satu (pipeline sudah memisahkan bahasa dari keputusan, lihat
-  `## Pola`), yang dilokalkan cuma permukaan yang memang ditulis untuk
-  dibaca/dilihat user — biayanya jadi kali jumlah locale hanya untuk
-  permukaan itu, bukan seluruh prompt.
+- **Intent classification + language detection in one model call vs two
+  separate steps** — one combined call is cheaper (one round trip) but mixes
+  two different failure modes into one signal: if the result is wrong, it
+  isn't immediately clear whether the intent code or the detected language
+  was wrong, complicating per-language debugging from golden set eval (point
+  4 above). Two separate steps can be diagnosed independently (measuring
+  language detection accuracy and intent classification accuracy separately)
+  at the cost of doubled latency/tokens on every turn.
+- **A locale persisted once in the session vs re-inferred each turn** —
+  persisted is stable and cheap (one lookup, not a classification per turn)
+  but needs an explicit mechanism for the user to change it (it doesn't
+  automatically follow when the user deliberately switches language for the
+  rest of the session); automatic re-inference adapts to that change but is
+  prone to flip-flopping from one mixed-language sentence as described above
+  — this project chooses persisted, judging rendering-locale flip-flop more
+  disruptive than the small friction of "change the locale in settings".
+- **Localising the whole system prompt per locale vs localising only
+  lexicons/templates/errors (the spec §8.6 decision)** `[ours]` — vanilla in
+  many multilingual products: the system prompt is fully translated into
+  every supported locale, one file per language. That is easy to reason
+  about (one prompt = one language, consistent) but costs a multiple of the
+  locale count for every prompt change (a new skill, a new policy → rewrite
+  N translations and keep them in sync — exactly the duplication ailment
+  named in `skill-composition.md` §Problem, only at the prompt layer rather
+  than the skill layer), and a translated prompt's instruction-following
+  quality isn't guaranteed equal to the original's. We diverge: the system
+  prompt stays single (the pipeline has already separated language from
+  decisions, see `## Pattern`), and only surfaces genuinely written to be
+  read or seen by users are localised — so the multiple of locale count
+  applies to those surfaces alone, not the whole prompt.
 
-## Di deepagents
+## In deepagents
 
-`deepagents` tidak punya mekanisme bahasa/locale bawaan apa pun — tidak ada
-parameter `locale`, tidak ada klasifier intent, tidak ada terjemahan
-otomatis. Yang relevan dari primitif yang sudah ada:
+`deepagents` has no built-in language/locale mechanism at all — no `locale`
+parameter, no intent classifier, no automatic translation. What is relevant
+among the existing primitives:
 
-- **`SkillsMiddleware` murni judgment model atas teks deskripsi** (lihat
-  [`../systems/deepagents.md`](../systems/deepagents.md) §7) — tidak ada
-  classifier kode bawaan yang memetakan intent ke skill. Ini persis titik 1
-  tabel di atas: kalau tim mengandalkan mekanisme bawaan `deepagents` apa
-  adanya (deskripsi skill ditulis satu bahasa, model menilai kecocokan
-  langsung dari teks user), cakupan bahasanya terikat seberapa lengkap
-  deskripsi itu menyebut variasi lintas bahasa. Pipeline nol-bahasa di
-  `## Pola` (klasifikasi intent → kode → lookup `intents` manifest,
-  `skill-composition.md`) harus dibangun **di depan** `SkillsMiddleware`
-  sebagai lapisan tambahan aplikasi — `deepagents` tidak menyediakannya.
-  `[code]` — dikutip `../systems/deepagents.md` §7 (`deepagents/middleware/skills.py`).
-- **`context_schema` + `Runtime[ContextT]`** adalah primitif konkret paling
-  pas untuk "locale sebagai konteks kelas satu di session, bukan tebakan
-  per turn": `create_deep_agent(..., context_schema=Context)` mendefinisikan
-  *"immutable run-scoped context"* — sebuah dataclass/`TypedDict` yang
-  ditetapkan sekali saat run dimulai (mis. `Context(user_id=..., locale=...)`)
-  dan dibaca lewat `runtime.context.locale` dari middleware/tool mana pun
-  sepanjang run, tanpa perlu dihitung ulang. Ini bukan mekanisme locale
-  bawaan — `deepagents`/`langgraph` tidak tahu apa itu "locale", field-nya
-  murni yang aplikasi definisikan sendiri — tapi bentuknya (immutable,
-  run-scoped, dibaca lewat `Runtime`) persis kontrak yang dibutuhkan §Locale
-  di atas. `[code]` — `deepagents/graph.py` baris 282, 543 (docstring
-  parameter `context_schema`: *"Schema class that defines immutable
-  run-scoped context"*), `langgraph/runtime.py` kelas `Runtime` (*"This
-  class is injected into graph nodes and middleware... `context`, `store`,
-  `stream_writer`..."*). Pola pemakaian `Runtime` untuk field per-user
-  serupa sudah dipakai di `StoreBackend(namespace=lambda rt: (rt.server_info.
-  user.identity,))` yang dikutip `../systems/deepagents.md` §Backend
-  filesystem — bukti bahwa jalur `Runtime.context`/`Runtime.server_info`
-  memang jalur yang dipakai untuk data per-sesi seperti ini, bukan usulan
-  baru yang tidak konsisten dengan pola `deepagents` yang sudah ada.
-- Tidak ada middleware bawaan yang mengalibrasi threshold token
-  (`compute_summarization_defaults` di `SummarizationMiddleware`, lihat
-  `../systems/deepagents.md` §2) per bahasa — perhitungannya murni berbasis
-  `max_input_tokens` profil model, tidak sadar bahasa konten yang dihitung.
-  `[inferred]` — disimpulkan dari tidak ditemukannya parameter bahasa di
-  signature `create_summarization_middleware`/`compute_summarization_defaults`
-  yang dikutip `../systems/deepagents.md` §2; kalibrasi per-bahasa (titik 5
-  tabel di atas) harus dilakukan aplikasi lewat pengukuran token riil per
-  locale, bukan disediakan otomatis oleh middleware.
+- **`SkillsMiddleware` is purely model judgement over description text**
+  (see [`../systems/deepagents.md`](../systems/deepagents.md) §7) — there is
+  no built-in code classifier mapping intents to skills. This is exactly
+  point 1 of the table above: if a team relies on `deepagents`' built-in
+  mechanism as-is (skill descriptions written in one language, the model
+  judging the match directly from the user's text), its language coverage is
+  bound to how completely those descriptions name cross-language variants.
+  The zero-language pipeline in `## Pattern` (intent classification → code →
+  manifest `intents` lookup, `skill-composition.md`) has to be built **in
+  front of** `SkillsMiddleware` as an additional application layer —
+  `deepagents` doesn't provide it. `[code]` — cited from
+  `../systems/deepagents.md` §7 (`deepagents/middleware/skills.py`).
+- **`context_schema` + `Runtime[ContextT]`** is the concrete primitive best
+  suited to "locale as first-class session context, not a per-turn guess":
+  `create_deep_agent(..., context_schema=Context)` defines *"immutable
+  run-scoped context"* — a dataclass/`TypedDict` set once when the run
+  starts (e.g. `Context(user_id=..., locale=...)`) and read through
+  `runtime.context.locale` from any middleware/tool throughout the run,
+  needing no recomputation. This isn't a built-in locale mechanism —
+  `deepagents`/`langgraph` know nothing about "locale"; the fields are
+  purely what the application defines — but its shape (immutable,
+  run-scoped, read through `Runtime`) is exactly the contract §Locale above
+  needs. `[code]` — `deepagents/graph.py` lines 282, 543 (the
+  `context_schema` parameter's docstring: *"Schema class that defines
+  immutable run-scoped context"*), `langgraph/runtime.py`'s `Runtime` class
+  (*"This class is injected into graph nodes and middleware... `context`,
+  `store`, `stream_writer`..."*). The same use of `Runtime` for a similar
+  per-user field already appears in
+  `StoreBackend(namespace=lambda rt: (rt.server_info.user.identity,))` cited
+  from `../systems/deepagents.md` §Filesystem backend — evidence that
+  `Runtime.context`/`Runtime.server_info` is indeed the route used for
+  per-session data like this, not a new suggestion inconsistent with
+  existing `deepagents` patterns.
+- No built-in middleware calibrates token thresholds
+  (`compute_summarization_defaults` in `SummarizationMiddleware`, see
+  `../systems/deepagents.md` §2) per language — the computation is purely
+  based on the model profile's `max_input_tokens`, unaware of the language
+  of the content being counted. `[inferred]` — concluded from the absence of
+  any language parameter in the
+  `create_summarization_middleware`/`compute_summarization_defaults`
+  signatures cited in `../systems/deepagents.md` §2; per-language
+  calibration (point 5 of the table above) must be done by the application
+  through real per-locale token measurement, not provided automatically by
+  the middleware.
 
-## Sumber
+## Sources
 
-- `[ours]` Spec proyek §8.6 — pipeline intent/ekspresi, tabel titik terkunci
-  bahasa, dan aturan "locale kelas satu, bukan tebakan per turn" adalah
-  keputusan desain proyek ini, dikutip dan diperluas di file ini.
-- `[code]` [`skill-composition.md`](skill-composition.md) §`intents` memakai
-  kode netral, §Dasar → turunan lewat manifest deklaratif — dikutip untuk
-  simpul [3] pipeline, tidak diulang detailnya.
-- `[code]` [`evaluation.md`](evaluation.md) §Kewajiban eval multibahasa —
-  dikutip untuk titik 4 tabel, tidak diulang detailnya.
-- `[code]` [`guardrails.md`](guardrails.md) titik 1 & 4 (PII, moderasi),
-  §Bertingkat (Llama Guard dukungan 8 bahasa) — dikutip untuk titik 2 & 3
-  tabel.
-- `[code]` [`security.md`](security.md) §Prompt injection — dikutip untuk
-  titik 3 tabel.
-- `[code]` [`persistence-schema.md`](persistence-schema.md) — dikutip untuk
-  usulan kolom locale di lapis session; skema DDL itu sendiri tidak diubah
-  di file ini.
+- `[ours]` This project's spec §8.6 — the intent/expression pipeline, the
+  language-locked points table, and the "locale is first-class, not a
+  per-turn guess" rule are this project's design decisions, cited and
+  extended in this file.
+- `[code]` [`skill-composition.md`](skill-composition.md) §`intents` uses
+  neutral codes, §Base → derived through a declarative manifest — cited for
+  pipeline node [3], details not repeated.
+- `[code]` [`evaluation.md`](evaluation.md) §The multilingual eval
+  obligation — cited for table point 4, details not repeated.
+- `[code]` [`guardrails.md`](guardrails.md) points 1 & 4 (PII, moderation),
+  §Tiered (Llama Guard's 8-language support) — cited for table points 2 & 3.
+- `[code]` [`security.md`](security.md) §Prompt injection — cited for table
+  point 3.
+- `[code]` [`persistence-schema.md`](persistence-schema.md) — cited for the
+  proposed locale column in the session layer; that DDL itself is unchanged
+  by this file.
 - `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §2, §7,
-  §Backend filesystem — tier-1 reference terverifikasi, dikutip langsung
-  tanpa membaca ulang source `deepagents` di task ini.
-- `[code]` `deepagents/graph.py` baris 282, 543 — dibaca langsung dari
+  §Filesystem backend — a verified tier-1 reference, cited directly without
+  re-reading the `deepagents` source in this task.
+- `[code]` `deepagents/graph.py` lines 282, 543 — read directly from
   `references/recipes/.venv/lib/python3.13/site-packages/deepagents/graph.py`
-  untuk memverifikasi docstring parameter `context_schema`.
-- `[code]` `langgraph/runtime.py` — dibaca langsung dari
+  to verify the `context_schema` parameter's docstring.
+- `[code]` `langgraph/runtime.py` — read directly from
   `references/recipes/.venv/lib/python3.13/site-packages/langgraph/runtime.py`
-  untuk memverifikasi kontrak kelas `Runtime` (run-scoped, immutable
-  `context`).
+  to verify the `Runtime` class contract (run-scoped, immutable `context`).
