@@ -546,7 +546,7 @@ longer appear in the `grep`, so numbers 1 and 17 are deliberately empty.
 | 9 | `archetypes/07-computer-use-agent.md:100` | Verification through prompt convention | D-07 |
 | 10 | `archetypes/README.md:54` | Deployment separated from the archetype taxonomy | taxonomy, not `deepagents` |
 | 11 | `systems/INDEX.md:92` | Meta: why the `[ours]` label exists | meta |
-| 12-16 | `scaffolds/_base.md:56,77,160,450,493` | The `Orchestrator` protocol; `namespace` from the application `Scope` rather than `rt.server_info.user.identity`; `AsyncConnectionPool`; inline turn execution in the SSE generator | **:160 → D-08 (highest risk)**; the rest is application architecture, outside `deepagents` |
+| 12-16 | `scaffolds/_base.md:58,80,166,456,499` | The `Orchestrator` protocol; `namespace` from the application `Scope` rather than `rt.server_info.user.identity`; `AsyncConnectionPool`; inline turn execution in the SSE generator | **:160 → D-08 (highest risk)**; the rest is application architecture, outside `deepagents` |
 | — | `scaffolds/deltas/01-workspace-agent.md` | Derived from D-01 | **withdrawn**, now `[code]` |
 | 18-19 | `scaffolds/deltas/02-generative-builder.md:25,37` | Derived from #2 | D-02 |
 | 20 | `scaffolds/deltas/03-general-task-agent.md:24` | Derived from #3 | D-03 |

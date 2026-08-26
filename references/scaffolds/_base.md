@@ -1,38 +1,38 @@
-# Scaffold dasar (`_base`)
+# The base scaffold (`_base`)
 
-Spesifikasi + snippet terverifikasi untuk struktur project production-grade
-yang **arketipe-agnostik** — bukan template repo untuk `cp -r`
-(desain §3 spec internal proyek, tidak ikut di-repo).
-Ketujuh file di `deltas/` masing-masing **hanya** menuliskan selisihnya
-terhadap file ini — baca `_base.md` dulu, delta tidak mengulang isinya.
+A specification plus verified snippets for an **archetype-agnostic**
+production-grade project structure — not a template repo to `cp -r`
+(design §3 of the project's internal spec, which isn't shipped in the repo).
+Each of the seven files in `deltas/` writes **only** its difference from this
+file — read `_base.md` first; the deltas don't repeat its contents.
 
-Asumsi mengikuti kendala global KB ini: multi-user (`user_id`) hari ini,
-multi-tenant sebagai jalur migrasi; cloud dan on-prem; Python + FastAPI;
-Postgres.
+Its assumptions follow this KB's global constraints: multi-user (`user_id`)
+today with multi-tenancy as a migration path; cloud and on-prem; Python +
+FastAPI; Postgres.
 
-## Pohon direktori
+## The directory tree
 
 ```
 app/
-├── main.py                         # App factory + lifespan (startup/shutdown)
-├── config.py                       # Konfigurasi env (lihat §Config & secrets)
+├── main.py                         # The app factory + lifespan (startup/shutdown)
+├── config.py                       # Env configuration (see §Config & secrets)
 ├── api/
-│   ├── deps.py                     # build_orchestrator()/get_orchestrator() -- satu titik binding
+│   ├── deps.py                     # build_orchestrator()/get_orchestrator() -- the single binding point
 │   ├── middleware/
-│   │   └── scope.py                # ScopeMiddleware -- user_id dari auth -> Scope
+│   │   └── scope.py                # ScopeMiddleware -- user_id from auth -> Scope
 │   └── routes/
 │       ├── health.py               # /healthz, /readyz
 │       └── turns.py                # POST /turns, GET /turns/{id}/events (SSE)
 ├── orchestrator/
-│   ├── interface.py                # Protocol Orchestrator, Scope, TurnEvent
-│   └── deepagents_orchestrator.py  # Implementasi default: bungkus create_deep_agent
+│   ├── interface.py                # The Orchestrator Protocol, Scope, TurnEvent
+│   └── deepagents_orchestrator.py  # The default implementation: wrapping create_deep_agent
 ├── db/
-│   ├── session.py                  # Pool app-data + SET LOCAL app.current_user_id (RLS)
-│   └── checkpointer.py             # Factory checkpointer eksternal (Postgres)
+│   ├── session.py                  # The app-data pool + SET LOCAL app.current_user_id (RLS)
+│   └── checkpointer.py             # The external checkpointer factory (Postgres)
 ├── observability/
-│   └── otel.py                     # Tracer + label enduser.id
+│   └── otel.py                     # The tracer + the enduser.id label
 └── lifecycle/
-    └── drain.py                    # Gauge in-flight turn + graceful drain
+    └── drain.py                    # The in-flight turn gauge + graceful drain
 Dockerfile
 k8s/
 ├── deployment.yaml
@@ -41,44 +41,47 @@ pyproject.toml
 uv.lock
 ```
 
-Tidak ada folder `executor/`/`retrieval/` terpisah — alasannya di section
-berikutnya: dua dari tiga jahitan itu sudah disediakan `deepagents` sendiri,
-membuat direktori baru untuk mengulangnya adalah duplikasi, bukan struktur.
+There are no separate `executor/`/`retrieval/` folders — the reason is in the
+next section: two of the three seams are already provided by `deepagents`
+itself, so creating new directories to repeat them would be duplication, not
+structure.
 
-## Batas modul: orchestrator / executor / retrieval di balik interface
+## Module boundaries: orchestrator / executor / retrieval behind interfaces
 
-`serving-topology.md` §Modular monolith dengan jahitan dipotong menuntut
-empat syarat supaya klaim "pisah nanti tinggal ganti binding" benar-benar
-berlaku. `_base` memenuhi keempatnya lewat tiga batas berikut:
+`serving-topology.md` §A modular monolith with the seams cut demands four
+conditions for the "splitting later is just a binding change" claim to
+genuinely hold. `_base` satisfies all four through the following three
+boundaries:
 
-| Batas | Interface | Siapa yang menyediakan |
+| Boundary | Interface | Who provides it |
 |---|---|---|
-| **Orchestrator** | `Orchestrator` (Protocol, `orchestrator/interface.py`) | `_base` sendiri — `deepagents` **tidak** menyediakan seam ini (lihat kutipan `[ours]` di kode di bawah) |
-| **Tool executor** | `SandboxBackendProtocol` | Sudah disediakan `deepagents` — dipasang lewat parameter `backend=` |
-| **Retrieval / state durable** | `StoreBackend`/`CompositeBackend` (`namespace=...`) | Sudah disediakan `deepagents` — dipasang lewat parameter `backend=` |
+| **The orchestrator** | `Orchestrator` (a Protocol, `orchestrator/interface.py`) | `_base` itself — `deepagents` does **not** provide this seam (see the `[ours]` quotation in the code below) |
+| **The tool executor** | `SandboxBackendProtocol` | Already provided by `deepagents` — installed through the `backend=` parameter |
+| **Retrieval / durable state** | `StoreBackend`/`CompositeBackend` (`namespace=...`) | Already provided by `deepagents` — installed through the `backend=` parameter |
 
-`[code]` — dua baris terakhir dikutip `../systems/deepagents.md` §Backend
-filesystem dan `../concepts/serving-topology.md` §Di deepagents: hanya
-`StoreBackend`, `CompositeBackend`, dan `ContextHubBackend` yang punya *hook*
-scoping eksplisit; `StateBackend`/`FilesystemBackend`/`LocalShellBackend`
-tidak. `_base` tidak menulis ulang kontrak backend `deepagents` sebagai
-interface baru — itu duplikasi definisi yang sudah ada. Yang `_base` tulis
-sendiri cuma seam **Orchestrator**, karena itulah satu-satunya dari ketiga
-jahitan yang `deepagents` sengaja tidak putuskan untuknya (lihat
-`## Di deepagents` `resource-profiling.md`/`serving-topology.md`: "ke mana
-pun graph di-invoke adalah keputusan aplikasi sepenuhnya").
+`[code]` — the last two rows are cited from `../systems/deepagents.md`
+§Filesystem backend and `../concepts/serving-topology.md` §In deepagents: only
+`StoreBackend`, `CompositeBackend`, and `ContextHubBackend` have an explicit
+scoping *hook*; `StateBackend`/`FilesystemBackend`/`LocalShellBackend` don't.
+`_base` doesn't rewrite `deepagents`' backend contract as a new interface —
+that would duplicate an existing definition. The only seam `_base` writes
+itself is the **Orchestrator**, because it is the only one of the three that
+`deepagents` deliberately leaves undecided (see `## In deepagents` in
+`resource-profiling.md`/`serving-topology.md`: "wherever that graph is invoked
+is entirely an application decision").
 
 ```python
-"""Orchestrator interface -- seam antara API layer dan graph deepagents.
+"""The Orchestrator interface -- the seam between the API layer and the
+deepagents graph.
 
-deepagents TIDAK menyediakan seam ini: ke mana pun graph di-invoke (satu
-proses FastAPI, satu Job Kubernetes, satu worker antrean) adalah keputusan
-aplikasi sepenuhnya di luar deepagents (concepts/serving-topology.md, ##
-Di deepagents). Protocol ini [ours] mengisi kekosongan itu -- vanilla-nya
-route handler memanggil create_deep_agent()/.astream() langsung; kita
-menyimpang supaya route (app/api/routes/turns.py) memanggil orchestrator
-lewat kontrak eksplisit, bukan mengimpor modul deepagents langsung -- syarat
-1 "modular monolith dengan jahitan dipotong" (serving-topology.md §8.3).
+deepagents does NOT provide this seam: wherever the graph is invoked (one
+FastAPI process, one Kubernetes Job, one queue worker) is entirely an
+application decision outside deepagents (concepts/serving-topology.md, ## In
+deepagents). This Protocol [ours] fills that gap -- vanilla has the route
+handler call create_deep_agent()/.astream() directly; we diverge so the route
+(app/api/routes/turns.py) calls the orchestrator through an explicit contract
+rather than importing deepagents modules directly -- condition 1 of "a modular
+monolith with the seams cut" (serving-topology.md §8.3).
 """
 from __future__ import annotations
 
@@ -89,18 +92,20 @@ from typing import Any, Protocol
 
 @dataclass(frozen=True)
 class Scope:
-    """Scope object literal dari isolation-and-scoping.md -- (user_id,) hari
-    ini, (tenant_id, user_id) setelah migrasi multi-tenant. Semua panggilan
-    lintas interface di file ini membawa Scope eksplisit sebagai parameter,
-    bukan ambient state (thread-local/proses) -- syarat 4 modular monolith."""
+    """The literal scope object from isolation-and-scoping.md -- (user_id,)
+    today, (tenant_id, user_id) after the multi-tenant migration. Every
+    cross-interface call in this file carries Scope explicitly as a parameter
+    rather than as ambient state (a thread-local/process global) -- condition
+    4 of the modular monolith."""
 
     user_id: str
 
 
 @dataclass(frozen=True)
 class TurnEvent:
-    """Amplop event persis skema streaming-protocol.md -- dataclass murni,
-    serializable ke JSON tanpa transformasi (syarat 2 modular monolith)."""
+    """The event envelope, exactly the streaming-protocol.md schema -- a plain
+    dataclass, JSON-serializable with no transformation (condition 2 of the
+    modular monolith)."""
 
     event_id: str
     turn_id: str
@@ -110,38 +115,38 @@ class TurnEvent:
 
 
 class Orchestrator(Protocol):
-    """Kontrak orchestrator. Implementasi konkret ada di
-    deepagents_orchestrator.py; app/api/routes/turns.py hanya bergantung pada
-    Protocol ini lewat Depends(get_orchestrator) -- mengganti implementasi
-    (proses lokal hari ini, network call ke service terpisah nanti, lihat
-    serving.md §Migrasi) berarti ganti body build_orchestrator() di satu
-    titik (app/api/deps.py), bukan menulis ulang routes.
+    """The orchestrator contract. The concrete implementation is in
+    deepagents_orchestrator.py; app/api/routes/turns.py depends only on this
+    Protocol through Depends(get_orchestrator) -- swapping the implementation
+    (a local process today, a network call to a separate service later, see
+    serving.md §Migrating) means changing build_orchestrator()'s body at one
+    point (app/api/deps.py), not rewriting routes.
     """
 
     async def run_turn(
         self, scope: Scope, turn_id: str, thread_id: str, user_input: str
     ) -> AsyncIterator[TurnEvent]:
-        """Jalankan satu turn, yield TurnEvent progresif.
+        """Run one turn, yielding TurnEvents progressively.
 
-        thread_id = conversations.id (persistence-schema.md), diteruskan
-        sebagai LangGraph thread_id ke checkpointer -- konvensi yang sama
-        yang sudah dipatok isolation-and-scoping.md §Di deepagents.
+        thread_id = conversations.id (persistence-schema.md), passed as the
+        LangGraph thread_id to the checkpointer -- the same convention
+        isolation-and-scoping.md §In deepagents already pins down.
         """
         ...
 ```
 
-Implementasi default membungkus `create_deep_agent` — inilah baseline aman
-tiap delta arketipe mulai dari sini dan **mengganti** parameter
-`create_deep_agent(...)`-nya, bukan menulis ulang kelas:
+The default implementation wraps `create_deep_agent` — this is the safe
+baseline each archetype delta starts from and **replaces**
+`create_deep_agent(...)` parameters in, rather than rewriting the class:
 
 ```python
-"""Implementasi Orchestrator (Protocol) yang membungkus create_deep_agent.
+"""The Orchestrator (Protocol) implementation wrapping create_deep_agent.
 
-Tool executor dan Retrieval/state durable TIDAK dapat interface baru di sini
--- keduanya sudah punya seam resmi dari deepagents sendiri
-(SandboxBackendProtocol, StoreBackend/CompositeBackend), dipakai apa adanya
-lewat parameter backend= di bawah. Membuat interface baru untuk itu akan
-mengulang yang sudah ada -- lihat serving-topology.md ## Di deepagents.
+The tool executor and retrieval/durable state get NO new interface here --
+both already have official seams from deepagents itself
+(SandboxBackendProtocol, StoreBackend/CompositeBackend), used as-is through
+the backend= parameter below. Creating new interfaces for them would repeat
+what exists -- see serving-topology.md ## In deepagents.
 """
 from __future__ import annotations
 
@@ -155,27 +160,27 @@ from app.orchestrator.interface import Orchestrator, Scope, TurnEvent
 
 
 def _build_backend(scope: Scope) -> StoreBackend:
-    # Namespace per-user, hook resmi StoreBackend (isolation-and-scoping.md,
-    # systems/deepagents.md §Backend filesystem). Closure atas scope
-    # (bukan rt.server_info.user.identity dari contoh dokumentasi) [ours]
-    # -- contoh dokumentasi mengasumsikan LangGraph Platform yang mengisi
-    # server_info dari auth context bawaannya; kita self-host FastAPI
-    # sendiri tanpa runtime itu, jadi user_id ditutup lewat closure saat
-    # agent dirakit per turn (pola yang sama dengan recipes/04_custom_backend.py,
-    # sudah diverifikasi Task 3), bukan dibaca dari field runtime yang tidak
-    # kita punya.
+    # A per-user namespace, StoreBackend's official hook
+    # (isolation-and-scoping.md, systems/deepagents.md §Filesystem backend).
+    # A closure over scope (rather than the documentation example's
+    # rt.server_info.user.identity) [ours] -- the documentation example
+    # assumes a LangGraph Platform filling server_info from its own auth
+    # context; we self-host FastAPI without that runtime, so user_id is
+    # closed over when the agent is assembled per turn (the same pattern as
+    # recipes/04_custom_backend.py, verified in Task 3) rather than read from
+    # a runtime field we don't have.
     return StoreBackend(namespace=lambda _rt, uid=scope.user_id: (uid,))
 
 
 class DeepAgentsOrchestrator:
-    """Implementasi default Orchestrator untuk _base -- baseline aman: tanpa
-    tools kustom, tanpa subagents, tanpa interrupt_on. Tiap delta arketipe
-    menambah/mengganti parameter create_deep_agent(...) di sini, tidak
-    menulis ulang kelas ini."""
+    """_base's default Orchestrator implementation -- a safe baseline: no
+    custom tools, no subagents, no interrupt_on. Each archetype delta
+    adds/replaces create_deep_agent(...) parameters here rather than rewriting
+    this class."""
 
     def __init__(self, model, checkpointer) -> None:
         self._model = model
-        self._checkpointer = checkpointer  # eksternal, disuntik -- lihat db/checkpointer.py
+        self._checkpointer = checkpointer  # external, injected -- see db/checkpointer.py
 
     async def run_turn(
         self, scope: Scope, turn_id: str, thread_id: str, user_input: str
@@ -202,27 +207,27 @@ class DeepAgentsOrchestrator:
             )
 ```
 
-`_base` sengaja tidak memasang `tools=`, `subagents=`, `interrupt_on=`, atau
-`memory=` — itu semua keputusan per-arketipe, lihat `deltas/01..07.md`.
-Backend baseline (`StoreBackend`, tanpa `execute`) juga sengaja tidak
-mendukung eksekusi kode — arketipe yang butuh `execute` (Workspace Agent,
-Generative Builder, Computer-Use Agent) mengganti backend ini secara
-eksplisit di delta masing-masing, bukan mewarisi kemampuan eksekusi kode
-secara diam-diam dari baseline.
+`_base` deliberately installs no `tools=`, `subagents=`, `interrupt_on=`, or
+`memory=` — those are all per-archetype decisions, see `deltas/01..07.md`.
+The baseline backend (`StoreBackend`, with no `execute`) deliberately doesn't
+support code execution either — an archetype needing `execute` (Workspace
+Agent, Generative Builder, Computer-Use Agent) swaps this backend explicitly
+in its own delta rather than silently inheriting code execution from the
+baseline.
 
-### Binding: `app/api/deps.py`
+### The binding: `app/api/deps.py`
 
-`Orchestrator` adalah Protocol — sesuatu harus memutuskan implementasi
-konkret mana yang dipakai, dan route (`api/routes/turns.py`) harus
-menerimanya lewat `Depends(...)`, bukan menjangkau `request.app.state`
-langsung. `deps.py` adalah titik tunggal itu:
+`Orchestrator` is a Protocol — something has to decide which concrete
+implementation is used, and the route (`api/routes/turns.py`) must receive it
+through `Depends(...)` rather than reaching into `request.app.state` directly.
+`deps.py` is that single point:
 
 ```python
-"""Binding point -- satu-satunya file yang berubah saat migrasi modular
-monolith -> microservice (serving.md §Yang berubah: binding). main.py
-lifespan tetap merakit resource bersama (model, checkpointer); fungsi di
-bawah ini adalah titik tunggal yang memutuskan implementasi Orchestrator
-konkret mana yang dipakai.
+"""The binding point -- the only file that changes when migrating from a
+modular monolith to microservices (serving.md §What changes: the binding).
+main.py's lifespan still assembles the shared resources (the model, the
+checkpointer); the function below is the single point deciding which concrete
+Orchestrator implementation is used.
 """
 from __future__ import annotations
 
@@ -233,45 +238,44 @@ from app.orchestrator.interface import Orchestrator
 
 
 def build_orchestrator(model, checkpointer) -> Orchestrator:
-    """Dipanggil sekali dari main.py lifespan. Migrasi ke service terpisah
-    -- ganti isi fungsi ini untuk return RemoteOrchestratorClient(...)
-    (lihat serving.md §Migrasi); pemanggilnya di main.py tidak berubah.
+    """Called once from main.py's lifespan. To migrate to a separate service
+    -- change this function's body to return RemoteOrchestratorClient(...)
+    (see serving.md §Migrating); its caller in main.py doesn't change.
     """
     return DeepAgentsOrchestrator(model=model, checkpointer=checkpointer)
 
 
 def get_orchestrator(request: Request) -> Orchestrator:
-    """Dependency FastAPI -- routes memanggil ini lewat
-    Depends(get_orchestrator), tidak pernah membaca request.app.state
-    langsung."""
+    """The FastAPI dependency -- routes call this through
+    Depends(get_orchestrator) and never read request.app.state directly."""
     return request.app.state.orchestrator
 ```
 
-`main.py` lifespan memanggil `build_orchestrator(model, checkpointer)`
-(bukan mengonstruksi `DeepAgentsOrchestrator(...)` langsung) dan menaruh
-hasilnya di `app.state.orchestrator`; route mengambilnya lewat
-`Depends(get_orchestrator)`. Migrasi ke service terpisah (`serving.md`
-§Migrasi) berarti mengganti isi `build_orchestrator()` — satu fungsi, satu
-file — bukan menelusuri `main.py`/`turns.py`.
+`main.py`'s lifespan calls `build_orchestrator(model, checkpointer)` (rather
+than constructing `DeepAgentsOrchestrator(...)` directly) and puts the result
+in `app.state.orchestrator`; the route takes it through
+`Depends(get_orchestrator)`. Migrating to a separate service (`serving.md`
+§Migrating) means changing `build_orchestrator()`'s body — one function, one
+file — not tracing through `main.py`/`turns.py`.
 
-## FastAPI async-first
+## FastAPI, async-first
 
-Seluruh I/O (LLM call, checkpoint write, query Postgres) memakai `async`/
-`await` — deepagents/langgraph sudah async-native (`.astream()`,
-`AsyncPostgresSaver`), jadi handler sinkron di sini cuma akan memblokir
-event loop untuk hal yang seharusnya IO-wait murni (persis argumen
-`resource-profiling.md`: fase LLM call nyaris tidak memakai CPU, satu proses
-async bisa menahan ratusan turn concurrent tanpa thread tambahan).
+All I/O (LLM calls, checkpoint writes, Postgres queries) uses
+`async`/`await` — deepagents/langgraph are already async-native
+(`.astream()`, `AsyncPostgresSaver`), so a synchronous handler here would
+only block the event loop for something that should be pure IO-wait (exactly
+`resource-profiling.md`'s argument: the LLM call phase barely uses CPU, and
+one async process can hold hundreds of concurrent turns with no extra
+threads).
 
 ```python
-"""FastAPI app factory + lifespan.
+"""The FastAPI app factory + lifespan.
 
-Startup: buka pool checkpointer + pool DB aplikasi, pasang OTel, rakit
-Orchestrator sekali (dipakai lintas request lewat app.state, bukan
-dikonstruksi ulang tiap request). Shutdown: drain in-flight turn sebelum
-proses keluar -- lihat lifecycle/drain.py dan k8s/deployment.yaml
-(preStop + terminationGracePeriodSeconds) untuk paruh K8s dari mekanisme
-yang sama.
+Startup: open the checkpointer pool + the application DB pool, install OTel,
+assemble the Orchestrator once (used across requests through app.state rather
+than reconstructed per request). Shutdown: drain in-flight turns before the
+process exits -- see lifecycle/drain.py and k8s/deployment.yaml (preStop +
+terminationGracePeriodSeconds) for the K8s half of the same mechanism.
 """
 from __future__ import annotations
 
@@ -302,14 +306,15 @@ async def lifespan(app: FastAPI):
         app.state.orchestrator = build_orchestrator(model, checkpointer)
         app.state.drain = DrainState()
 
-        yield  # <-- app melayani traffic di sini
+        yield  # <-- the app serves traffic here
 
-        # Shutdown: readyz mulai 503 (draining=True di dalam wait_empty),
-        # tunggu in-flight selesai. Timeout habis != error -- checkpointer
-        # resumability adalah jaring pengaman (serving-topology.md).
+        # Shutdown: readyz starts returning 503 (draining=True inside
+        # wait_empty), then we wait for in-flight turns. A timeout is not an
+        # error -- checkpointer resumability is the safety net
+        # (serving-topology.md).
         finished = await app.state.drain.wait_empty(timeout=DRAIN_TIMEOUT_S)
         if not finished:
-            print(f"drain timeout {DRAIN_TIMEOUT_S}s tercapai, turn tersisa lanjut dari checkpoint")
+            print(f"drain timeout {DRAIN_TIMEOUT_S}s reached; remaining turns continue from their checkpoint")
 
     await close_pool()
 
@@ -325,21 +330,21 @@ def create_app() -> FastAPI:
 app = create_app()
 ```
 
-## Scope middleware: `user_id` + RLS
+## The scope middleware: `user_id` + RLS
 
-Satu-satunya titik yang membaca identitas dari request — kode di bawahnya
-menerima `Scope` sebagai parameter eksplisit, tidak pernah membaca ulang
-header/token sendiri:
+The only point reading identity from the request — everything below it
+receives `Scope` as an explicit parameter and never re-reads a header/token
+itself:
 
 ```python
-"""ScopeMiddleware -- satu-satunya titik yang membaca identitas dari request.
+"""ScopeMiddleware -- the only point reading identity from a request.
 
-Ekstrak user_id dari auth (placeholder header di bawah -- ganti dengan
-verifikasi JWT/session nyata sesuai IdP project) dan taruh sebagai Scope()
-eksplisit di request.state.scope. Kode di bawahnya (routes, orchestrator, DB
-session) menerima Scope sebagai parameter, tidak pernah membaca ulang
-header/token sendiri -- basis fail-closed RLS (isolation-and-scoping.md:
-satu titik penegakan per lapis, bukan N titik yang bisa lupa satu-satu).
+It extracts user_id from auth (a header placeholder below -- replace with real
+JWT/session verification per the project's IdP) and places it as an explicit
+Scope() in request.state.scope. Everything below it (routes, the orchestrator,
+DB sessions) receives Scope as a parameter and never re-reads a header/token
+itself -- the basis of fail-closed RLS (isolation-and-scoping.md: one
+enforcement point per layer, not N points that can each be forgotten).
 """
 from __future__ import annotations
 
@@ -368,24 +373,24 @@ class ScopeMiddleware(BaseHTTPMiddleware):
 
 
 def _extract_user_id(request: Request) -> str | None:
-    # ponytail: placeholder -- header mentah, bukan verifikasi token. Ganti
-    # dengan verifikasi JWT nyata (mis. python-jose terhadap JWKS IdP) atau
-    # session cookie signed sebelum production; header x-user-id apa adanya
-    # bisa dipalsukan siapa pun.
+    # ponytail: a placeholder -- a raw header, not token verification. Replace
+    # with real JWT verification (e.g. python-jose against the IdP's JWKS) or
+    # a signed session cookie before production; a bare x-user-id header can
+    # be forged by anyone.
     return request.headers.get("x-user-id") or None
 ```
 
-RLS Postgres (DDL sudah dieksekusi & diaudit — lihat
-`../concepts/persistence-schema.md`, **tidak diubah di sini**) butuh
-`SET LOCAL app.current_user_id` di **setiap** transaksi baru, bukan sekali
-per koneksi pool:
+Postgres RLS (its DDL already executed and audited — see
+`../concepts/persistence-schema.md`, **unchanged here**) needs
+`SET LOCAL app.current_user_id` in **every** new transaction, not once per
+pooled connection:
 
 ```python
-"""DB session per-request dengan RLS scope wajib di-set SEBELUM query apa pun
-(persistence-schema.md, isolation-and-scoping.md). Pool aplikasi ini
-TERPISAH dari pool checkpointer (db/checkpointer.py) -- skema dan siklus
-migrasi berbeda, lihat persistence-schema.md 'Yang sengaja TIDAK
-di-DDL-kan di sini'.
+"""A per-request DB session with the RLS scope that MUST be set BEFORE any
+query (persistence-schema.md, isolation-and-scoping.md). This application pool
+is SEPARATE from the checkpointer pool (db/checkpointer.py) -- different
+schemas and migration cycles, see persistence-schema.md 'Deliberately NOT
+given DDL here'.
 """
 from __future__ import annotations
 
@@ -413,48 +418,49 @@ async def close_pool() -> None:
 
 @asynccontextmanager
 async def db_session(scope: Scope) -> AsyncIterator[AsyncConnection]:
-    """SET LOCAL berakhir otomatis di batas transaksi -- dipanggil ULANG di
-    tiap transaksi baru, bukan sekali per koneksi (isolation-and-scoping.md,
-    poin 'Connection pooling adalah vektor kebocoran baru yang harus dijaga
-    eksplisit'). current_setting(..., true) di sisi policy RLS (sudah
-    dipatok persistence-schema.md) yang membuat lupa SET LOCAL jatuh ke
-    fail-closed (nol baris), bukan fail-open -- bukan sesuatu yang perlu
-    diulang di sini.
+    """SET LOCAL ends automatically at the transaction boundary -- so it is
+    called AGAIN in every new transaction, not once per connection
+    (isolation-and-scoping.md, the point 'Connection pooling is a new leak
+    vector that must be guarded explicitly'). It is current_setting(..., true)
+    on the RLS policy side (already pinned down in persistence-schema.md) that
+    makes a forgotten SET LOCAL fail closed (zero rows) rather than open --
+    not something that needs repeating here.
     """
-    assert _pool is not None, "init_pool() belum dipanggil (lihat app/main.py lifespan)"
+    assert _pool is not None, "init_pool() hasn't been called (see app/main.py's lifespan)"
     async with _pool.connection() as conn:
         async with conn.transaction():
             await conn.execute("SET LOCAL app.current_user_id = %s", (scope.user_id,))
             yield conn
 ```
 
-Backend filesystem `deepagents` di-namespace per-`user_id` lewat
-`_build_backend(scope)` di `deepagents_orchestrator.py` (lihat di atas) —
-scope yang sama, dua penegakan berbeda (RLS Postgres untuk tabel aplikasi,
-`StoreBackend.namespace` untuk file agent) yang keduanya berasal dari objek
-`Scope` tunggal yang di-resolve `ScopeMiddleware`, bukan dua sumber
-kebenaran yang bisa divergen.
+The `deepagents` filesystem backend is namespaced per `user_id` through
+`_build_backend(scope)` in `deepagents_orchestrator.py` (above) — the same
+scope with two different enforcements (Postgres RLS for application tables,
+`StoreBackend.namespace` for agent files), both derived from the single
+`Scope` object `ScopeMiddleware` resolves rather than from two sources of
+truth that can diverge.
 
-## Checkpointer eksternal
+## The external checkpointer
 
 ```python
-"""External checkpointer -- factory dipanggil sekali di app/main.py lifespan,
-dipakai lintas request, TIDAK dibuat baru per turn.
+"""The external checkpointer -- a factory called once in app/main.py's
+lifespan, used across requests, NOT created anew per turn.
 
-[code] AsyncPostgresSaver menerima conn: AsyncConnection | AsyncConnectionPool
-(langgraph-checkpoint-postgres==3.1.2, langgraph/checkpoint/postgres/_ainternal.py,
-dibaca langsung dari paket PyPI). Skema checkpoints/writes MILIK library ini
--- persistence-schema.md sengaja tidak mendefinisikannya ulang; file ini
-cuma membangun koneksinya.
+[code] AsyncPostgresSaver accepts conn: AsyncConnection | AsyncConnectionPool
+(langgraph-checkpoint-postgres==3.1.2,
+langgraph/checkpoint/postgres/_ainternal.py, read directly from the PyPI
+package). The checkpoints/writes schema BELONGS to that library --
+persistence-schema.md deliberately doesn't redefine it; this file only builds
+its connection.
 
-[ours] AsyncConnectionPool dipakai di sini, BUKAN
-AsyncPostgresSaver.from_conn_string(...) yang dicontohkan dokumentasi resmi
-LangGraph (docs.langchain.com/oss/python/langgraph/checkpointers) --
-from_conn_string membuka SATU AsyncConnection per context manager, cukup
-untuk skrip/notebook tapi jadi bottleneck serial untuk server yang menahan
-ratusan in-flight turn concurrent (resource-profiling.md: fase checkpoint
-write IO-disk, terjadi tiap step graph). Pool membiarkan checkpoint write
-turn yang berbeda jalan concurrent alih-alih antre di satu koneksi.
+[ours] An AsyncConnectionPool is used here, NOT the
+AsyncPostgresSaver.from_conn_string(...) shown in LangGraph's official
+documentation (docs.langchain.com/oss/python/langgraph/checkpointers) --
+from_conn_string opens ONE AsyncConnection per context manager, fine for a
+script/notebook but a serialising bottleneck for a server holding hundreds of
+concurrent in-flight turns (resource-profiling.md: the checkpoint write phase
+is disk IO, happening at every graph step). A pool lets different turns'
+checkpoint writes run concurrently instead of queuing on one connection.
 """
 from __future__ import annotations
 
@@ -474,33 +480,33 @@ async def build_checkpointer(dsn: str) -> AsyncIterator[AsyncPostgresSaver]:
         kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
     ) as pool:
         checkpointer = AsyncPostgresSaver(conn=pool)
-        await checkpointer.setup()  # idempotent -- no-op kalau tabel sudah ada
+        await checkpointer.setup()  # idempotent -- a no-op if the tables exist
         yield checkpointer
 ```
 
 ## Turn admission & streaming
 
-`POST /turns` menerima turn, `GET /turns/{turn_id}/events` mem-stream
-event SSE dengan skema persis `../concepts/streaming-protocol.md` (tidak
-diimplementasikan ulang di sini):
+`POST /turns` accepts a turn; `GET /turns/{turn_id}/events` streams SSE events
+with exactly the `../concepts/streaming-protocol.md` schema (not reimplemented
+here):
 
 ```python
-"""POST /turns admisi turn baru; GET /turns/{turn_id}/events mem-stream event
-SSE dari Orchestrator. Skema event dan kontrak reattach TIDAK diimplementasi
-ulang di sini -- bentuknya persis streaming-protocol.md, file ini cuma
-menyambungkan Orchestrator ke transport HTTP.
+"""POST /turns admits a new turn; GET /turns/{turn_id}/events streams the
+Orchestrator's events as SSE. The event schema and the reattach contract are
+NOT reimplemented here -- their shape is exactly streaming-protocol.md's; this
+file only connects the Orchestrator to the HTTP transport.
 
-[ours] Eksekusi turn di sini terjadi INLINE di dalam generator SSE (event
-loop async yang sama menjalankan koneksi), bukan queue-then-execute penuh
-(worker pool terpisah menarik dari antrean, HTTP handler kembali segera
-dengan turn_id -- queueing-and-backpressure.md). Ini baseline paling
-sederhana yang masih benar untuk in-flight-turns sebagai gauge (drain.py
-start_turn/end_turn tetap presisi), cukup untuk volume yang belum butuh
-admission control eksplisit. Begitu antrean sungguh perlu (burst turn
-melebihi kapasitas worker), ganti admisi di create_turn() untuk push ke
-antrean nyata (Redis/RabbitMQ) dan pindahkan pemanggilan orchestrator ke
-worker terpisah -- perubahan lokal di titik admisi, kontrak Orchestrator
-Protocol dan skema event tidak berubah.
+[ours] Turn execution here happens INLINE inside the SSE generator (the same
+async event loop running the connection), rather than full queue-then-execute
+(a separate worker pool pulling from a queue, with the HTTP handler returning
+immediately with a turn_id -- queueing-and-backpressure.md). This is the
+simplest baseline still correct for in-flight-turns as a gauge (drain.py's
+start_turn/end_turn stay precise), sufficient for volumes that don't yet need
+explicit admission control. Once a queue is genuinely needed (turn bursts
+exceeding worker capacity), change the admission in create_turn() to push onto
+a real queue (Redis/RabbitMQ) and move the orchestrator call into a separate
+worker -- a local change at the admission point; the Orchestrator Protocol
+contract and the event schema don't change.
 """
 from __future__ import annotations
 
@@ -528,11 +534,11 @@ async def create_turn(body: CreateTurnRequest, request: Request) -> dict:
     scope = request.state.scope
     # project: INSERT INTO turns (...) VALUES (...)
     #   ON CONFLICT (user_id, idempotency_key) DO NOTHING RETURNING id
-    # -- lihat persistence-schema.md UNIQUE(user_id, idempotency_key). Kalau
-    # konflik (retry/duplicate submit), SELECT baris existing dan kembalikan
-    # turn_id yang sama -- bukan turn baru.
-    del scope  # dipakai db_session(scope) saat query nyata ditulis
-    turn_id = str(uuid4())  # ponytail: placeholder, ganti hasil INSERT nyata
+    # -- see persistence-schema.md's UNIQUE(user_id, idempotency_key). On a
+    # conflict (a retry/duplicate submit), SELECT the existing row and return
+    # the same turn_id -- not a new turn.
+    del scope  # used by db_session(scope) once the real query is written
+    turn_id = str(uuid4())  # ponytail: a placeholder, replace with the real INSERT's result
     return {"turn_id": turn_id, "status": "pending"}
 
 
@@ -562,16 +568,16 @@ async def stream_turn(
     return StreamingResponse(event_source(), media_type="text/event-stream")
 ```
 
-## Observability: OTel + label user
+## Observability: OTel + a user label
 
 ```python
-"""OTel setup -- tracer provider + label user_id di span aktif.
+"""The OTel setup -- a tracer provider + a user_id label on the active span.
 
-`enduser.id` [docs] adalah atribut semantic convention resmi OpenTelemetry
-untuk identitas pengguna per-span (opentelemetry.io/docs/specs/semconv/
-general/attributes-registry/enduser/) -- dipakai apa adanya di sini, bukan
-key kustom, supaya backend tracing manapun (Tempo/Jaeger/Honeycomb) bisa
-memfilter/agregasi per user tanpa konvensi khusus proyek ini.
+`enduser.id` [docs] is OpenTelemetry's official semantic convention attribute
+for per-span user identity (opentelemetry.io/docs/specs/semconv/
+general/attributes-registry/enduser/) -- used as-is here rather than a custom
+key, so any tracing backend (Tempo/Jaeger/Honeycomb) can filter/aggregate per
+user with no convention specific to this project.
 """
 from __future__ import annotations
 
@@ -593,24 +599,24 @@ def setup_otel(app) -> None:
 
 
 def label_current_span_user(user_id: str) -> None:
-    """Dipanggil dari ScopeMiddleware setelah user_id diresolusi -- titik
-    tunggal yang menambah label user ke span aktif, dipanggil di dalam
-    request span yang sudah dibuka FastAPIInstrumentor."""
+    """Called from ScopeMiddleware once user_id is resolved -- the single
+    point adding a user label to the active span, called inside the request
+    span FastAPIInstrumentor already opened."""
     span = trace.get_current_span()
     span.set_attribute("enduser.id", user_id)
 ```
 
-## `/healthz` dan `/readyz`
+## `/healthz` and `/readyz`
 
 ```python
-"""Liveness vs readiness -- dua kegagalan yang berbeda, dua endpoint terpisah.
+"""Liveness vs readiness -- two different failures, two separate endpoints.
 
-/healthz: proses hidup. Tidak cek dependency eksternal -- DB down bukan
-alasan K8s membunuh dan me-restart pod ini (restart tidak menyembuhkan DB
-down, cuma membuang in-flight turn tanpa guna).
-/readyz: siap menerima turn BARU. 503 begitu draining=True -- Service
-berhenti mengirim traffic baru ke pod ini sementara in-flight turn tetap
-diselesaikan (serving-topology.md, mitigasi rolling-deploy).
+/healthz: the process is alive. It doesn't check external dependencies -- a
+DB being down is no reason for K8s to kill and restart this pod (a restart
+doesn't heal a downed DB; it only discards in-flight turns pointlessly).
+/readyz: ready to accept NEW turns. It returns 503 as soon as draining=True --
+the Service stops sending new traffic to this pod while its in-flight turns
+still finish (serving-topology.md, the rolling-deploy mitigation).
 """
 from __future__ import annotations
 
@@ -630,22 +636,23 @@ async def readyz(request: Request, response: Response) -> dict:
     if drain.draining:
         response.status_code = 503
         return {"status": "draining"}
-    # TODO project: tambahkan cek dependency kritikal (mis. SELECT 1 lewat
-    # db/session.py pool) kalau produk butuh readyz gagal saat DB unreachable.
+    # TODO project: add critical dependency checks (e.g. SELECT 1 through the
+    # db/session.py pool) if the product needs readyz to fail when the DB is
+    # unreachable.
     return {"status": "ready"}
 ```
 
 ## Graceful drain
 
 ```python
-"""Graceful drain -- gauge in-flight turn + tunggu kosong saat shutdown.
+"""Graceful drain -- an in-flight turn gauge + waiting for empty at shutdown.
 
-Menegakkan mitigasi rolling-deploy dari serving-topology.md: readiness probe
-mati duluan (readyz 503 begitu draining), lalu tunggu in-flight selesai
-sebelum proses keluar. Kalau drain_timeout habis sebelum semua turn selesai,
-KITA TIDAK menunggu paksa -- checkpointer resumability (session-state.md,
-db/checkpointer.py) adalah jaring pengaman: turn yang belum selesai bisa
-dilanjut pod lain dari checkpoint terakhir.
+It enforces the rolling-deploy mitigation from serving-topology.md: the
+readiness probe fails first (readyz 503 as soon as draining), then we wait for
+in-flight turns to finish before the process exits. If drain_timeout expires
+before every turn finishes, WE DON'T force a wait -- checkpointer resumability
+(session-state.md, db/checkpointer.py) is the safety net: an unfinished turn
+can continue on another pod from its last checkpoint.
 """
 from __future__ import annotations
 
@@ -661,7 +668,7 @@ class DrainState:
 
     def start_turn(self) -> None:
         if self.draining:
-            raise RuntimeError("server sedang drain, tidak menerima turn baru")
+            raise RuntimeError("the server is draining and accepts no new turns")
         self._count += 1
         self._empty.clear()
 
@@ -672,7 +679,7 @@ class DrainState:
             self._empty.set()
 
     async def wait_empty(self, timeout: float) -> bool:
-        """True kalau semua in-flight turn selesai sebelum timeout."""
+        """True if every in-flight turn finished before the timeout."""
         self.draining = True
         try:
             await asyncio.wait_for(self._empty.wait(), timeout=timeout)
@@ -681,16 +688,15 @@ class DrainState:
             return False
 ```
 
-Dipasang lengkap lewat tiga bagian yang saling mengunci — kalau salah satu
-hilang, drain jadi janji kosong: (1) `lifecycle/drain.py` di atas menghitung
-gauge in-flight turn, (2) `api/routes/turns.py` memanggil
-`drain.start_turn()`/`end_turn()` mengurung eksekusi tiap turn, (3)
-`main.py` lifespan memanggil `wait_empty()` saat shutdown **sebelum**
-menutup pool, dan (4) `k8s/deployment.yaml` di bawah menyelaraskan
-`terminationGracePeriodSeconds` dan `preStop` supaya Kubernetes benar-benar
-memberi waktu untuk (1)-(3) berjalan sebelum mengirim `SIGKILL`.
+It is installed through four interlocking parts — if one is missing, the drain
+is an empty promise: (1) `lifecycle/drain.py` above counts the in-flight turn
+gauge, (2) `api/routes/turns.py` calls `drain.start_turn()`/`end_turn()`
+around each turn's execution, (3) `main.py`'s lifespan calls `wait_empty()` at
+shutdown **before** closing the pools, and (4) `k8s/deployment.yaml` below
+aligns `terminationGracePeriodSeconds` and `preStop` so Kubernetes genuinely
+gives (1)-(3) time to run before sending `SIGKILL`.
 
-## Dockerfile
+## The Dockerfile
 
 ```dockerfile
 FROM python:3.12-slim AS base
@@ -710,16 +716,17 @@ COPY app/ ./app/
 USER appuser
 EXPOSE 8000
 
-# Liveness Docker-level saja (/healthz) -- BUKAN pengganti readinessProbe
-# K8s (lihat k8s/deployment.yaml): HEALTHCHECK ini cuma dipakai `docker run`
-# standalone/compose, orkestrator K8s mengabaikannya dan pakai probe sendiri.
+# A Docker-level liveness check only (/healthz) -- NOT a replacement for the
+# K8s readinessProbe (see k8s/deployment.yaml): this HEALTHCHECK is only used
+# by standalone `docker run`/compose; a K8s orchestrator ignores it and uses
+# its own probes.
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz', timeout=2)" || exit 1
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
-## Manifest K8s dasar
+## The basic K8s manifest
 
 ```yaml
 apiVersion: apps/v1
@@ -738,10 +745,10 @@ spec:
       labels:
         app: harness-orchestrator
     spec:
-      # > DRAIN_TIMEOUT_S (25s default, env di bawah) + margin preStop.
-      # Turn yang masih jalan lewat batas ini mati bersama pod -- jaring
-      # pengamannya checkpointer resumability, bukan grace period tak
-      # terbatas (serving-topology.md).
+      # > DRAIN_TIMEOUT_S (25s by default, the env below) + the preStop
+      # margin. A turn still running past this limit dies with its pod -- its
+      # safety net is checkpointer resumability, not an unbounded grace period
+      # (serving-topology.md).
       terminationGracePeriodSeconds: 60
       containers:
         - name: orchestrator
@@ -775,9 +782,9 @@ spec:
           lifecycle:
             preStop:
               exec:
-                # Beri waktu endpoint controller mempropagasi pod ini keluar
-                # dari Service (readyz sudah 503 sejak SIGTERM diterima)
-                # SEBELUM koneksi baru sungguh berhenti masuk.
+                # Give the endpoint controller time to propagate this pod out
+                # of the Service (readyz has returned 503 since SIGTERM was
+                # received) BEFORE new connections genuinely stop arriving.
                 command: ["sleep", "5"]
           resources:
             requests:
@@ -800,46 +807,47 @@ spec:
       targetPort: 8000
 ```
 
-Manifest ini sengaja **tidak** memuat HPA/KEDA — sinyal scaling per
-komponen (in-flight turns untuk orchestrator, queue depth untuk tool
-executor, dst.) dan konfigurasi `ScaledObject` konkretnya adalah domain
-`../concepts/scaling.md` dan `serving.md` (§Migrasi monolith → microservice),
-bukan diulang di sini.
+This manifest deliberately contains **no** HPA/KEDA — the per-component
+scaling signals (in-flight turns for the orchestrator, queue depth for the
+tool executor, etc.) and the concrete `ScaledObject` configuration belong to
+`../concepts/scaling.md` and `serving.md` (§Migrating from a modular monolith
+to microservices), not repeated here.
 
 ## Config & secrets
 
-`app/config.py` (tidak dikutip penuh — bentuknya standar `pydantic-settings`
-baca dari env var) memuat `APP_DATABASE_URL`, `CHECKPOINTER_DATABASE_URL`,
-`DRAIN_TIMEOUT_S`, kredensial model. Nilai-nilai ini datang dari Kubernetes
-`Secret` (lihat `env[].valueFrom.secretKeyRef` di manifest di atas), tidak
-pernah di-hardcode atau commit ke repo — ini salah satu dari sembilan syarat
-gerbang production-readiness di bawah, disebut di sini karena wiring-nya
-memang hidup di `config.py`+manifest, tapi definisi lengkap syaratnya tetap
-satu-satunya di `blueprint-template.md`.
+`app/config.py` (not quoted in full — its shape is a standard
+`pydantic-settings` read from env vars) holds `APP_DATABASE_URL`,
+`CHECKPOINTER_DATABASE_URL`, `DRAIN_TIMEOUT_S`, and the model credentials.
+Those values come from a Kubernetes `Secret` (see `env[].valueFrom.secretKeyRef`
+in the manifest above) and are never hardcoded or committed to the repo — this
+is one of the nine production-readiness gate conditions below, mentioned here
+because its wiring genuinely lives in `config.py` + the manifest, while the
+condition's full definition stays solely in `blueprint-template.md`.
 
-## Guardrail: titik pemasangan, bukan daftar ulang
+## Guardrails: the installation points, not a re-listing
 
-Enam titik penegakan dan tabel middleware konkretnya sudah dipatok penuh di
-`../concepts/guardrails.md` — **tidak diulang di sini**. Yang perlu diketahui
-scaffold ini cuma **di mana** tiap titik terpasang di pohon direktori di
-atas:
+The six enforcement points and their concrete middleware table are already
+pinned down in full in `../concepts/guardrails.md` — **not repeated here**.
+All this scaffold needs to know is **where** each point is installed in the
+directory tree above:
 
-| Titik (`guardrails.md`) | Terpasang di |
+| Point (`guardrails.md`) | Installed in |
 |---|---|
-| 1. Input, 4. Output | Parameter `middleware=[...]` saat `create_deep_agent(...)` dipanggil di `deepagents_orchestrator.py` |
-| 2. Retrieval/context | Di dalam implementasi tool retrieval kustom (tidak ada di `_base` — arketipe yang punya tool retrieval menambahkannya di delta) |
-| 3. Tool/aksi | Parameter `interrupt_on=`/`permissions=` di `create_deep_agent(...)`, tool `undo_*`, atau validasi `args_schema` — beda per arketipe, lihat `deltas/*.md` |
-| 5. Loop | `ToolCallLimitMiddleware`/`ModelCallLimitMiddleware` di `middleware=[...]` yang sama |
-| 6. Sistem | Parameter `model=` eksplisit (sudah di `_base` — `ChatAnthropic(model_name="claude-sonnet-4-6")`, bukan alias mengambang) |
+| 1. Input, 4. Output | The `middleware=[...]` parameter when `create_deep_agent(...)` is called in `deepagents_orchestrator.py` |
+| 2. Retrieval/context | Inside the custom retrieval tool's implementation (absent from `_base` — an archetype with retrieval tools adds it in its delta) |
+| 3. Tool/action | The `interrupt_on=`/`permissions=` parameters of `create_deep_agent(...)`, an `undo_*` tool, or `args_schema` validation — differing per archetype, see `deltas/*.md` |
+| 5. Loop | `ToolCallLimitMiddleware`/`ModelCallLimitMiddleware` in that same `middleware=[...]` |
+| 6. System | An explicit `model=` parameter (already in `_base` — `ChatAnthropic(model_name="claude-sonnet-4-6")`, not a floating alias) |
 
-`_base` baseline hanya memasang titik 6 (pin model). Titik 1/3/4/5 kosong di
-baseline secara sengaja — lihat `## Bangun ini pakai deepagents` tiap
-arketipe (`../archetypes/*.md`) untuk keputusan konkret per delta.
+The `_base` baseline installs only point 6 (pinning the model). Points
+1/3/4/5 are deliberately empty in the baseline — see each archetype's
+`## Building this with deepagents` (`../archetypes/*.md`) for the concrete
+per-delta decisions.
 
-## Gerbang production-readiness
+## The production-readiness gate
 
-Checklist 9 syarat ada **satu-satunya** di
+The 9-condition checklist exists **solely** in
 [`../blueprint-template.md`](../blueprint-template.md#production-readiness-checklist)
-— tidak disalin di sini supaya tidak ada dua salinan yang bisa saling
-berbeda begitu spec §12 berubah. **Scaffold ini belum boleh dinyatakan
-selesai sebelum seluruh sembilan item di sana tercentang.**
+— not copied here, so there can never be two copies that diverge once spec
+§12 changes. **This scaffold must not be declared finished until all nine
+items there are ticked.**
