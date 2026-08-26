@@ -1,105 +1,104 @@
 # browser-use
 
-> Label tiap klaim: [code] / [docs] / [inferred]
+> Label every claim: [code] / [docs] / [inferred]
 
-Tier **T2**. `browser-use/browser-use`, library Python untuk agent yang
-mengontrol browser lewat CDP (screenshot + DOM). Dipilih sebagai eksemplar
-**computer-use** sesuai kandidat T2 spec §10.
+Tier **T2**. `browser-use/browser-use`, a Python library for agents
+controlling a browser through CDP (screenshots + DOM). Chosen as the
+**computer-use** exemplar per the T2 candidates in spec §10.
 
-## Arketipe
+## Archetype
 
-**Computer-Use Agent (07)** murni: loop lihat→klik→verifikasi, tool sempit
-tapi dalam (26 action terdaftar, lihat sumbu 3), paling rapuh terhadap
-konten halaman tak terpercaya (lihat sumbu 6, `sensitive_data`). `[code]` —
-`browser_use/tools/service.py` (jumlah `@self.registry.action(...)`
-dikonfirmasi via grep -c = 26).
+A pure **Computer-Use Agent (07)**: a look→click→verify loop, narrow but deep
+tools (26 registered actions, see axis 3), and the most fragile of all against
+untrusted page content (see axis 6, `sensitive_data`). `[code]` —
+`browser_use/tools/service.py` (the `@self.registry.action(...)` count
+confirmed through `grep -c` = 26).
 
 ## 1. Loop shape
 
-Loop-until-done dengan **dua batas independen**, bukan satu: `max_steps`
-(default **500**, diteruskan ke `Agent.run(max_steps=500)`) dan
-`max_failures` (default **5**, dihitung sebagai `consecutive_failures` —
-kegagalan **berturut-turut**, bukan total). Kalau `consecutive_failures >=
-max_failures`, loop berhenti sepenuhnya (bukan hanya memaksa `done`):
-*"Stopping due to {max_failures} consecutive failures"*. `[code]` —
-`browser_use/agent/service.py` baris 171 (`max_failures: int = 5`), 2508
-(`max_steps: int = 500`), 2603-2617 (`while self.state.n_steps <=
-max_steps`, cek `consecutive_failures`).
+Loop-until-done with **two independent limits**, not one: `max_steps` (default
+**500**, passed to `Agent.run(max_steps=500)`) and `max_failures` (default
+**5**, counted as `consecutive_failures` — **consecutive** failures, not
+total). If `consecutive_failures >= max_failures`, the loop stops entirely (not
+merely forcing `done`): *"Stopping due to {max_failures} consecutive
+failures"*. `[code]` — `browser_use/agent/service.py` line 171
+(`max_failures: int = 5`), 2508 (`max_steps: int = 500`), 2603-2617 (`while
+self.state.n_steps <= max_steps`, the `consecutive_failures` check).
 
-Satu giliran (`Agent.step()`) adalah **tiga fase eksplisit**: `_prepare_context`
-(ambil screenshot + ringkasan state browser — *"Always take screenshots for
-all steps"*, plus jeda khusus `wait_if_captcha_solving()` sebelum context
-disiapkan) → `_get_next_action` (panggil LLM) → `_execute_actions` →
-`_post_process`, dibungkus `try/except`/`finally` tunggal
-(`_handle_step_error`/`_finalize`) supaya satu step gagal tidak
-mengotori state step berikutnya. `[code]` — `browser_use/agent/service.py`
-baris 1029-1090 (`step()`, `_prepare_context` awal).
+One turn (`Agent.step()`) is **three explicit phases**: `_prepare_context`
+(take a screenshot + a browser state summary — *"Always take screenshots for
+all steps"*, plus a dedicated `wait_if_captcha_solving()` pause before the
+context is prepared) → `_get_next_action` (call the LLM) → `_execute_actions` →
+`_post_process`, wrapped in a single `try/except`/`finally`
+(`_handle_step_error`/`_finalize`) so one failed step doesn't contaminate the
+next step's state. `[code]` — `browser_use/agent/service.py` lines 1029-1090
+(`step()`, the start of `_prepare_context`).
 
-Saat `max_steps` tercapai, harness **tidak** membiarkan model memanggil tool
-lain: *"You reached max_steps - this is your last step. Your only tool
-available is the 'done' tool. No other tool is available."* — dipaksa lewat
-prompt injection di langkah terakhir, plus ada peringatan anggaran
-(`budget_ratio = steps_used / max_steps`) yang disuntik ke prompt sebelum
-batas tercapai. `[code]` — `browser_use/agent/service.py` baris 1542-1566.
+When `max_steps` is reached, the harness does **not** let the model call
+another tool: *"You reached max_steps - this is your last step. Your only tool
+available is the 'done' tool. No other tool is available."* — enforced through
+prompt injection on the final step, plus a budget warning
+(`budget_ratio = steps_used / max_steps`) injected into the prompt before the
+limit is reached. `[code]` — `browser_use/agent/service.py` lines 1542-1566.
 
 ## 2. Context
 
-Tidak ada condenser/summarizer riwayat pesan yang ditemukan di
-`agent/service.py`. Sebaliknya, state kerja jangka-panjang dipindah ke
-**filesystem virtual** (`browser_use/filesystem/file_system.py`) — agent
-menulis/membaca file (mis. catatan progres, hasil ekstraksi) lewat tool
-filesystem, bukan menyimpan semuanya di riwayat pesan. Modul ini juga
-mem-blokir ekstensi biner (`UNSUPPORTED_BINARY_EXTENSIONS` — png/jpg/mp4/
-zip/exe/dll/dst) dari ditulis lewat tool file-write, membatasi tool
-filesystem ke konten teks. `[code]` — `browser_use/filesystem/file_system.py`
-baris 1-40.
+No message-history condenser/summariser was found in `agent/service.py`.
+Instead, long-running working state is moved into a **virtual filesystem**
+(`browser_use/filesystem/file_system.py`) — the agent writes and reads files
+(e.g. progress notes, extraction results) through filesystem tools rather than
+keeping everything in message history. That module also blocks binary
+extensions (`UNSUPPORTED_BINARY_EXTENSIONS` — png/jpg/mp4/zip/exe/dll/etc.)
+from being written through the file-write tool, restricting the filesystem
+tools to text content. `[code]` — `browser_use/filesystem/file_system.py` lines
+1-40.
 
 ## 3. Tool surface
 
-**Sedikit tool, sempit tapi dalam** — persis pola yang diprediksi archetype
-07: `Tools.registry` (`browser_use/tools/service.py`) mendaftarkan **26**
-action lewat decorator `@self.registry.action("<deskripsi>")`, di antaranya
-`go_back`, `wait` (tunggu N detik), `find_text`/scroll-to-text (dikonfirmasi
-lewat nama fungsi `find_text` dan deskripsi *"Scroll to text."*) — action
-lain (klik-by-index, input-text, ekstraksi konten) ada di modul yang sama
-tapi tidak semua nama fungsi terverifikasi lewat grep. `[code]` —
-`browser_use/tools/service.py` (hitung `@self.registry.action(` via grep -c
-= 26; grep tanpa jangkar `@self.` mengembalikan 27 karena ikut menghitung
-wrapper publik generik `self.registry.action(description, **kwargs)` baris
-2097, yang bukan pendaftaran action bawaan melainkan jalur registrasi
-eksternal; 3 nama fungsi dikonfirmasi langsung: `go_back`, `wait`,
-`find_text`).
+**Few tools, narrow but deep** — exactly the pattern archetype 07 predicts:
+`Tools.registry` (`browser_use/tools/service.py`) registers **26** actions
+through the `@self.registry.action("<description>")` decorator, among them
+`go_back`, `wait` (wait N seconds), and `find_text`/scroll-to-text (confirmed
+through the `find_text` function name and the description *"Scroll to
+text."*) — other actions (click-by-index, input-text, content extraction) are
+in the same module but not all their function names were verified through grep.
+`[code]` — `browser_use/tools/service.py` (the `@self.registry.action(` count
+through `grep -c` = 26; grep without the `@self.` anchor returns 27 because it
+also counts the generic public wrapper `self.registry.action(description,
+**kwargs)` at line 2097, which is an external registration path rather than a
+built-in action registration; 3 function names confirmed directly: `go_back`,
+`wait`, `find_text`).
 
 ## 4. Delegation
 
-Tidak ditemukan mekanisme subagent/task-tool di `agent/service.py` (4166
-baris, dibaca sebagian) — arsitektur flat: satu `Agent` mengontrol satu
-`browser_session`. `[inferred]` — dari tidak ditemukannya import
-subagent/delegation di bagian file yang dibaca.
+No subagent/task-tool mechanism was found in `agent/service.py` (4166 lines,
+partially read) — a flat architecture: one `Agent` controlling one
+`browser_session`. `[inferred]` — from the absence of any subagent/delegation
+import in the portion of the file read.
 
 ## 5. State & resume
 
-`filesystem/file_system.py` (sumbu 2) berperan ganda sebagai state
-scratchpad. `AgentHistory` (`self.history.save_to_file(file_path,
-sensitive_data=self.sensitive_data)`) — riwayat langkah bisa disimpan ke
-file, dengan `sensitive_data` **disaring saat serialisasi** (tidak
-diklaim apakah disensor sepenuhnya atau ditandai — hanya dikonfirmasi
-parameter itu diteruskan). `[code]` — `browser_use/agent/service.py` baris
+`filesystem/file_system.py` (axis 2) doubles as scratchpad state.
+`AgentHistory` (`self.history.save_to_file(file_path,
+sensitive_data=self.sensitive_data)`) — the step history can be saved to a
+file, with `sensitive_data` **filtered during serialisation** (no claim is
+made about whether it is fully censored or merely marked — only that the
+parameter is passed through). `[code]` — `browser_use/agent/service.py` line
 3918.
 
-`browser_use/sandbox/sandbox.py` — modul terpisah untuk isolasi (nama
-dikonfirmasi lewat listing, isi tidak dibaca) menunjukkan ada jalur
-menjalankan browser session di sandbox/cloud terisolasi, bukan cuma browser
-lokal — konsisten dengan blast radius "dunia luar" (agent ini menyentuh web
-publik, isolasi proses/browser jadi penting). `[code]` (listing) /
-`[inferred]` (cakupan isolasi persis).
+`browser_use/sandbox/sandbox.py` — a separate isolation module (its name
+confirmed through a listing, its contents unread) shows there is a path to
+running a browser session in an isolated sandbox/cloud rather than only a local
+browser — consistent with the "outside world" blast radius (this agent touches
+the public web, making process/browser isolation important). `[code]` (the
+listing) / `[inferred]` (its exact isolation scope).
 
 ## 6. Safety gate
 
-Tidak ada gate approval per-aksi (klik/scroll/navigate berjalan otomatis
-tanpa jeda manusia) — mitigasi utama adalah **`sensitive_data` terskop
-domain** + **peringatan eksplisit saat konfigurasi berbahaya terdeteksi
-saat startup**:
+There is no per-action approval gate (clicks/scrolls/navigation run
+automatically with no human pause) — the primary mitigation is
+**domain-scoped `sensitive_data`** plus **an explicit warning when a dangerous
+configuration is detected at startup**:
 
 ```
 ⚠️ Agent(sensitive_data=••••••••) was provided but Browser(allowed_domains=[...])
@@ -108,63 +107,62 @@ is not locked down! ⚠️
 attack, your sensitive_data may be exposed!
 ```
 
-Kredensial di `sensitive_data` bisa berupa dict per-domain
+Credentials in `sensitive_data` can be a per-domain dict
 (`has_domain_specific_credentials = any(isinstance(v, dict) for v in
-self.sensitive_data.values())`); kalau domain pattern di `sensitive_data`
-tidak tercakup pola apa pun di `Browser(allowed_domains=[...])`, harness
-memperingatkan lagi secara terpisah. Ini bukan gate yang memblokir eksekusi
-(agent tetap jalan setelah warning) — murni pesan log fail-open, tapi
-eksplisit menandai kelas serangan (prompt injection dari konten halaman →
-eksfiltrasi credential) yang relevan untuk `references/concepts/security.md`
-dan `guardrails.md`. `[code]` — `browser_use/agent/service.py` baris
-150, 385, 532-577.
+self.sensitive_data.values())`); if a domain pattern in `sensitive_data` isn't
+covered by any pattern in `Browser(allowed_domains=[...])`, the harness warns
+again separately. This is not a gate that blocks execution (the agent still
+runs after the warning) — purely a fail-open log message, but one that
+explicitly names the attack class (prompt injection from page content →
+credential exfiltration) relevant to `references/concepts/security.md` and
+`guardrails.md`. `[code]` — `browser_use/agent/service.py` lines 150, 385,
+532-577.
 
 ## 7. Capability routing & policy
 
-**Tidak ada routing internal antar mode/skill** — browser-use melakukan
-satu hal (kontrol browser), tidak punya sistem skill/subagent yang
-dipilihkan model. Yang menarik: browser-use **membungkus dirinya sendiri**
-sebagai skill format Anthropic (SKILL.md) untuk **dikonsumsi** harness lain
-— `browser_use/skills/browser_use.py` menghasilkan teks skill
-(`skill_text`) dengan metadata instalasi (`"openclaw": {"requires": {"bins":
-["browser-use"]}, "install": [{"kind": "uv", "package": "browser-use", ...}]}`)
-yang disinkronkan ke file `SKILL.md` lewat skrip
-`scripts/sync_browser_harness_skill.py`. Artinya: capability routing untuk
-browser-use terjadi **di harness pemanggilnya** (mis. deepagents/Claude
-Code/OpenHands memilih kapan memuat skill "Browser Use" lewat judgment
-model atas deskripsi skill itu), bukan di dalam browser-use sendiri.
-`[code]` — `browser_use/skills/browser_use.py` baris 1-30 (docstring +
-`OPENCLAW_METADATA_LINES`), `browser_use/skills/__init__.py`.
+**There is no internal routing between modes/skills** — browser-use does one
+thing (control a browser) and has no skill/subagent system for a model to
+choose from. What is interesting: browser-use **wraps itself** as an Anthropic
+skill format (SKILL.md) to be **consumed** by other harnesses —
+`browser_use/skills/browser_use.py` produces the skill text (`skill_text`) with
+install metadata (`"openclaw": {"requires": {"bins": ["browser-use"]},
+"install": [{"kind": "uv", "package": "browser-use", ...}]}`) synced into a
+`SKILL.md` file through the `scripts/sync_browser_harness_skill.py` script. So
+capability routing for browser-use happens **in the calling harness** (e.g.
+deepagents/Claude Code/OpenHands choosing when to load the "Browser Use" skill
+through model judgement over that skill's description), not inside browser-use
+itself. `[code]` — `browser_use/skills/browser_use.py` lines 1-30 (the
+docstring + `OPENCLAW_METADATA_LINES`), `browser_use/skills/__init__.py`.
 
-## Sumber
+## Sources
 
-Repo `browser-use/browser-use` dikloning shallow (`git clone --depth 1`)
-2026-08-23 dan dibaca langsung sebagai file:
+The `browser-use/browser-use` repo was shallow-cloned (`git clone --depth 1`)
+on 2026-08-23 and read directly as files:
 
-- `browser_use/agent/service.py` (4166 baris total — **tidak** dibaca
-  utuh) — baris yang dikutip: 133 (kelas `Agent`), 150, 171, 385
-  (parameter `sensitive_data`, `max_failures`), 397, 532-577 (peringatan
-  domain-lock), 786, 1029-1090 (`step()`, tiga fase), 1291,
-  1542-1582 (`max_steps` budget warning & force-done), 2183-2248
-  (`take_step`), 2444-2471, 2506-2627 (`run()`, loop utama, batas
-  `consecutive_failures`), 3918 (`history.save_to_file`), 4066-4073
-- `browser_use/filesystem/file_system.py` — baris 1-40
-  (`UNSUPPORTED_BINARY_EXTENSIONS`, import)
-- `browser_use/tools/service.py` — hitung decorator `@self.registry.action(`
-  via `grep -c` = 26 (grep tanpa jangkar `@self.` mengembalikan 27 karena
-  ikut menghitung wrapper publik generik `self.registry.action(description,
-  **kwargs)` baris 2097); nama fungsi `go_back`, `wait`, `find_text`
-  dikonfirmasi via `grep -A1`
+- `browser_use/agent/service.py` (4166 lines total — **not** read in full) —
+  the lines cited: 133 (the `Agent` class), 150, 171, 385 (the
+  `sensitive_data`, `max_failures` parameters), 397, 532-577 (the domain-lock
+  warning), 786, 1029-1090 (`step()`, the three phases), 1291, 1542-1582 (the
+  `max_steps` budget warning & force-done), 2183-2248 (`take_step`),
+  2444-2471, 2506-2627 (`run()`, the main loop, the `consecutive_failures`
+  limit), 3918 (`history.save_to_file`), 4066-4073
+- `browser_use/filesystem/file_system.py` — lines 1-40
+  (`UNSUPPORTED_BINARY_EXTENSIONS`, the imports)
+- `browser_use/tools/service.py` — the `@self.registry.action(` decorator
+  count through `grep -c` = 26 (grep without the `@self.` anchor returns 27
+  because it also counts the generic public wrapper
+  `self.registry.action(description, **kwargs)` at line 2097); the `go_back`,
+  `wait`, `find_text` function names confirmed through `grep -A1`
 - `browser_use/skills/__init__.py`, `browser_use/skills/browser_use.py` —
-  baris 1-30
-- Listing direktori (nama file/folder, isi tak dibaca): `browser_use/sandbox/
-  sandbox.py`, `browser_use/controller/`, `browser_use/mcp/`,
-  `browser_use/beta/`, `browser_use/actor/`
+  lines 1-30
+- A directory listing (file/folder names, contents unread):
+  `browser_use/sandbox/sandbox.py`, `browser_use/controller/`,
+  `browser_use/mcp/`, `browser_use/beta/`, `browser_use/actor/`
 
-Catatan kejujuran: `agent/service.py` adalah file 4166 baris, mayoritas
-tidak dibaca — klaim di file ini dibatasi pada baris yang benar-benar
-dikutip. Daftar lengkap 26 action di `tools/service.py` **tidak**
-diverifikasi satu-satu (hanya 3 nama fungsi dikonfirmasi); klaim "tool
-sempit tapi dalam" bertumpu pada jumlah total (26) dan pola nama yang
-terlihat, bukan audit fungsi tiap action. `browser_use/sandbox/sandbox.py`
-disebut lewat listing saja, mekanisme isolasi persis tidak diverifikasi.
+An honesty note: `agent/service.py` is a 4166-line file, mostly unread — the
+claims in this file are limited to the lines actually cited. The complete list
+of 26 actions in `tools/service.py` was **not** verified one by one (only 3
+function names were confirmed); the "narrow but deep tools" claim rests on the
+total count (26) and the visible naming pattern rather than an audit of each
+action's function. `browser_use/sandbox/sandbox.py` is mentioned through a
+listing only; its exact isolation mechanism wasn't verified.
