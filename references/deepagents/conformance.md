@@ -549,11 +549,11 @@ longer appear in the `grep`, so numbers 1 and 17 are deliberately empty.
 | 12-16 | `scaffolds/_base.md:56,77,160,450,493` | The `Orchestrator` protocol; `namespace` from the application `Scope` rather than `rt.server_info.user.identity`; `AsyncConnectionPool`; inline turn execution in the SSE generator | **:160 → D-08 (highest risk)**; the rest is application architecture, outside `deepagents` |
 | — | `scaffolds/deltas/01-workspace-agent.md` | Derived from D-01 | **withdrawn**, now `[code]` |
 | 18-19 | `scaffolds/deltas/02-generative-builder.md:25,37` | Derived from #2 | D-02 |
-| 20 | `scaffolds/deltas/03-general-task-agent.md:22` | Derived from #3 | D-03 |
-| 21 | `scaffolds/deltas/04-research-agent.md:44` | Derived from #4 | D-04 |
-| 22 | `scaffolds/deltas/05-in-app-copilot.md:34` | Derived from #5 | D-05 |
-| 23-25 | `scaffolds/deltas/06-workflow-agent.md:14,24,49` | Derived from #6, #7, #8 | D-06, D-06b, D-06c |
-| 26 | `scaffolds/deltas/07-computer-use-agent.md:29` | Derived from #9 | D-07 |
+| 20 | `scaffolds/deltas/03-general-task-agent.md:24` | Derived from #3 | D-03 |
+| 21 | `scaffolds/deltas/04-research-agent.md:46` | Derived from #4 | D-04 |
+| 22 | `scaffolds/deltas/05-in-app-copilot.md:36` | Derived from #5 | D-05 |
+| 23-25 | `scaffolds/deltas/06-workflow-agent.md:16,25,51` | Derived from #6, #7, #8 | D-06, D-06b, D-06c |
+| 26 | `scaffolds/deltas/07-computer-use-agent.md:30` | Derived from #9 | D-07 |
 | 27 | `concepts/artifacts-and-canvas.md:88` | Artifact versions use a monotonic integer, not a timestamp | outside `deepagents` |
 | 28-29 | `concepts/evaluation.md:37,66` | Evaluating the full trajectory; "golden transcript" | outside `deepagents` |
 | 30 | `concepts/guardrails.md:31` | The six-point guardrail framework from the project spec | outside `deepagents` |

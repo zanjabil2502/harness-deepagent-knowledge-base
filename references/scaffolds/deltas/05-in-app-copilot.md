@@ -1,51 +1,53 @@
 # Delta 05 — In-App Copilot
 
-Basis: [`../_base.md`](../_base.md). File ini **hanya** selisihnya. Rasional
-lengkap: [`../../archetypes/05-in-app-copilot.md`](../../archetypes/05-in-app-copilot.md)
-§Bangun ini pakai deepagents.
+Base: [`../_base.md`](../_base.md). This file is **only** the difference. The
+full rationale:
+[`../../archetypes/05-in-app-copilot.md`](../../archetypes/05-in-app-copilot.md)
+§Building this with deepagents.
 
-## Ganti
+## Replace
 
-- **Tool surface**: `tools=[...]` custom, tiap tool adalah wrapper tipis ke
-  satu endpoint API produk tuan rumah, dipetakan manual — filesystem
-  bawaan deepagents dimatikan total lewat
+- **Tool surface**: a custom `tools=[...]`, each tool a thin wrapper around
+  one host product API endpoint, mapped manually — deepagents' built-in
+  filesystem is disabled entirely through
   `permissions=[FilesystemPermission(operations=["read", "write"],
-  paths=["/**"], mode="deny")]` (`operations` cuma menerima
-  `"read"`/`"write"`, keduanya wajib diisi — bukan parameter opsional.
-  `[code]` sumber `deepagents/middleware/filesystem.py`, dibaca langsung
-  dari `references/recipes/.venv`). `execute` tidak perlu ditutup terpisah
-  — sama seperti delta 04, backend `_base` (`StoreBackend`) tidak
-  mengimplementasikan `SandboxBackendProtocol`, jadi tool itu tidak pernah
-  terdaftar. `_base` tidak memasang `tools=` dan tidak mematikan filesystem
-  sama sekali. `[code]` sumber signature `create_deep_agent` (`tools`,
+  paths=["/**"], mode="deny")]` (`operations` accepts only
+  `"read"`/`"write"`, and both must be given — it isn't an optional
+  parameter. `[code]` sourced from `deepagents/middleware/filesystem.py`,
+  read directly from `references/recipes/.venv`). `execute` needs no
+  separate closing — as in delta 04, `_base`'s backend (`StoreBackend`)
+  doesn't implement `SandboxBackendProtocol`, so that tool is never
+  registered. `_base` installs no `tools=` and disables no filesystem at
+  all. `[code]` sourced from the `create_deep_agent` signature (`tools`,
   `permissions`), archetype 05.
-- **Backend**: `StoreBackend(namespace=...)` (`_base`, durable per-user) →
-  `StateBackend` default (thread-scoped, tidak durable) — tidak ada
-  artefak file yang perlu bertahan lintas thread; sumber kebenaran tetap di
-  produk tuan rumah, bukan di agent. `[code]` sumber `ARCHITECTURE.md`.
-- **Context**: bukan `memory=[...]` lintas sesi — context datang dari state
-  aplikasi tuan rumah yang disuntikkan lewat `context_schema` per
-  panggilan. `[code]` parameter `context_schema` ada di signature
-  `create_deep_agent`.
+- **Backend**: `StoreBackend(namespace=...)` (`_base`, durable per user) →
+  the default `StateBackend` (thread-scoped, not durable) — there are no
+  file artifacts needing to survive across threads; the source of truth
+  stays in the host product rather than the agent. `[code]` sourced from
+  `ARCHITECTURE.md`.
+- **Context**: not cross-session `memory=[...]` — context comes from the
+  host application's state injected through `context_schema` per call.
+  `[code]` the `context_schema` parameter exists in the `create_deep_agent`
+  signature.
 
-## Tambah
+## Add
 
-- **Safety gate**: tool `undo_<aksi>` eksplisit dipasangkan ke tiap tool
-  aksi produk, dipanggil dari UI host — bukan `interrupt_on`. `[ours]`
-  archetype 05: vanilla `HumanInTheLoopMiddleware` dirancang untuk
-  approve/edit/reject **sebelum** eksekusi; kita menyimpang ke pola "aksi
-  dulu, undo tersedia" karena horizon pendek arketipe ini membuat jeda
-  approval terasa sebagai regresi UX dibanding produk tuan rumah yang sudah
-  cepat.
+- **Safety gate**: an explicit `undo_<action>` tool paired with each product
+  action tool, invoked from the host UI — not `interrupt_on`. `[ours]`
+  archetype 05: vanilla `HumanInTheLoopMiddleware` is designed for
+  approve/edit/reject **before** execution; we diverge to an "act first,
+  undo available" pattern because this archetype's short horizon makes an
+  approval pause feel like a UX regression against a host product that is
+  already fast.
 
-## Buang
+## Remove
 
-- **`ScopeMiddleware` membaca `x-user-id` dari header mentah** (`_base`) —
-  tetap dipakai untuk identitas request, tapi **tidak** dipakai untuk
-  `StoreBackend.namespace` (backend-nya sudah `StateBackend`, tidak butuh
-  namespace) — dicatat eksplisit supaya tidak ada kode sisa yang
-  mengasumsikan namespace per-user yang sebenarnya sudah tidak dipakai.
-- **`memory=[...]` lintas sesi** — dinyatakan eksplisit TIDAK dipasang
-  (bukan cuma "kebetulan tidak ada" seperti di `_base`) karena horizon
-  pendek arketipe ini tidak punya memory lintas dokumen yang perlu
-  dipertahankan agent (`## Konsekuensi harness` archetype 05, poin 4).
+- **`ScopeMiddleware` reading `x-user-id` from a raw header** (`_base`) —
+  still used for request identity, but **not** for
+  `StoreBackend.namespace` (the backend is now `StateBackend` and needs no
+  namespace) — recorded explicitly so no leftover code assumes a per-user
+  namespace that is in fact no longer used.
+- **Cross-session `memory=[...]`** — explicitly declared NOT installed (not
+  merely "happens to be absent" as in `_base`) because this archetype's
+  short horizon has no cross-document memory the agent needs to preserve
+  (archetype 05's `## Harness consequences`, point 4).

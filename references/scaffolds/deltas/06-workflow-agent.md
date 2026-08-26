@@ -1,61 +1,63 @@
 # Delta 06 — Workflow Agent
 
-Basis: [`../_base.md`](../_base.md). File ini **hanya** selisihnya. Rasional
-lengkap: [`../../archetypes/06-workflow-agent.md`](../../archetypes/06-workflow-agent.md)
-§Bangun ini pakai deepagents.
+Base: [`../_base.md`](../_base.md). This file is **only** the difference. The
+full rationale:
+[`../../archetypes/06-workflow-agent.md`](../../archetypes/06-workflow-agent.md)
+§Building this with deepagents.
 
-## Ganti
+## Replace
 
-- **Trigger & routes**: `_base` memicu turn lewat `POST /turns` +
-  `GET /turns/{id}/events` (SSE, manusia menonton real-time). Arketipe ini
-  **tidak punya** manusia real-time — `api/routes/turns.py` diganti
-  consumer event (webhook handler/cron/worker antrean) yang memanggil
-  `Orchestrator.run_turn(...)` langsung, hasil ditulis ke log/dashboard,
-  bukan di-stream ke koneksi HTTP yang menunggu. `[ours]` archetype 06:
-  `create_deep_agent(...)` ditaruh sebagai satu node di graph LangGraph
-  yang lebih besar (atau di belakang worker antrean) yang dipicu event
-  eksternal — deepagents menangani "apa yang dilakukan LLM saat dipanggil",
-  bukan "kapan dipanggil", yang berada di luar tanggung jawab library.
-- **Derivasi `thread_id`**: `_base` menerima `thread_id` sebagai parameter
-  request dari client manusia. Di sini, `thread_id` diturunkan dari
-  idempotency key event trigger (mis. hash `delivery_id` webhook), **bukan**
-  dari sesi/percakapan manusia — supaya retry event yang sama (webhook
-  retry, restart antrian) jatuh ke checkpoint yang sama, bukan membuat run
-  baru. `[ours]` archetype 06: `ARCHITECTURE.md` hanya menyatakan
-  checkpointer disuntik aplikasi, tidak menyebutkan bagaimana `thread_id`
-  dibentuk — ini pola kami, bukan sesuatu yang dijamin/didokumentasikan
-  library.
-- **Resolusi `Scope`**: `ScopeMiddleware` (`_base`) membaca `user_id` dari
-  header request HTTP berautentikasi manusia — tidak berlaku di sini karena
-  trigger bukan request manusia. `Scope` untuk satu workflow run diturunkan
-  dari **konfigurasi workflow** (`user_id` pemilik workflow, tersimpan saat
-  workflow didaftarkan), dibaca oleh consumer event sebelum memanggil
-  `Orchestrator.run_turn(...)` — bukan dari middleware HTTP yang sama.
+- **Triggers & routes**: `_base` triggers a turn through `POST /turns` +
+  `GET /turns/{id}/events` (SSE, with a human watching in real time). This
+  archetype **has no** real-time human — `api/routes/turns.py` is replaced
+  by an event consumer (a webhook handler/cron/queue worker) calling
+  `Orchestrator.run_turn(...)` directly, with the result written to a
+  log/dashboard rather than streamed to a waiting HTTP connection.
+  `[ours]` archetype 06: `create_deep_agent(...)` is placed as one node in
+  a larger LangGraph graph (or behind a queue worker) triggered by an
+  external event — deepagents handles "what the LLM does when called", not
+  "when it is called", which is outside the library's responsibility.
+- **Deriving `thread_id`**: `_base` accepts `thread_id` as a request
+  parameter from a human client. Here `thread_id` is derived from the
+  trigger event's idempotency key (e.g. a hash of a webhook's
+  `delivery_id`), **not** from a human session/conversation — so a retry of
+  the same event (a webhook retry, a queue restart) lands on the same
+  checkpoint rather than creating a new run. `[ours]` archetype 06:
+  `ARCHITECTURE.md` only states that the checkpointer is
+  application-injected and says nothing about how `thread_id` is formed —
+  this is our pattern, not something the library guarantees or documents.
+- **Resolving `Scope`**: `ScopeMiddleware` (`_base`) reads `user_id` from an
+  authenticated human HTTP request header — inapplicable here because the
+  trigger isn't a human request. The `Scope` for one workflow run is derived
+  from the **workflow's configuration** (the owning `user_id`, stored when
+  the workflow was registered), read by the event consumer before calling
+  `Orchestrator.run_turn(...)` — not from the same HTTP middleware.
 
-## Tambah
+## Add
 
-- **Idempotency di titik admisi**: consumer event wajib menegakkan
-  idempotency di level infra antrean (dedupe by `delivery_id`) **selain**
-  idempotency `thread_id` di atas — dua lapis, karena checkpointer resume
-  mencegah duplikasi *kerja LLM*, bukan duplikasi *efek samping tool* yang
-  sudah terjadi sebelum crash (`## Jebakan khas` archetype 06, poin 1).
-- **Safety gate**: `interrupt_on` untuk aksi berisiko tinggi (mis.
-  `send_email: True`) tetap dipasang meski tidak ada manusia real-time —
-  approval-nya async lewat channel terpisah (dashboard/Slack), bukan
-  menunggu di koneksi SSE (yang memang tidak ada di arketipe ini). `[code]`
-  sumber `test_hitl.py`.
-- **Kill switch level-workflow**: flag di database dicek consumer event
-  **sebelum** memanggil `Orchestrator.run_turn(...)` untuk workflow itu.
-  `[ours]` archetype 06: tidak ada API "matikan semua run" bawaan
-  `deepagents` — ini tanggung jawab layer orchestrator/queue aplikasi,
-  eksplisit dinyatakan supaya scaffold tidak salah asumsi `create_deep_agent`
-  menyediakan kill switch bawaan.
+- **Idempotency at the admission point**: the event consumer must enforce
+  idempotency at the queue infrastructure level (dedupe by `delivery_id`)
+  **in addition to** the `thread_id` idempotency above — two layers, because
+  checkpointer resume prevents duplicate *LLM work*, not duplicate *tool
+  side effects* that already happened before a crash (archetype 06's
+  `## Common pitfalls`, point 1).
+- **Safety gate**: `interrupt_on` for high-risk actions (e.g.
+  `send_email: True`) is still installed even with no real-time human — its
+  approval is asynchronous through a separate channel (a dashboard/Slack)
+  rather than waiting on an SSE connection (which this archetype doesn't
+  have). `[code]` sourced from `test_hitl.py`.
+- **A workflow-level kill switch**: a database flag checked by the event
+  consumer **before** calling `Orchestrator.run_turn(...)` for that
+  workflow. `[ours]` archetype 06: `deepagents` has no built-in "stop every
+  run" API — this is the application's orchestrator/queue layer's
+  responsibility, stated explicitly so the scaffold doesn't wrongly assume
+  `create_deep_agent` provides a built-in kill switch.
 
-## Buang
+## Remove
 
-- **`GET /turns/{turn_id}/events` (SSE)** — tidak ada yang menonton
-  real-time; observability arketipe ini lewat log terstruktur + trace OTel
-  (`_base.md` §Observability tetap dipakai apa adanya), bukan stream.
-- **`lifecycle/drain.py` `start_turn()`/`end_turn()` dipanggil dari SSE
-  generator** (`_base` pola) — dipanggil dari consumer event sebagai
-  gantinya, mekanismenya (gauge + `wait_empty` saat shutdown) tidak berubah.
+- **`GET /turns/{turn_id}/events` (SSE)** — nobody is watching in real time;
+  this archetype's observability comes through structured logs + OTel traces
+  (`_base.md` §Observability is used as-is), not a stream.
+- **`lifecycle/drain.py`'s `start_turn()`/`end_turn()` called from the SSE
+  generator** (the `_base` pattern) — called from the event consumer
+  instead; the mechanism (a gauge + `wait_empty` at shutdown) is unchanged.

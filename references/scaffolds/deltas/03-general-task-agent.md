@@ -1,43 +1,44 @@
 # Delta 03 — General Task Agent
 
-Basis: [`../_base.md`](../_base.md). File ini **hanya** selisihnya. Rasional
-lengkap: [`../../archetypes/03-general-task-agent.md`](../../archetypes/03-general-task-agent.md)
-§Bangun ini pakai deepagents.
+Base: [`../_base.md`](../_base.md). This file is **only** the difference. The
+full rationale:
+[`../../archetypes/03-general-task-agent.md`](../../archetypes/03-general-task-agent.md)
+§Building this with deepagents.
 
-## Tambah
+## Add
 
-- **Planning**: `middleware=[TodoListMiddleware()]` pada
-  `create_deep_agent(...)` — `_base` tidak memasangnya (middleware ini
-  **tidak** ada di stack default `create_deep_agent()` sama sekali, bukan
-  cuma tidak ada di `_base`). `[code]` sumber `graph.py`, archetype 03.
+- **Planning**: `middleware=[TodoListMiddleware()]` on
+  `create_deep_agent(...)` — `_base` doesn't install it (this middleware is
+  **not** in `create_deep_agent()`'s default stack at all, not merely absent
+  from `_base`). `[code]` sourced from `graph.py`, archetype 03.
 - **Delegation**: `subagents=[{"name": ..., "description": ..., "model":
-  ..., "system_prompt": ..., "tools": [...]}, ...]` — `_base` tidak
-  memasang subagent apa pun. `[code]` sumber `middleware/subagents.py`,
+  ..., "system_prompt": ..., "tools": [...]}, ...]` — `_base` installs no
+  subagents. `[code]` sourced from `middleware/subagents.py`,
   `examples/content-builder-agent/README.md`.
-- **Memory lintas sesi**: `memory=["./AGENTS.md"]` pada
-  `create_deep_agent(...)` — memuat `AGENTS.md` ke system prompt tiap sesi
-  lewat `MemoryMiddleware`, di atas `StoreBackend` yang `_base` sudah
-  pasang untuk file durable. `[code]` sumber `ARCHITECTURE.md`.
-- **Loop budget & kill switch**: middleware kustom deteksi tool-call
-  berulang identik N kali berturut-turut → paksa berhenti. `[ours]`
-  archetype 03: `deepagents` tidak punya "no-progress detector" bawaan —
-  vanilla-nya `recursion_limit` generik LangGraph (9999,
-  `../../concepts/guardrails.md` peringatan titik 5), `interrupt_on` per
-  tool, dan `ModelCallLimitMiddleware`/`ToolCallLimitMiddleware`
-  (`langchain.agents.middleware`, bukan milik `deepagents`) — ketiganya
-  cukup mencegah loop tak berhenti secara sintaksis (atau kelebihan
-  budget) tapi tidak satu pun mendeteksi *pengulangan*, jadi tidak cukup
-  untuk agent yang secara semantik berputar di tempat sebelum budgetnya
-  habis.
+- **Cross-session memory**: `memory=["./AGENTS.md"]` on
+  `create_deep_agent(...)` — loading `AGENTS.md` into the system prompt each
+  session through `MemoryMiddleware`, on top of the `StoreBackend` `_base`
+  already installs for durable files. `[code]` sourced from
+  `ARCHITECTURE.md`.
+- **Loop budget & kill switch**: custom middleware detecting an identical
+  tool call repeated N times consecutively → force a stop. `[ours]`
+  archetype 03: `deepagents` has no built-in "no-progress detector" —
+  vanilla is LangGraph's generic `recursion_limit` (9999, the point 5
+  warning in `../../concepts/guardrails.md`), per-tool `interrupt_on`, and
+  `ModelCallLimitMiddleware`/`ToolCallLimitMiddleware`
+  (`langchain.agents.middleware`, not `deepagents`') — all three prevent a
+  syntactically endless loop (or a budget overrun) but none detects
+  *repetition*, so none suffices for an agent semantically spinning in place
+  before its budget runs out.
 
-## Ganti
+## Replace
 
-- **Tidak ada** — backend (`StoreBackend(namespace=...)`) dari `_base`
-  sudah cocok dengan kebutuhan "filesystem-as-memory" arketipe ini apa
-  adanya; `memory=["./AGENTS.md"]` di atas menambah lapisan di atasnya,
-  bukan menggantinya.
+- **Nothing** — the backend (`StoreBackend(namespace=...)`) from `_base`
+  already matches this archetype's "filesystem-as-memory" need as-is;
+  `memory=["./AGENTS.md"]` above adds a layer on top of it rather than
+  replacing it.
 
-## Buang
+## Remove
 
-- **Tidak ada** — `_base` tidak memasang apa pun yang bertentangan dengan
-  arketipe ini; delta ini murni penambahan di atas baseline.
+- **Nothing** — `_base` installs nothing conflicting with this archetype;
+  this delta is purely additive on top of the baseline.

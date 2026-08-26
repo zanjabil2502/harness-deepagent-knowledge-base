@@ -1,42 +1,43 @@
 # Delta 07 — Computer-Use Agent
 
-Basis: [`../_base.md`](../_base.md). File ini **hanya** selisihnya. Rasional
-lengkap: [`../../archetypes/07-computer-use-agent.md`](../../archetypes/07-computer-use-agent.md)
-§Bangun ini pakai deepagents.
+Base: [`../_base.md`](../_base.md). This file is **only** the difference. The
+full rationale:
+[`../../archetypes/07-computer-use-agent.md`](../../archetypes/07-computer-use-agent.md)
+§Building this with deepagents.
 
-## Ganti
+## Replace
 
-- **Tool surface**: `tools=[click_tool, type_tool, screenshot_tool, ...]`
-  custom, dipetakan ke backend automasi browser eksternal (Playwright/CDP)
-  — deepagents sendiri tidak menyediakan tool computer-use bawaan. `_base`
-  tidak memasang `tools=`. `[code]` sumber signature `create_deep_agent`
-  (`tools`), archetype 07.
-- **Backend**: `StoreBackend(namespace=...)` (`_base`) → backend keluarga
-  sandbox yang sama levelnya dengan delta 02 (mis. `DaytonaSandbox` atau
-  setara) membungkus proses browser — sesi browser yang crash/di-abuse
-  tidak boleh menyentuh compute lain. `[code]` sumber
+- **Tool surface**: a custom `tools=[click_tool, type_tool,
+  screenshot_tool, ...]`, mapped to an external browser automation backend
+  (Playwright/CDP) — deepagents provides no built-in computer-use tools.
+  `_base` installs no `tools=`. `[code]` sourced from the
+  `create_deep_agent` signature (`tools`), archetype 07.
+- **Backend**: `StoreBackend(namespace=...)` (`_base`) → a sandbox-family
+  backend at the same level as delta 02's (e.g. `DaytonaSandbox` or an
+  equivalent) wrapping the browser process — a crashed or abused browser
+  session must not touch other compute. `[code]` sourced from
   `libs/partners/daytona/README.md`.
 
-## Tambah
+## Add
 
 - **Safety gate**: `interrupt_on={"submit_form": True, "click":
-  {"allowed_decisions": ["approve", "reject"]}}` — `_base` tidak memasang
-  `interrupt_on`. `[code]` pola `allowed_decisions` per-tool dikutip
-  `test_hitl.py`.
-- **Loop verifikasi**: tool `verify_state` yang wajib dipanggil setelah
-  tiap tool aksi UI, ditegakkan lewat konvensi instruksi `system_prompt`
-  (bukan middleware — deepagents tidak punya middleware yang menegakkan
-  urutan pemanggilan tool). `[ours]` archetype 07: vanilla
-  `create_deep_agent` mengasumsikan tool call itu sendiri sudah membawa
-  hasilnya (`ToolMessage`) tanpa fase verifikasi terpisah; kita menyimpang
-  karena computer-use tidak punya jaminan bahwa hasil aksi = hasil yang
-  terlihat di layar. `PatchToolCallsMiddleware` (sudah ada di stack default
-  `_base`) tidak relevan untuk ini — perannya cuma menambal `ToolMessage`
-  dangling di riwayat, bukan menegakkan urutan eksekusi tool.
+  {"allowed_decisions": ["approve", "reject"]}}` — `_base` installs no
+  `interrupt_on`. `[code]` the per-tool `allowed_decisions` pattern cited
+  from `test_hitl.py`.
+- **A verification loop**: a `verify_state` tool that must be called after
+  every UI action tool, enforced through `system_prompt` instruction
+  convention (not middleware — deepagents has no middleware enforcing tool
+  call ordering). `[ours]` archetype 07: vanilla `create_deep_agent` assumes
+  a tool call itself already carries its result (`ToolMessage`) with no
+  separate verification phase; we diverge because computer-use has no
+  guarantee that an action's result equals what is visible on screen.
+  `PatchToolCallsMiddleware` (already in `_base`'s default stack) isn't
+  relevant to this — its role is only patching dangling `ToolMessage`s in
+  history, not enforcing tool execution order.
 
-## Buang
+## Remove
 
-- **Isolasi lewat "proses/container terpisah per user"** (pola delta 01) —
-  tidak dibutuhkan, backend sandbox sudah menyediakan isolasi per sesi
-  browser secara bawaan (sama alasan delta 02, `sandboxing.md` baris
-  microVM).
+- **Isolation through "a separate process/container per user"** (the delta
+  01 pattern) — unnecessary; the sandbox backend already provides per
+  browser session isolation by default (the same reason as delta 02, the
+  microVM row of `sandboxing.md`).
