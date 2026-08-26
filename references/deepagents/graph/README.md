@@ -50,7 +50,7 @@ That is why `manifest.json` stores the raw md5 of every file, and
 in the graph but missing or changed in the source, and files present in
 the source but not yet in the graph. Latest status: **53/53 matching**.
 Without the `../../recipes/.venv` venv, that check is skipped with a
-`LEWAT` (skipped) message and the rest still runs.
+`SKIPPED` message and the rest still runs.
 
 ## Rebuilding
 
