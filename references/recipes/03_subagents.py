@@ -1,23 +1,23 @@
-"""03 - Subagents: delegasi lewat tool `task` ke subagent riset sempit.
+"""03 - Subagents: delegating through the `task` tool to a narrow research subagent.
 
-Mendemokan: `subagents=[SubAgent, ...]` pada `create_deep_agent` — sebuah
-subagent deklaratif dengan `tools` yang lebih sempit dari agent utama
-(hanya `web_search_stub`, tanpa akses filesystem luas), dipanggil lewat tool
-`task` yang dibangun otomatis oleh `SubAgentMiddleware`. Isi `ToolMessage`
-yang kembali ke agent utama adalah teks `AIMessage` non-kosong terakhir dari
-subagent, atau `structured_response` yang di-serialize ke JSON kalau field
-itu diisi — bukan `messages` state akhir subagent disalin mentah, dan bukan
-seluruh transkrip kerjanya.
+Demonstrates: `subagents=[SubAgent, ...]` on `create_deep_agent` — a
+declarative subagent with `tools` narrower than the main agent's (only
+`web_search_stub`, with no broad filesystem access), invoked through the
+`task` tool `SubAgentMiddleware` builds automatically. The `ToolMessage`
+content returning to the main agent is the subagent's last non-empty
+`AIMessage` text, or its `structured_response` serialised to JSON when that
+field is set — not the subagent's final `messages` state copied raw, and not
+its whole working transcript.
 
-Arketipe yang terbantu: Research/Analyst (04) — pola subagent riset dengan
-tool pencarian sempit persis seperti yang dirujuk
-`references/archetypes/04-research-agent.md` section "Bangun ini pakai
-deepagents" (`examples/deep_research/research_agent.ipynb`).
+Archetypes served: Research/Analyst (04) — the research subagent pattern with
+a narrow search tool, exactly as referenced by
+`references/archetypes/04-research-agent.md`'s "Building this with
+deepagents" section (`examples/deep_research/research_agent.ipynb`).
 
-Konsep yang diilustrasikan: `## 4. Delegation` di
-`references/systems/deepagents.md` — spec `SubAgent` (dict), auto-tambahnya
-subagent `general-purpose` di samping subagent kustom, dan bagaimana hasil
-delegasi kembali sebagai `ToolMessage` tool `task`.
+Concepts illustrated: `## 4. Delegation` in
+`references/systems/deepagents.md` — the `SubAgent` spec (a dict), the
+automatic addition of the `general-purpose` subagent alongside a custom one,
+and how a delegation's result returns as the `task` tool's `ToolMessage`.
 """
 
 import sys
@@ -30,17 +30,17 @@ from deepagents import SubAgent, create_deep_agent
 
 @tool
 def web_search_stub(query: str) -> str:
-    """Cari informasi di web untuk `query` (stub — tidak memanggil jaringan nyata)."""
-    return f"[stub] tidak ada hasil nyata untuk: {query}"
+    """Search the web for `query` (a stub -- it makes no real network call)."""
+    return f"[stub] no real results for: {query}"
 
 
 def build_agent():
-    """Bangun deep agent dengan satu subagent riset bertool sempit."""
+    """Build a deep agent with one narrow-tooled research subagent."""
     model = ChatAnthropic(model_name="claude-sonnet-4-6")
     research_subagent: SubAgent = {
         "name": "research-agent",
-        "description": "Mencari dan meringkas informasi dari web untuk sub-pertanyaan riset.",
-        "system_prompt": "Kamu adalah subagent riset. Gunakan web_search_stub, lalu ringkas temuan secara singkat.",
+        "description": "Searches and summarises information from the web for research sub-questions.",
+        "system_prompt": "You are a research subagent. Use web_search_stub, then summarise your findings briefly.",
         "tools": [web_search_stub],
     }
     return create_deep_agent(
@@ -54,14 +54,14 @@ def main() -> int:
     agent = build_agent()
     graph = agent.get_graph()
     print("=== 03_subagents ===")
-    print(f"Node graph: {sorted(graph.nodes.keys())}")
-    print("Subagent terdaftar: research-agent (tool sempit: web_search_stub)")
-    print("Subagent default general-purpose tetap ditambahkan otomatis")
+    print(f"Graph nodes: {sorted(graph.nodes.keys())}")
+    print("Registered subagent: research-agent (narrow tool: web_search_stub)")
+    print("The default general-purpose subagent is still added automatically")
 
     print(
-        "Konstruksi terverifikasi — nama dan signature API yang dipakai valid. "
-        "Recipe ini sengaja tidak memanggil model: tidak butuh kredensial "
-        "apa pun, dan tidak menyentuh jaringan."
+        "Construction verified -- the API names and signatures used are valid. "
+        "This recipe deliberately never calls the model: it needs no "
+        "credentials at all and touches no network."
     )
     return 0
 

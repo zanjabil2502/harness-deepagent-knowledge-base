@@ -1,21 +1,21 @@
 """02 - Custom middleware: explicit planning + permission-gated writes.
 
-Mendemokan: menambah `TodoListMiddleware` (dari `langchain.agents.middleware`,
-**bukan** bagian stack default `create_deep_agent`) lewat parameter
-`middleware=[...]`, dan memasang `FilesystemPermission` dengan
-`mode="interrupt"` untuk menahan tiap `write_file` di luar `/scratch/` demi
-persetujuan manusia — tanpa menyentuh `interrupt_on` secara manual, karena
-rule `mode="interrupt"` otomatis membangkitkan entrinya sendiri lewat
-`_build_interrupt_on_from_permissions`.
+Demonstrates: adding `TodoListMiddleware` (from
+`langchain.agents.middleware`, **not** part of `create_deep_agent`'s default
+stack) through the `middleware=[...]` parameter, and installing a
+`FilesystemPermission` with `mode="interrupt"` to hold every `write_file`
+outside `/scratch/` for human approval — without touching `interrupt_on`
+manually, because a `mode="interrupt"` rule generates its own entries
+automatically through `_build_interrupt_on_from_permissions`.
 
-Arketipe yang terbantu: General Task Agent (03) — planning eksplisit adalah
-axis pembeda utamanya (lihat `references/archetypes/03-general-task-agent.md`
-section "Bangun ini pakai deepagents": "TodoListMiddleware ... harus
-ditambahkan eksplisit").
+Archetypes served: the General Task Agent (03) — explicit planning is its
+primary distinguishing axis (see
+`references/archetypes/03-general-task-agent.md`, the "Building this with
+deepagents" section: "TodoListMiddleware ... must be added explicitly").
 
-Konsep yang diilustrasikan: `## 5. State & resume` (tidak ada todo bawaan,
-harus ditambah manual) dan `## 6. Safety gate` (permission `mode="interrupt"`
-membangkitkan `interrupt_on` otomatis, digabung dengan entri eksplisit) di
+Concepts illustrated: `## 5. State & resume` (no built-in todos; they must be
+added manually) and `## 6. Safety gate` (a `mode="interrupt"` permission
+generating `interrupt_on` automatically, merged with explicit entries) in
 `references/systems/deepagents.md`.
 """
 
@@ -28,7 +28,7 @@ from deepagents import FilesystemPermission, create_deep_agent
 
 
 def build_agent():
-    """Bangun deep agent dengan TodoListMiddleware eksplisit + gate permission."""
+    """Build a deep agent with an explicit TodoListMiddleware + a permission gate."""
     model = ChatAnthropic(model_name="claude-sonnet-4-6")
     permissions = [
         FilesystemPermission(operations=["write"], paths=["/scratch/**"], mode="allow"),
@@ -46,14 +46,14 @@ def main() -> int:
     agent = build_agent()
     graph = agent.get_graph()
     print("=== 02_custom_middleware ===")
-    print(f"Node graph: {sorted(graph.nodes.keys())}")
-    print("Middleware eksplisit: TodoListMiddleware (planning, tool write_todos)")
-    print("Permission gate: write ke /scratch/** diizinkan, write lain interrupt")
+    print(f"Graph nodes: {sorted(graph.nodes.keys())}")
+    print("Explicit middleware: TodoListMiddleware (planning, the write_todos tool)")
+    print("Permission gate: writes to /scratch/** allowed, other writes interrupt")
 
     print(
-        "Konstruksi terverifikasi — nama dan signature API yang dipakai valid. "
-        "Recipe ini sengaja tidak memanggil model: tidak butuh kredensial "
-        "apa pun, dan tidak menyentuh jaringan."
+        "Construction verified -- the API names and signatures used are valid. "
+        "This recipe deliberately never calls the model: it needs no "
+        "credentials at all and touches no network."
     )
     return 0
 
