@@ -28,11 +28,11 @@ python3 tools/build_glossary.py
 | **idempotency key** | Kunci yang membuat pengiriman ulang turn yang sama tidak menghasilkan eksekusi ganda; unik per user. | [`concepts/persistence-schema.md`](concepts/persistence-schema.md) |
 | **intent vs ekspresi** | Pemisahan antara maksud yang netral bahasa (kode stabil) dan teks yang dilihat manusia (mengikuti locale). Dasar seluruh penanganan multilingual. | [`concepts/multilingual.md`](concepts/multilingual.md) |
 | **kompaksi** | Meringkas riwayat percakapan jadi ringkasan terstruktur saat mendekati batas jendela konteks; berbeda dari offload yang memindahkan isi ke filesystem. | [`concepts/context-engineering.md`](concepts/context-engineering.md) |
-| **kontrak hasil** | Apa persis yang mengalir balik dari subagent ke pemanggil — transkrip penuh atau ringkasan tersaring — beserta apa yang sengaja tidak boleh mengalir balik. | [`concepts/delegation.md`](concepts/delegation.md) |
 | **policy-as-data** | Kebijakan dinyatakan sebagai data yang bisa dibaca, diaudit, dan diubah tanpa deploy — bukan cabang `if` di dalam engine. | [`concepts/policy-as-data.md`](concepts/policy-as-data.md) |
 | **progressive disclosure** | Skill memuat frontmatter di system prompt, body saat aktivasi, berkas rujukan hanya saat instruksinya menyuruh — tiap lapis punya anggaran sendiri. | [`concepts/skill-composition.md`](concepts/skill-composition.md) |
 | **PTC** | Programmatic tool calling: tool agent diekspos sebagai fungsi di dalam kode yang dijalankan interpreter, sehingga satu tool call bisa memanggil banyak tool. | [`concepts/code-orchestration.md`](concepts/code-orchestration.md) |
 | **reattach** | Client yang terputus menyambung kembali ke turn yang sedang berjalan tanpa kehilangan event yang sudah lewat. | [`concepts/streaming-protocol.md`](concepts/streaming-protocol.md) |
+| **result contract** | Exactly what flows back from a subagent to its caller — the full transcript or a filtered summary — plus what deliberately must not flow back. | [`concepts/delegation.md`](concepts/delegation.md) |
 | **tail stack** | Slot middleware yang dirakit `create_deep_agent` **setelah** `middleware=[...]` milik user; posisinya menentukan apa yang masih bisa disaring dan digerbangi. | [`deepagents/middleware.md`](deepagents/middleware.md) |
 
 ## Simbol deepagents
