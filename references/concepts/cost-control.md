@@ -1,164 +1,165 @@
 # Cost control
 
-## Masalah
+## Problem
 
-Agent loop yang tidak dibatasi membakar biaya semalam tanpa ada yang sadar
-sampai tagihan datang — ini bukan spekulasi, ini konsekuensi langsung dari
-fakta yang sudah dicatat `guardrails.md`: `deepagents` menaikkan
-`recursion_limit` LangGraph ke **9999** sebagai jaring pengaman terhadap
-task legit yang panjang, bukan sebagai batas biaya. Aplikasi yang tidak
-memasang guardrail Loop-nya sendiri secara eksplisit efektif tidak punya
-langit-langit biaya sampai 9999 langkah tercapai — angka yang cukup besar
-untuk membakar biaya signifikan sebelum berhenti sendiri.
+An unbounded agent loop burns money overnight with nobody noticing until
+the bill arrives — that isn't speculation, it follows directly from a fact
+`guardrails.md` already records: `deepagents` raises LangGraph's
+`recursion_limit` to **9999** as a safety net for legitimately long tasks,
+not as a cost ceiling. An application that doesn't explicitly install its
+own Loop guardrail effectively has no cost ceiling until 9999 steps are
+reached — a number large enough to burn significant money before it stops
+on its own.
 
-Masalah kedua: "budget" tanpa level yang jelas tidak berguna untuk dua
-kegagalan yang bentuknya berbeda. Satu run yang jadi patologis (satu turn
-menghabiskan ratusan dolar karena loop) butuh batas **per run** supaya satu
-turn buruk tidak menghabiskan budget sebulan. Satu user yang memanggil agent
-berkali-kali dengan run yang masing-masing terlihat wajar tapi jumlahnya
-menumpuk (abuse tersebar, bukan satu turn ekstrem) butuh batas **per user**
-teragregasi lintas run/waktu, yang tidak bisa ditangkap oleh batas per-run
-saja. Menyamakan keduanya jadi satu angka membuat batas itu terlalu ketat
-untuk tugas besar yang sah, atau terlalu longgar untuk abuse yang tersebar.
+Second problem: a "budget" with no clear level is useless against two
+failures of different shape. One run turning pathological (a single turn
+spending hundreds of dollars in a loop) needs a **per-run** limit so one
+bad turn doesn't consume a month's budget. One user calling the agent
+repeatedly with runs that each look reasonable but add up (distributed
+abuse, not one extreme turn) needs a **per-user** limit aggregated across
+runs and time, which a per-run limit alone cannot catch. Collapsing both
+into one number makes that limit either too tight for legitimate large
+tasks, or too loose for distributed abuse.
 
-Masalah ketiga: tanpa atribusi biaya ke langkah spesifik, alert budget cuma
-bilang "sesuatu mahal", bukan "apa yang harus diperbaiki" — versi
-cost-specific dari masalah "agent gagal diam-diam" di `observability.md`.
+Third problem: without attributing cost to a specific step, a budget alert
+only says "something is expensive", not "what to fix" — the cost-specific
+version of the "the agent fails silently" problem in `observability.md`.
 
-## Pola
+## Pattern
 
-### Dua level budget: run dan user
+### Two budget levels: run and user
 
-- **Per run/thread** — dua batas berbeda yang sering tertukar:
-  `thread_limit` (akumulatif sepanjang satu thread percakapan, lintas
-  banyak turn) dan `run_limit` (satu eksekusi/turn tunggal). Keduanya
-  penting untuk alasan berbeda: `run_limit` menangkap satu turn yang
-  spiral; `thread_limit` menangkap percakapan yang terus berlanjut tanpa
-  batas lintas banyak turn yang masing-masing terlihat wajar sendiri-
-  sendiri. Mekanisme konkret ada di `guardrails.md` titik 5
-  (`ToolCallLimitMiddleware`/`ModelCallLimitMiddleware`), tidak diusulkan
-  ulang di sini.
-- **Per user** — teragregasi lintas run/thread/jendela waktu (mis. cap
-  dolar harian/bulanan per `user_id`), dan ini **tidak** bisa ditegakkan
-  middleware `deepagents`/`langchain` manapun karena middleware itu cuma
-  melihat satu eksekusi graph pada satu waktu, tidak punya memori lintas
-  run. Wajib ditegakkan di lapis aplikasi: akumulasi biaya per `user_id`
-  disimpan (Postgres/Redis), dicek **sebelum** turn baru diizinkan mulai
-  (preflight check, bukan post-hoc setelah biaya sudah terjadi) — scope
-  `user_id`-nya sama persis dengan yang sudah ditetapkan
-  `isolation-and-scoping.md`, tidak diusulkan model baru.
-- **Kill switch** — dua lapis: otomatis (dari batas run/user di atas,
-  `exit_behavior="error"`/`"end"` di `guardrails.md`, plus
-  `cancel_async_task` untuk task background) dan **manual/operator**,
-  independen dari deteksi otomatis manapun — untuk kasus mode kegagalan
-  baru yang belum tertangkap detektor mana pun, operator butuh cara
-  menghentikan run user tertentu atau seluruh sistem **sekarang**, bukan
-  menunggu batas numerik tersentuh.
+- **Per run/thread** — two distinct limits that are often confused:
+  `thread_limit` (cumulative across one conversation thread, spanning many
+  turns) and `run_limit` (a single execution/turn). Both matter for
+  different reasons: `run_limit` catches one turn spiralling;
+  `thread_limit` catches a conversation continuing without bound across
+  many turns that each look reasonable in isolation. The concrete
+  mechanism is in `guardrails.md` point 5
+  (`ToolCallLimitMiddleware`/`ModelCallLimitMiddleware`) and isn't
+  re-proposed here.
+- **Per user** — aggregated across runs/threads/time windows (e.g. a
+  daily or monthly dollar cap per `user_id`), and this **cannot** be
+  enforced by any `deepagents`/`langchain` middleware, because middleware
+  only ever sees one graph execution at a time and has no memory across
+  runs. It must be enforced at the application layer: accumulated cost per
+  `user_id` stored (Postgres/Redis) and checked **before** a new turn is
+  allowed to start (a preflight check, not post-hoc after the cost has
+  already been incurred) — using exactly the `user_id` scope already
+  established in `isolation-and-scoping.md`, with no new model proposed.
+- **Kill switch** — two layers: automatic (from the run/user limits above,
+  `exit_behavior="error"`/`"end"` in `guardrails.md`, plus
+  `cancel_async_task` for background tasks) and **manual/operator**,
+  independent of any automatic detection — for a new failure mode no
+  detector has caught yet, an operator needs a way to stop a specific
+  user's run or the whole system **now**, not when a numeric limit
+  happens to be touched.
 
-### Deteksi loop liar
+### Runaway loop detection
 
-Deteksi oscillation/no-progress (baris guardrail titik 5 di `guardrails.md`,
-mekanismenya tidak diusulkan ulang di sini) punya sudut pandang biaya
-tersendiri: loop bisa **"on-budget" menurut hitungan langkah** tapi tetap
-murni pemborosan — mengulang tool call yang gagal dengan argumen nyaris
-identik, masing-masing tetap memakan token nyata, tanpa membuat progres.
-Batas numerik (`thread_limit`/`run_limit`) baru berbunyi setelah langkah
-ke-N tercapai; deteksi oscillation bisa memotong lebih awal begitu polanya
-kelihatan (mis. N panggilan tool berurutan dengan argumen/hasil identik) —
-lebih murah daripada menunggu langit-langit numerik tersentuh, karena tiap
-langkah tambahan yang dibiarkan berjalan sebelum limit tercapai tetap biaya
-nyata yang sudah terbakar.
+Oscillation/no-progress detection (the guardrail point 5 line in
+`guardrails.md`; its mechanism isn't re-proposed here) has a cost angle of
+its own: a loop can be **"on-budget" by step count** and still be pure
+waste — repeating a failing tool call with near-identical arguments, each
+one consuming real tokens, making no progress. A numeric limit
+(`thread_limit`/`run_limit`) only fires once the Nth step is reached;
+oscillation detection can cut in earlier as soon as the pattern is visible
+(e.g. N consecutive tool calls with identical arguments/results) — cheaper
+than waiting for the numeric ceiling, because every extra step allowed to
+run before the limit is reached is real money already burnt.
 
-### Atribusi biaya per langkah
+### Per-step cost attribution
 
-Biaya bukan pipeline terpisah dari tracing — ia atribut yang menempel di
-span yang sama dengan yang sudah dijelaskan `observability.md` §Span per
-langkah. `Langfuse` mengekstrak usage token per span generation
-(`_parse_usage(response)`, ditulis ke `usage`/`usage_details` span) dan
-punya field `cost_details` per span (default `cost_details={"total": 0}`
-sebelum dihitung ulang dari usage × tabel harga model). `[code]` —
-`langfuse/langchain/CallbackHandler.py` (baris memuat `_parse_usage`,
-`usage_details`, beberapa default `cost_details={"total": 0}`). Konsekuensi
-praktis: span per **langkah** (model call individual, bukan agregat turn)
-berarti biaya juga teratribusi ke langkah spesifik — subagent mana, tool
-apa, panggilan model ke berapa — bukan cuma "turn ini mahal", persis yang
-dibutuhkan untuk menjawab "apa yang harus diperbaiki", bukan cuma "sesuatu
-mahal".
+Cost isn't a pipeline separate from tracing — it is an attribute attached
+to the same span `observability.md` §Span per step already describes.
+`Langfuse` extracts token usage per generation span (`_parse_usage(response)`,
+written to the span's `usage`/`usage_details`) and has a per-span
+`cost_details` field (defaulting to `cost_details={"total": 0}` before
+being recomputed from usage × a model price table). `[code]` —
+`langfuse/langchain/CallbackHandler.py` (the lines defining `_parse_usage`,
+`usage_details`, and several `cost_details={"total": 0}` defaults). The
+practical consequence: a span per **step** (an individual model call, not
+a turn aggregate) means cost is also attributed to a specific step — which
+subagent, which tool, which model call number — not just "this turn was
+expensive", which is exactly what's needed to answer "what should be
+fixed" rather than "something is expensive".
 
-## Trade-off
+## Trade-offs
 
-- **Batas per-run ketat vs longgar** — ketat mencegah satu turn membakar
-  budget besar tapi memotong tugas besar yang sah (riset panjang, refactor
-  lintas banyak file); longgar mengakomodasi tugas legit tapi memperlambat
-  deteksi loop patologis. Default aman: `run_limit` cukup longgar untuk
-  tugas terpanjang yang sah + wajib berpasangan dengan deteksi oscillation
-  (bukan cuma limit numerik) supaya loop murni-buang-buang tetap terpotong
-  sebelum limit numerik tersentuh.
-- **Preflight check budget user (sebelum turn mulai) vs post-hoc (setelah
-  turn selesai, baru dicek untuk turn berikutnya)** — preflight mencegah
-  user yang sudah over-budget memulai run baru sama sekali (kill switch
-  yang sungguh mencegah, bukan cuma mendeteksi setelah kejadian), dengan
-  biaya satu query tambahan (baca akumulasi biaya user) di jalur kritis
-  sebelum tiap turn mulai; post-hoc lebih murah per-turn tapi user tetap
-  bisa memulai satu run mahal terakhir sebelum sistem sadar budget-nya
-  habis — cocok untuk soft-limit (peringatan), tidak cocok untuk hard cap.
-- **Kill switch otomatis-saja vs plus operator manual** — otomatis-saja
-  lebih murah dibangun (tidak butuh panel operator) tapi buta terhadap mode
-  kegagalan yang belum pernah dilihat/didefinisikan; kill switch manual
-  menambah kerja (panel/endpoint operator, otorisasi siapa yang boleh
-  menekannya) tapi menutup celah "detektor belum tahu bentuk kegagalan ini"
-  yang otomatis-saja tidak pernah bisa menutup sendiri.
+- **A tight vs loose per-run limit** — tight prevents one turn burning a
+  large budget but cuts off legitimately large tasks (long research, a
+  refactor across many files); loose accommodates legitimate work but
+  slows detection of a pathological loop. A safe default: a `run_limit`
+  loose enough for the longest legitimate task, **paired mandatorily**
+  with oscillation detection (not just a numeric limit) so a pure-waste
+  loop is still cut before the numeric limit is touched.
+- **A preflight user budget check (before the turn starts) vs post-hoc
+  (after the turn finishes, checked for the next one)** — preflight stops
+  an already-over-budget user from starting a new run at all (a kill
+  switch that genuinely prevents rather than merely detects after the
+  fact), at the cost of one extra query (reading the user's accumulated
+  cost) on the critical path before every turn; post-hoc is cheaper
+  per-turn but the user can still start one last expensive run before the
+  system realises the budget is gone — fine for a soft limit (a warning),
+  wrong for a hard cap.
+- **An automatic-only kill switch vs one plus a manual operator switch** —
+  automatic-only is cheaper to build (no operator panel) but blind to
+  failure modes nobody has seen or defined yet; a manual kill switch adds
+  work (an operator panel/endpoint, authorisation over who may press it)
+  but closes the "the detector doesn't know this failure shape yet" gap
+  that automatic-only can never close on its own.
 
-## Di deepagents
+## In deepagents
 
-`deepagents` tidak punya akuntansi token/biaya bawaan — tidak ditemukan
-modul semacam itu di source Task 3 (`deepagents/graph.py` dan middleware
-terkait tidak menyebut usage/cost). `[inferred]` — disimpulkan dari tidak
-ditemukannya modul akuntansi biaya di source `deepagents` yang sudah
-dibedah Task 3. Konsekuensinya identik dengan §Di deepagents `guardrails.md`
-titik 5: batas run/thread ditegakkan lewat `ToolCallLimitMiddleware`/
-`ModelCallLimitMiddleware` (`langchain.agents.middleware`, bukan milik
-`deepagents`, disuntik lewat `create_deep_agent(middleware=[...])`) — file
-ini tidak mengusulkan mekanisme baru untuk itu, cuma menjelaskan sudut
-pandang biayanya.
+`deepagents` has no built-in token/cost accounting — no such module was
+found in the Task 3 source (`deepagents/graph.py` and the related
+middleware never mention usage or cost). `[inferred]` — concluded from the
+absence of a cost accounting module in the `deepagents` source dissected in
+Task 3. The consequence is identical to `guardrails.md` §In deepagents
+point 5: run/thread limits are enforced through
+`ToolCallLimitMiddleware`/`ModelCallLimitMiddleware`
+(`langchain.agents.middleware`, not `deepagents`', injected through
+`create_deep_agent(middleware=[...])`) — this file proposes no new
+mechanism for that, only explains its cost angle.
 
-Dua hal spesifik yang relevan di sini:
+Two specifics that matter here:
 
-- **Batas per user tidak bisa jadi middleware `deepagents`/`langchain` sama
-  sekali** — bukan cuma "belum ada", tapi secara struktural tidak bisa,
-  karena middleware beroperasi dalam satu eksekusi graph (`create_deep_agent`
-  yang sama dipanggil ulang tiap turn, tanpa memori lintas panggilan
-  kecuali lewat `checkpointer`/`store` yang disuntik aplikasi). Akumulasi
-  biaya per `user_id` wajib hidup di lapis aplikasi/DB, dicek sebelum
-  `create_deep_agent(...).invoke(...)` dipanggil — bukan di dalam middleware
-  apa pun yang dipasang ke agent itu sendiri.
-- **`AnthropicPromptCachingMiddleware`** (selalu terpasang tanpa syarat,
-  no-op untuk provider non-Anthropic) langsung memengaruhi biaya nyata —
-  cache prompt provider-spesifik mengurangi token yang ditagih penuh untuk
-  prefix yang tidak berubah antar panggilan. `[code]` — dikutip
-  `../systems/deepagents.md` §Middleware bawaan. Ini bukan guardrail biaya
-  (tidak ada batas yang ditegakkan), tapi relevan untuk atribusi: span yang
-  menunjukkan token cache-hit vs cache-miss (kalau backend tracing
-  mencatatnya) menjelaskan kenapa biaya satu langkah bisa jauh lebih rendah
-  dari perkiraan naif token-count × harga penuh.
+- **A per-user limit cannot be a `deepagents`/`langchain` middleware at
+  all** — not merely "doesn't exist yet", but structurally cannot,
+  because middleware operates within a single graph execution (the same
+  `create_deep_agent` is called again each turn, with no memory across
+  calls except through the application-injected `checkpointer`/`store`).
+  Accumulated per-`user_id` cost must live at the application/DB layer and
+  be checked before `create_deep_agent(...).invoke(...)` is called — not
+  inside any middleware attached to that agent.
+- **`AnthropicPromptCachingMiddleware`** (always installed unconditionally,
+  a no-op for non-Anthropic providers) directly affects real cost — a
+  provider-specific prompt cache reduces the tokens billed at full rate
+  for a prefix that doesn't change between calls. `[code]` — cited from
+  `../systems/deepagents.md` §Built-in middleware. It is not a cost
+  guardrail (no limit is enforced), but it matters for attribution: a span
+  showing cache-hit vs cache-miss tokens (if the tracing backend records
+  them) explains why one step's cost can be far below a naive
+  token-count × full-price estimate.
 
-## Sumber
+## Sources
 
-- `[code]` [`guardrails.md`](guardrails.md) — titik 5 (Loop): mekanisme
-  `ToolCallLimitMiddleware`/`ModelCallLimitMiddleware`, `exit_behavior`,
-  `cancel_async_task`, deteksi oscillation, serta peringatan
-  `recursion_limit=9999` — dikutip ulang tanpa mengusulkan mekanisme baru.
+- `[code]` [`guardrails.md`](guardrails.md) — point 5 (Loop): the
+  `ToolCallLimitMiddleware`/`ModelCallLimitMiddleware` mechanism,
+  `exit_behavior`, `cancel_async_task`, oscillation detection, and the
+  `recursion_limit=9999` warning — re-cited without proposing any new
+  mechanism.
 - `[code]` `langfuse/langchain/CallbackHandler.py` (Langfuse Python SDK
-  4.14.4, `pip install langfuse` di venv riset terpisah) — `_parse_usage`,
-  field `usage`/`usage_details`/`cost_details` per span.
-- `[code]` [`observability.md`](observability.md) — §Span per langkah,
-  dasar klaim "biaya menempel di span yang sama dengan tracing", tidak
-  diusulkan ulang.
-- `[code]` [`isolation-and-scoping.md`](isolation-and-scoping.md) — model
-  scope `user_id` yang jadi dasar akumulasi biaya per user.
+  4.14.4, `pip install langfuse` in a separate research venv) —
+  `_parse_usage`, the per-span `usage`/`usage_details`/`cost_details`
+  fields.
+- `[code]` [`observability.md`](observability.md) — §Span per step, the
+  basis for the claim that "cost attaches to the same span as tracing";
+  not re-proposed.
+- `[code]` [`isolation-and-scoping.md`](isolation-and-scoping.md) — the
+  `user_id` scope model that per-user cost accumulation builds on.
 - `[inferred]`/`[code]` [`../systems/deepagents.md`](../systems/deepagents.md)
-  §1 (`recursion_limit` 9999), §Middleware bawaan
-  (`AnthropicPromptCachingMiddleware`) — tier-1 reference terverifikasi
-  Task 3; tidak ditemukan modul akuntansi biaya di source yang sudah
-  dibedah Task 3, dikutip tanpa membaca ulang source `deepagents` di task
-  ini.
+  §1 (`recursion_limit` 9999), §Built-in middleware
+  (`AnthropicPromptCachingMiddleware`) — a tier-1 reference verified in
+  Task 3; no cost accounting module was found in the source dissected
+  there, cited without re-reading the `deepagents` source in this task.

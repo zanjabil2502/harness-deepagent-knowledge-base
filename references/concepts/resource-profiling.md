@@ -1,173 +1,173 @@
 # Resource profiling
 
-## Masalah
+## Problem
 
-Instinct default untuk men-deploy agent harness adalah instinct web app biasa:
-satu container, satu resource request (`cpu: 1, memory: 2Gi`), satu HPA yang
-melihat CPU rata-rata. Instinct itu diam-diam mengasumsikan satu hal yang
-salah untuk agent: bahwa satu unit kerja (satu turn) itu homogen — dominan
-CPU, atau dominan IO, tapi bukan dua-duanya sekaligus.
+The default instinct for deploying an agent harness is the ordinary web app
+instinct: one container, one resource request (`cpu: 1, memory: 2Gi`), one
+HPA watching average CPU. That instinct quietly assumes one thing that is
+wrong for agents: that a unit of work (one turn) is homogeneous —
+CPU-dominant, or IO-dominant, but not both at once.
 
-Satu turn agent bukan itu. Di dalam satu turn yang sama, beberapa fase
-berjalan berurutan dengan **profil resource yang berlawanan**: fase yang
-menghabiskan detik paling banyak (menunggu LLM) nyaris tidak memakai CPU,
-sementara fase yang paling singkat (eksekusi kode) bisa memenuhi 100% satu
-core. Kalau kelima fase ini dikolokasi di satu pod dan pod itu diberi satu
-resource request/limit, request itu harus dipatok ke **dimensi terburuk**
-(puncak CPU eksekusi kode) — padahal dimensi itu cuma aktif sebagian kecil
-dari waktu hidup turn. Sisa waktunya, alokasi itu menganggur.
+An agent turn is neither. Within that same turn, several phases run in
+sequence with **opposing resource profiles**: the phase consuming the most
+seconds (waiting on the LLM) barely uses CPU, while the shortest phase
+(code execution) can saturate a whole core. If all five phases are
+colocated in one pod and that pod is given a single resource
+request/limit, that request has to be pinned to the **worst dimension**
+(the code-execution CPU peak) — even though that dimension is only active
+for a small fraction of the turn's life. The rest of the time, that
+allocation sits idle.
 
-## Pola
+## Pattern
 
-### Lima fase, empat bound berbeda
+### Five phases, four different bounds
 
-| Fase | Bound | Yang terjadi | CPU | Memory | Network IO | Disk IO | GPU |
+| Phase | Bound | What happens | CPU | Memory | Network IO | Disk IO | GPU |
 |---|---|---|---|---|---|---|---|
-| LLM call | **IO** | Kirim prompt, tunggu/stream token dari provider lewat socket | Nyaris 0 — thread/coroutine diam menunggu bit datang dari jaringan | Rendah (buffer streaming) | Tinggi — durasi terpanjang di turn | - | - |
-| Context assembly | **Memory** | Susun ulang transcript + hasil tool + memory jadi satu prompt string dari nol tiap call (lihat `session-state.md`) | Burst singkat (formatting/serialize) | Sebanding ukuran context window terpakai — window besar × banyak turn concurrent = RAM besar | Rendah | - | - |
-| Code exec (`execute`) | **CPU** + butuh isolasi | Compile/jalankan kode yang ditulis LLM | Bisa 100% satu atau lebih core selama durasi eksekusi | Sedang-tinggi tergantung workload | - | Bisa tinggi (build artifact) | - |
-| Embedding (retrieval) | **GPU** (atau CPU kalau model kecil) | Encode query/dokumen jadi vector, biasanya batched | Rendah di host CPU | Sedang (batch buffer) | - | - | Tinggi |
-| Checkpoint write | **IO disk** | `checkpointer.aput` tiap step graph ke Postgres | Nyaris 0 | Rendah | Sedang | Tulis ke DB — commit-bound, bukan compute-bound | - |
+| LLM call | **IO** | Send the prompt, wait for / stream tokens from the provider over a socket | Near zero — the thread/coroutine sits waiting for bits from the network | Low (streaming buffers) | High — the longest stretch in the turn | - | - |
+| Context assembly | **Memory** | Rebuild the transcript + tool results + memory into one prompt string from scratch on every call (see `session-state.md`) | A short burst (formatting/serialising) | Proportional to the context window in use — a large window × many concurrent turns = a lot of RAM | Low | - | - |
+| Code exec (`execute`) | **CPU** + needs isolation | Compile/run the code the LLM wrote | Can hit 100% of one or more cores for the execution's duration | Medium-to-high depending on the workload | - | Can be high (build artifacts) | - |
+| Embedding (retrieval) | **GPU** (or CPU for a small model) | Encode queries/documents into vectors, usually batched | Low on the host CPU | Medium (batch buffers) | - | - | High |
+| Checkpoint write | **Disk IO** | `checkpointer.aput` to Postgres on every graph step | Near zero | Low | Medium | A DB write — commit-bound, not compute-bound | - |
 
-Empat bound berbeda (IO jaringan, memory, CPU, GPU) plus satu bound IO-disk
-terpisah — lima fase yang tidak bisa direduksi jadi satu angka "resource
-usage" tunggal per turn.
+Four different bounds (network IO, memory, CPU, GPU) plus one separate
+disk-IO bound — five phases that cannot be reduced to a single "resource
+usage" number per turn.
 
-### Kenapa kolokasi memaksa scaling di dimensi terburuk — dihitung, bukan diasumsikan
+### Why colocation forces scaling on the worst dimension — computed, not assumed
 
-Misal satu turn ilustratif berdurasi total ~20 detik: LLM call ~15s (75%),
-code exec ~3s (15%), context assembly + embedding + checkpoint sisanya
-(~10%). Selama 15 detik LLM call, CPU pod itu praktis menganggur — thread
-menunggu socket, bukan menghitung. Selama 3 detik code exec, CPU bisa
-tersaturasi penuh di satu atau lebih core.
+Take an illustrative turn lasting ~20 seconds in total: the LLM call ~15s
+(75%), code exec ~3s (15%), context assembly + embedding + checkpoint the
+rest (~10%). For those 15 seconds of LLM call, the pod's CPU is
+practically idle — the thread is waiting on a socket, not computing. For
+those 3 seconds of code exec, CPU can be fully saturated on one or more
+cores.
 
-Kalau satu pod menjalankan kelima fase ini dan resource request pod
-dipatok untuk menutupi puncak code exec (misal `cpu: 2`), maka untuk 85%
-dari waktu hidup turn itu, 2 CPU yang dialokasikan (dan dibayar) itu
-menganggur >80%. Kalikan dengan concurrency: 100 turn paralel di pod yang
-sama berarti 200 vCPU dialokasikan untuk menutupi puncak yang cuma aktif
-serentak di sebagian kecil dari 100 turn itu di waktu mana pun — sisanya
-idle capacity yang tetap harus disediakan (dan dibayar) karena autoscaler
-tidak bisa membedakan "pod ini sedang CPU-bound" dari "pod ini sedang
-IO-wait" kalau sinyalnya cuma CPU-utilization rata-rata satu pod.
+If one pod runs all five phases and the pod's resource request is pinned to
+cover the code-exec peak (say `cpu: 2`), then for 85% of that turn's life
+the 2 allocated (and paid-for) CPUs are >80% idle. Multiply by
+concurrency: 100 parallel turns in the same pod means 200 vCPU allocated
+to cover a peak that is only active simultaneously in a small fraction of
+those 100 turns at any moment — the rest is idle capacity that still has
+to be provisioned (and paid for), because the autoscaler cannot tell "this
+pod is CPU-bound" from "this pod is in IO-wait" when the only signal is one
+pod's average CPU utilisation.
 
-Konsekuensi kedua, lebih halus: kalau HPA pod ini di-scale berdasar
-**CPU utilization** (default HPA metric paling umum), fase code exec-lah
-yang men-trigger scale-out — bukan karena orchestrator kekurangan kapasitas
-menangani lebih banyak turn (mayoritas waktunya IO-wait, satu pod bisa
-menahan ratusan turn concurrent secara async tanpa CPU tambahan), tapi
-karena tool executor yang numpang di pod yang sama sedang sibuk. Scale-out
-menambah **seluruh pod** — termasuk kapasitas LLM-wait yang tidak
-dibutuhkan — padahal yang sebenarnya kurang cuma kapasitas eksekusi kode.
-Ini argumen inti kenapa `serving-topology.md` memisahkan sinyal HPA per
-komponen alih-alih satu sinyal CPU untuk semuanya.
+A second, subtler consequence: if this pod's HPA scales on **CPU
+utilization** (the most common default HPA metric), the code-exec phase is
+what triggers scale-out — not because the orchestrator lacks capacity to
+handle more turns (most of its time is IO-wait; one pod can hold hundreds
+of concurrent turns asynchronously with no extra CPU), but because the tool
+executor riding along in the same pod is busy. Scale-out adds **the whole
+pod** — including LLM-wait capacity nobody needs — when the only thing
+actually short is code-execution capacity. This is the core argument for
+why `serving-topology.md` separates the HPA signal per component instead of
+using one CPU signal for everything.
 
-### Mengukur dominasi fase di deployment nyata
+### Measuring phase dominance in a real deployment
 
-Contoh di atas ilustratif — angka sungguhan berbeda per workload
-(system prompt besar vs kecil, tool call berat vs ringan), jadi yang
-dibutuhkan bukan tabel di atas dipercaya mentah-mentah, tapi cara
-mengukurnya sendiri. Instrumentasi termurah: catat **span** (timestamp
-mulai + selesai) di tiap batas fase yang sudah ada di kode — bentuknya
-sama seperti yang sudah dipakai `tool_calls.started_at`/`completed_at`
-di `persistence-schema.md` (Task 4), diperluas ke fase lain yang belum
-punya baris tabel sendiri: `context_assembly_start`/`_end` (sebelum vs
-sesudah prompt dirakit, sebelum dikirim ke model),
-`llm_call_start`/`_end` (kirim request vs response/stream selesai),
-`checkpoint_write_start`/`_end` (sebelum vs sesudah `checkpointer.aput`).
-Emit tiap span sebagai metric berdurasi (mis. histogram Prometheus
-per-fase, label `phase=`), lalu baca hasilnya dengan cara yang sama
-seperti membaca breakdown di atas: jumlah durasi tiap `phase` dibagi
-total durasi turn memberi **porsi waktu** per fase; disandingkan dengan
-CPU-seconds pod yang tersampel selama window span yang sama (metric
-container standar, mis. `container_cpu_usage_seconds_total` dari
-cAdvisor/kube-state-metrics) memberi porsi **kerja CPU** per fase — dua
-angka yang berbeda dan keduanya dibutuhkan, karena fase yang makan waktu
-paling lama (LLM call) belum tentu fase yang makan CPU paling banyak
-(code exec). Fase dengan porsi waktu besar tapi CPU kecil adalah kandidat
-IO/memory-bound (harus di-scale lewat concurrency, `serving-topology.md`);
-fase dengan porsi CPU besar meski waktunya singkat adalah kandidat yang
-harus dipisah ke komponen tersendiri (Tool executor) supaya tidak
-menyeret seluruh pod ikut scale-out.
+The example above is illustrative — the real numbers differ per workload (a
+large vs small system prompt, heavy vs light tool calls), so what's needed
+isn't taking the table above at face value but a way to measure it yourself.
+The cheapest instrumentation: record a **span** (a start and end timestamp) at
+each phase boundary that already exists in the code — the same shape as the
+`tool_calls.started_at`/`completed_at` already in `persistence-schema.md`
+(Task 4), extended to the phases that don't yet have a table row of their own:
+`context_assembly_start`/`_end` (before vs after the prompt is assembled,
+before it goes to the model), `llm_call_start`/`_end` (request sent vs
+response/stream finished), `checkpoint_write_start`/`_end` (before vs after
+`checkpointer.aput`). Emit each span as a duration metric (e.g. a per-phase
+Prometheus histogram with a `phase=` label), then read the result the same way
+as the breakdown above: the summed duration of each `phase` over the total
+turn duration gives the **share of time** per phase; set against the pod CPU-
+seconds sampled over the same span window (standard container metrics, e.g.
+`container_cpu_usage_seconds_total` from cAdvisor/kube-state-metrics) it gives
+the share of **CPU work** per phase — two different numbers, both needed,
+because the phase taking the most time (the LLM call) is not necessarily the
+phase taking the most CPU (code exec). A phase with a large share of time but
+little CPU is an IO/memory-bound candidate (scale it through concurrency,
+`serving-topology.md`); a phase with a large share of CPU despite a short
+duration is a candidate for splitting into its own component (the Tool
+executor) so it doesn't drag the whole pod into scale-out.
 
-## Trade-off
+## Trade-offs
 
-- **Kolokasi (satu pod, semua fase) vs pisah per bound** `[ours]` —
-  vanilla-nya salah satu dari dua ekstrem: kolokasi penuh (satu
-  deployable, tanpa network hop antar fase, latency lebih rendah untuk
-  turn ringan, tapi memaksa provisioning ke dimensi terburuk dan
-  mencampur fault domain — bug di code exec bisa menghabiskan memory pod
-  yang sama dipakai context assembly), atau pisah penuh sejak awal
-  (tiap fase scale di sinyalnya sendiri, tapi menambah kerumitan
-  operasional — lebih banyak service, network hop antar panggilan). KB
-  ini memilih jalan tengah: **modular monolith dengan jahitan dipotong**
-  — satu deployable hari ini, interface yang sudah benar supaya pisahnya
-  nanti tinggal ganti binding, bukan rewrite (detail di
+- **Colocation (one pod, every phase) vs splitting per bound** `[ours]` —
+  vanilla is one of two extremes: full colocation (one deployable, no
+  network hop between phases, lower latency for light turns, but forcing
+  provisioning to the worst dimension and mixing fault domains — a bug in
+  code exec can exhaust the memory of the same pod running context
+  assembly), or a full split from day one (each phase scaling on its own
+  signal, but adding operational complexity — more services, network hops
+  between calls). This KB takes the middle road: **a modular monolith with
+  the seams cut** — one deployable today, with interfaces already correct
+  so a later split is a change of binding rather than a rewrite (details in
   `serving-topology.md`).
-- **Resource request per-pod ketat vs longgar** — request ketat (dipatok ke
-  rata-rata, bukan puncak) menghemat biaya tapi bikin pod di-throttle atau
-  OOM-kill saat code exec/context assembly kebetulan menumpuk bareng;
-  request longgar (dipatok ke puncak) aman tapi mahal karena idle capacity
-  besar sepanjang fase IO-bound. Trade-off ini hilang kalau code exec
-  dipisah ke komponen (Tool executor) yang scale sendiri — pod orchestrator
-  tidak perlu lagi menutupi puncak CPU yang bukan miliknya.
-- **Batching embedding vs sinkron per-turn** — batch beberapa request
-  embedding sebelum mengirim ke GPU memperbaiki utilisasi GPU (throughput
-  lebih tinggi per watt/detik) tapi menambah latency tunggu batch
-  terkumpul; sinkron per-turn (encode segera) latency rendah tapi GPU
-  sering idle menunggu request berikutnya. Pilihan ini didorong oleh
-  volume trafik retrieval, bukan keputusan arsitektur tetap — dibahas lagi
-  di `scaling.md`.
+- **A tight vs loose per-pod resource request** — a tight request (pinned
+  to the average rather than the peak) saves money but gets the pod
+  throttled or OOM-killed when code exec and context assembly happen to
+  pile up together; a loose request (pinned to the peak) is safe but
+  expensive, with large idle capacity throughout the IO-bound phases. This
+  trade-off disappears once code exec is split into a component (the Tool
+  executor) that scales on its own — the orchestrator pod no longer has to
+  cover a CPU peak that isn't its own.
+- **Batching embeddings vs synchronous per-turn** — batching several
+  embedding requests before sending them to the GPU improves GPU
+  utilisation (higher throughput per watt/second) but adds the latency of
+  waiting for the batch to fill; synchronous per-turn (encode immediately)
+  is low latency but leaves the GPU frequently idle waiting for the next
+  request. This choice is driven by retrieval traffic volume, not a fixed
+  architectural decision — discussed further in `scaling.md`.
 
-## Di deepagents
+## In deepagents
 
-`deepagents` tidak menjalankan proses terpisah per fase — kelima fase di
-atas semuanya terjadi di dalam satu proses Python yang menjalankan graph
-LangGraph, dalam urutan yang sama seperti tabel di atas:
+`deepagents` doesn't run a separate process per phase — all five phases
+above happen inside one Python process running the LangGraph graph, in the
+same order as the table:
 
-| Fase | Konkret di deepagents | Sumber |
+| Phase | Concretely in deepagents | Source |
 |---|---|---|
-| LLM call | `model.invoke`/`.stream` yang dipanggil `langchain.agents.create_agent` di tiap node graph — IO murni, deepagents tidak menambah kerja CPU di jalur ini | `[code]` `../systems/deepagents.md` §1 (Loop shape) |
-| Context assembly | `SummarizationMiddleware` (kompaksi berbasis threshold token) menyusun ulang `DeepAgentState.messages` jadi prompt tiap call — kerja memory/string-formatting, bukan CPU-heavy | `[code]` `../systems/deepagents.md` §2 |
-| Code exec | `FilesystemMiddleware`'s tool `execute`, jalan lewat backend yang mengimplementasi `SandboxBackendProtocol` — `LocalShellBackend` bawaan menjalankan `subprocess.run(shell=True)` di proses/host yang sama, **CPU dan risiko sepenuhnya milik proses itu**, tidak terisolasi kecuali backend diganti (lihat `sandboxing.md`) | `[code]` `../systems/deepagents.md` §6 (Safety gate, kutipan `THREAT_MODEL.md`) |
-| Embedding | Tidak ada di `deepagents` inti — `deepagents` tidak melakukan embedding/vector search sendiri; kalau retrieval dipakai, itu tool aplikasi (mis. dipanggil lewat `StoreBackend`/backend kustom) yang berjalan di luar kendali `deepagents` | `[inferred]` — disimpulkan dari absennya primitive embedding di `## API permukaan`/`## Middleware bawaan` `../systems/deepagents.md` |
-| Checkpoint write | `checkpointer` yang disuntik aplikasi, dipanggil tiap step graph — `deepagents` meneruskannya apa adanya ke `create_agent`, tidak membangun sendiri | `[code]` `../systems/deepagents.md` §5 (`deepagents/graph.py` baris 546-553, 922-931) |
+| LLM call | The `model.invoke`/`.stream` that `langchain.agents.create_agent` issues at each graph node — pure IO; deepagents adds no CPU work on this path | `[code]` `../systems/deepagents.md` §1 (Loop shape) |
+| Context assembly | `SummarizationMiddleware` (token-threshold compaction) rebuilds `DeepAgentState.messages` into a prompt on each call — memory/string-formatting work, not CPU-heavy | `[code]` `../systems/deepagents.md` §2 |
+| Code exec | `FilesystemMiddleware`'s `execute` tool, running through a backend implementing `SandboxBackendProtocol` — the built-in `LocalShellBackend` runs `subprocess.run(shell=True)` in the same process/host, so **the CPU and the risk belong entirely to that process**, unisolated unless the backend is swapped (see `sandboxing.md`) | `[code]` `../systems/deepagents.md` §6 (Safety gate, quoting `THREAT_MODEL.md`) |
+| Embedding | Absent from `deepagents` core — `deepagents` does no embedding/vector search of its own; if retrieval is used it is an application tool (e.g. called through `StoreBackend`/a custom backend) running outside `deepagents`' control | `[inferred]` — concluded from the absence of any embedding primitive in `## Surface API`/`## Built-in middleware` of `../systems/deepagents.md` |
+| Checkpoint write | The application-injected `checkpointer`, called on every graph step — `deepagents` passes it through to `create_agent` unchanged, building nothing of its own | `[code]` `../systems/deepagents.md` §5 (`deepagents/graph.py` lines 546-553, 922-931) |
 
-Implikasi langsung: karena kelima fase berbagi satu proses Python yang sama
-di stack default `deepagents`, memisahkannya menjadi komponen dengan sinyal
-scaling sendiri (§8.3) **bukan** sesuatu yang `deepagents` sediakan
-otomatis — itu keputusan deployment aplikasi (lihat `serving-topology.md`),
-dan satu-satunya seam siap pakai yang `deepagents` sudah beri untuk ini
-adalah `SandboxBackendProtocol` (untuk code exec) dan `StoreBackend`/
-`CompositeBackend` (untuk state durable/retrieval) — keduanya interface,
-bukan proses terpisah bawaan.
+The direct implication: because all five phases share the same Python
+process in the default `deepagents` stack, splitting them into components
+with their own scaling signals (§8.3) is **not** something `deepagents`
+provides automatically — it is an application deployment decision (see
+`serving-topology.md`), and the only ready-made seams `deepagents` already
+gives for it are `SandboxBackendProtocol` (for code exec) and
+`StoreBackend`/`CompositeBackend` (for durable state/retrieval) — both
+interfaces, not built-in separate processes.
 
-## Sumber
+## Sources
 
 - `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §1, §2,
-  §5, §6 — tier-1 reference yang sudah diverifikasi terhadap source
-  `deepagents==0.7.8` di Task 3, dikutip di sini tanpa membaca ulang
+  §5, §6 — a tier-1 reference already verified against the
+  `deepagents==0.7.8` source in Task 3, cited here without re-reading the
   source.
-- `[code]` OpenHands `openhands/core/config/sandbox_config.py` dan
-  `openhands/runtime/impl/docker/docker_runtime.py`, dibaca lewat diff PR
-  `All-Hands-AI/OpenHands#6616` ("Add memory limit option for Docker
-  runtime"): field `memory_limit: str | None = Field(default=None, ...
-  None means no limit.")` dipetakan ke `mem_limit=self.config.sandbox.memory_limit`
-  saat start container — dipakai sebagai bukti bahwa tanpa batas eksplisit,
-  fase code exec yang CPU/memory-bound bisa memakai seluruh resource host,
-  bukan cuma "porsi wajarnya" — memperkuat argumen kenapa fase ini butuh
-  provisioning terpisah dari fase IO-bound. Detail isolasi lengkap di
-  `sandboxing.md`.
+- `[code]` OpenHands `openhands/core/config/sandbox_config.py` and
+  `openhands/runtime/impl/docker/docker_runtime.py`, read through the diff
+  of PR `All-Hands-AI/OpenHands#6616` ("Add memory limit option for Docker
+  runtime"): the field `memory_limit: str | None = Field(default=None, ...
+  None means no limit.")` maps to `mem_limit=self.config.sandbox.memory_limit`
+  when the container starts — used as evidence that without an explicit
+  limit, the CPU/memory-bound code-exec phase can consume the host's entire
+  resources rather than just "its fair share", reinforcing why this phase
+  needs provisioning separate from the IO-bound phases. Full isolation
+  detail in `sandboxing.md`.
 
-  > **Catatan repo (2026-08-23):** `All-Hands-AI/OpenHands` sudah
-  > di-redirect ke `OpenHands/OpenHands` ("Agent Canvas"); agent coding
-  > aslinya pindah ke `OpenHands/software-agent-sdk`. Path
-  > `openhands/core/config/sandbox_config.py` dan
-  > `openhands/runtime/impl/docker/docker_runtime.py` di atas tidak lagi
-  > ada di struktur repo saat ini — klaim ini tetap berlaku untuk commit
-  > `db37f350` / PR `#6616` yang disitasi, sebagai snapshot historis.
-  > Lihat [`../systems/openhands.md`](../systems/openhands.md).
-- `[docs]` KEDA — mekanisme scaling per sinyal kustom yang jadi alasan
-  pemisahan komponen berguna secara praktis, dikutip via WebFetch dari
-  `keda.sh/docs/latest/concepts/scaling-deployments/`. Detail lengkap di
-  `serving-topology.md` dan `scaling.md`.
+  > **Repo note (2026-08-23):** `All-Hands-AI/OpenHands` now redirects to
+  > `OpenHands/OpenHands` ("Agent Canvas"); the original coding agent moved
+  > to `OpenHands/software-agent-sdk`. The paths
+  > `openhands/core/config/sandbox_config.py` and
+  > `openhands/runtime/impl/docker/docker_runtime.py` above no longer exist
+  > in the current repo structure — this claim still holds for the cited
+  > commit `db37f350` / PR `#6616`, as a historical snapshot. See
+  > [`../systems/openhands.md`](../systems/openhands.md).
+- `[docs]` KEDA — the per-custom-signal scaling mechanism that makes
+  splitting components practically useful, cited via WebFetch from
+  `keda.sh/docs/latest/concepts/scaling-deployments/`. Full detail in
+  `serving-topology.md` and `scaling.md`.

@@ -1,175 +1,179 @@
 # Agent loop
 
-## Masalah
+## Problem
 
-"Agent loop" sering dianggap satu bentuk tunggal — think, act, observe,
-ulangi (ReAct) — padahal itu cuma satu pilihan dari beberapa bentuk yang
-valid, dan pertanyaan yang lebih penting biasanya tidak pernah dijawab
-eksplisit: **siapa yang memutuskan loop berhenti, dan lewat sinyal apa?**
-Tanpa jawaban eksplisit, perilaku berhenti loop jadi kecelakaan dari
-apa pun default library yang kebetulan dipakai — batas rekursi yang
-dipasang sebagai jaring pengaman (bukan keputusan "kapan tugas selesai")
-disalahartikan sebagai mekanisme penyelesaian tugas, atau konvensi string
-ajaib yang tidak pernah ditulis siapa pun sebagai keputusan sadar.
+The "agent loop" is often treated as a single shape — think, act, observe,
+repeat (ReAct) — when that is only one of several valid shapes, and the more
+important question usually goes unanswered: **who decides the loop stops,
+and through what signal?** Without an explicit answer, stopping behaviour
+becomes an accident of whatever library default happens to be in play — a
+recursion limit installed as a safety net (not as a "when is the task
+finished" decision) mistaken for a task-completion mechanism, or a magic
+string convention nobody ever wrote down as a deliberate decision.
 
-Kebingungan konkretnya: "loop berhenti karena tugas selesai" dan "loop
-berhenti karena anggaran habis" adalah dua kejadian yang **berbeda sama
-sekali** — satu keputusan model (implisit atau eksplisit), satu keputusan
-harness yang independen dari apa yang model inginkan — tapi kalau
-keduanya tidak dibedakan di titik keluar, pemanggil di hilir (kode yang
-memproses hasil run) tidak bisa tahu mana yang terjadi tanpa memeriksa
-ulang state secara manual. Run yang terpotong anggaran diperlakukan sama
-seperti run yang selesai wajar → jawaban parsial dikirim ke user seolah itu
-jawaban final, atau logic retry yang seharusnya jalan untuk run terpotong
-tidak pernah terpicu karena sinyalnya tidak dibedakan.
+The concrete confusion: "the loop stopped because the task is finished" and
+"the loop stopped because the budget ran out" are **entirely different**
+events — one a model decision (implicit or explicit), one a harness
+decision independent of what the model wanted — but if the two aren't
+distinguished at the exit point, downstream callers (the code processing
+the run's result) cannot tell which happened without manually re-inspecting
+state. A budget-truncated run is treated exactly like a normally finished
+one → a partial answer goes to the user as if it were final, or the retry
+logic that should fire for a truncated run never triggers because the
+signal wasn't distinguished.
 
-## Pola
+## Pattern
 
-### Taksonomi siapa-memutuskan-berhenti
+### A taxonomy of who-decides-to-stop
 
-- **Implisit, model berhenti dengan tidak melakukan apa-apa** — loop
-  ReAct standar: model dipanggil berulang, loop berlanjut selama respons
-  terakhir masih berisi `tool_calls`, berhenti begitu respons terakhir
-  **tidak** berisi `tool_calls`. Tidak ada tindakan positif yang menandai
-  "saya selesai" — ketiadaan tindakan itu sendiri yang jadi sinyal.
-  Konsekuensi: harness tidak punya event untuk dicatat ("model memutuskan
-  selesai di step N") — kesimpulan "selesai" baru bisa diambil sesudah
-  fakta, dari absennya tool call berikutnya.
-- **Eksplisit, model memanggil tool penyelesaian** — pola SWE-agent: tool
-  `submit` (mencatat diff akhir + mencetak sentinel `<<SWE_AGENT_SUBMISSION>>`
-  yang dipindai harness) dan `exit_forfeit` (menyerah eksplisit) adalah dua
-  cara **berbeda** untuk model menyatakan selesai — bukan berhenti karena
-  kehabisan hal untuk dilakukan, tapi karena secara aktif memanggil tool
-  yang artinya "saya selesai" atau "saya menyerah". `[code]` `tools/submit/config.yaml`,
-  `tools/submit/bin/submit`, `tools/forfeit/config.yaml`, repo
-  `SWE-agent/SWE-agent`. Beda dari bentuk implisit: ada event konkret yang
-  bisa dicatat/diaudit ("model memanggil `submit` di step N", bukan
-  disimpulkan dari ketiadaan), dan payload penyelesaiannya bisa terstruktur
-  (isi patch, bukan cuma teks bebas).
-- **Plan-execute, selesai = semua langkah rencana ditandai selesai** — loop
-  dua fase: fase perencanaan menghasilkan daftar langkah lebih dulu, fase
-  eksekusi menjalankan/memverifikasi tiap langkah; berhenti saat rencana
-  habis, bukan saat model "merasa" selesai di tengah eksekusi. Lihat
-  [`planning.md`](planning.md) untuk kapan planning eksplisit macam ini
-  bermanfaat vs jadi beban — file ini cuma menandai bentuknya sebagai
-  varian loop yang berbeda, tidak mengulang analisisnya.
-- **Loop-until-done yang diawasi eksternal** — supervisor di luar model
-  (scheduler, cron, event trigger) yang memutuskan kapan loop dijalankan
-  dan kapan dihentikan sama sekali; model tidak pernah dimintai pendapat
-  soal "kapan berhenti" untuk satu putaran, itu keputusan sistem. Relevan
-  untuk arketipe Workflow Agent (`archetypes/06-workflow-agent.md`) yang
-  memang dirancang tanpa human/model-in-the-loop untuk keputusan berhenti.
+- **Implicit: the model stops by doing nothing** — the standard ReAct loop:
+  the model is called repeatedly, the loop continues while the last
+  response still contains `tool_calls`, and stops as soon as the last
+  response contains **none**. There is no positive act marking "I'm done" —
+  the absence of an act is itself the signal. Consequence: the harness has
+  no event to record ("the model decided it was done at step N") — the
+  "finished" conclusion can only be drawn after the fact, from the absence
+  of a next tool call.
+- **Explicit: the model calls a completion tool** — the SWE-agent pattern:
+  the `submit` tool (recording the final diff and printing the
+  `<<SWE_AGENT_SUBMISSION>>` sentinel the harness scans for) and
+  `exit_forfeit` (an explicit give-up) are two **different** ways for the
+  model to declare it is done — stopping not because it ran out of things
+  to do, but because it actively called a tool meaning "I'm finished" or "I
+  give up". `[code]` `tools/submit/config.yaml`, `tools/submit/bin/submit`,
+  `tools/forfeit/config.yaml`, repo `SWE-agent/SWE-agent`. The difference
+  from the implicit form: there is a concrete event to log/audit ("the
+  model called `submit` at step N", not inferred from an absence), and the
+  completion payload can be structured (the patch content, not just free
+  text).
+- **Plan-execute: done = every plan step marked complete** — a two-phase
+  loop: a planning phase produces the list of steps first, an execution
+  phase runs/verifies each one; it stops when the plan is exhausted, not
+  when the model "feels" done mid-execution. See
+  [`planning.md`](planning.md) for when explicit planning like this pays
+  off versus becoming overhead — this file only marks the shape as a
+  distinct loop variant, without repeating that analysis.
+- **Externally supervised loop-until-done** — a supervisor outside the
+  model (a scheduler, cron, an event trigger) decides when the loop runs
+  and when it stops entirely; the model is never consulted about "when to
+  stop" for a given round, that is a system decision. Relevant to the
+  Workflow Agent archetype (`archetypes/06-workflow-agent.md`), which is
+  deliberately designed with no human or model in the loop for the stop
+  decision.
 
-### Berhenti-karena-selesai vs berhenti-karena-anggaran — dua mekanisme, jangan satu sinyal
+### Stopped-because-finished vs stopped-because-of-budget — two mechanisms, not one signal
 
-Guardrail titik 5 (`guardrails.md` — max tool call, max model call, kill
-switch) adalah **pemutus ketiga** yang berdiri di luar model sepenuhnya:
-`ToolCallLimitMiddleware`/`ModelCallLimitMiddleware` menghentikan loop
-karena anggaran habis, terlepas dari apakah model masih ingin lanjut atau
-sudah mau berhenti. `exit_behavior` middleware itu **adalah** deklarasi
-eksplisit mana yang terjadi ketika anggaran habis: `"error"` (naikkan
-exception, run gagal jelas), `"end"` (tutup turn paksa dengan state apa
-adanya), `"continue"` (default library — loop tidak sungguh berhenti,
-lihat peringatan di `guardrails.md`). Titik krusialnya: **run yang
-dihentikan `exit_behavior="end"` bukan run yang selesai** — ia run yang
-dipotong paksa di tengah, dan kode yang memproses hasilnya wajib membedakan
-dua keadaan itu (selesai wajar vs dipotong anggaran) sebagai dua sinyal
-terpisah, bukan satu boolean "run berhenti = run beres". Menyamakan
-keduanya berarti jawaban parsial (kemungkinan tool call yang belum sempat
-dieksekusi, state yang belum konsisten) dikirim ke hilir seolah itu jawaban
-final yang model sendiri putuskan.
+Guardrail point 5 (`guardrails.md` — max tool calls, max model calls, kill
+switch) is a **third breaker** standing entirely outside the model:
+`ToolCallLimitMiddleware`/`ModelCallLimitMiddleware` stop the loop because
+the budget is exhausted, regardless of whether the model wanted to continue
+or was about to stop. That middleware's `exit_behavior` **is** the explicit
+declaration of what happens when the budget runs out: `"error"` (raise an
+exception, a clearly failed run), `"end"` (force the turn closed with state
+as-is), `"continue"` (the library default — the loop doesn't actually stop,
+see the warning in `guardrails.md`). The crucial point: **a run stopped by
+`exit_behavior="end"` is not a finished run** — it is a run cut off
+mid-flight, and the code processing its result must treat those two states
+(normally finished vs budget-truncated) as two separate signals, not one
+"the run stopped = the run is done" boolean. Collapsing them means a
+partial answer (possibly with tool calls never executed, state not yet
+consistent) goes downstream as if it were the final answer the model itself
+decided on.
 
-## Trade-off
+## Trade-offs
 
-- **Berhenti implisit vs tool penyelesaian eksplisit** — implisit tidak
-  menambah permukaan tool (model tidak perlu diajari/diingatkan memanggil
-  apa pun untuk selesai), tapi harness tidak punya sinyal positif untuk
-  membedakan "selesai, puas dengan hasil" dari "berhenti diam-diam karena
-  bingung/menyerah" — keduanya sama-sama muncul sebagai "tidak ada
-  tool_calls lagi". Tool eksplisit memberi sinyal bersih + payload
-  terstruktur (diff, jawaban final, tingkat keyakinan), tapi model kadang
-  lupa memanggilnya — keluar dengan jawaban teks biasa tanpa `tool_calls`,
-  yang membuat harness jatuh balik ke perilaku implisit persis walau tool
-  eksplisitnya sudah dibangun. Mitigasinya (reprompt "apakah kamu yakin
-  sudah selesai?" sebelum benar-benar menutup turn) menambah kompleksitas
-  yang tidak dibutuhkan bentuk implisit sama sekali.
-- **Plan-execute vs loop-until-model-memutuskan** — rencana lebih dulu
-  memberi sinyal progres yang bisa diperiksa dari luar ("N dari M langkah
-  selesai"), berguna untuk UI progres dan estimasi durasi; tapi rencana bisa
-  salah begitu eksekusi menemukan hal yang tidak terduga, memaksa mekanisme
-  replanning yang loop-until-done tidak butuh sama sekali (loop itu memang
-  dirancang untuk terbuka). Loop-until-model-memutuskan fleksibel untuk
-  tugas open-ended tapi tidak punya checkpoint eksternal untuk tahu progres
-  sampai benar-benar tuntas.
-- **Memisahkan sinyal selesai-vs-anggaran sebagai dua flag vs satu sinyal
-  gabungan** — dua flag terpisah menjaga ketepatan (run terpotong anggaran
-  sering layak retry dengan anggaran lebih besar; run selesai wajar tidak),
-  dengan biaya: pemanggil di hilir harus menangani dua state, bukan satu.
-  Satu sinyal gabungan lebih sederhana dikonsumsi tapi membuang perbedaan
-  yang penting untuk akuntansi biaya dan logic retry.
+- **Implicit stopping vs an explicit completion tool** — implicit adds no
+  tool surface (the model needn't be taught or reminded to call anything to
+  finish), but the harness has no positive signal separating "done,
+  satisfied with the result" from "quietly stopped out of confusion or
+  surrender" — both appear as "no more tool_calls". An explicit tool gives
+  a clean signal plus a structured payload (a diff, a final answer, a
+  confidence level), but the model sometimes forgets to call it — exiting
+  with ordinary text and no `tool_calls`, which drops the harness back to
+  exactly the implicit behaviour even though the explicit tool was built.
+  The mitigation (reprompting "are you sure you're finished?" before
+  actually closing the turn) adds complexity the implicit form never needs.
+- **Plan-execute vs loop-until-the-model-decides** — planning first gives
+  an externally inspectable progress signal ("N of M steps done"), useful
+  for progress UI and duration estimates; but the plan can be wrong as soon
+  as execution hits something unexpected, forcing a replanning mechanism
+  that loop-until-done never needs (that loop is designed to be open-ended).
+  Loop-until-the-model-decides is flexible for open-ended tasks but has no
+  external checkpoint to gauge progress until it is fully finished.
+- **Separating the finished-vs-budget signal into two flags vs one combined
+  signal** — two separate flags preserve precision (a budget-truncated run
+  is often worth retrying with a larger budget; a normally finished one is
+  not), at a cost: downstream callers must handle two states, not one. One
+  combined signal is simpler to consume but discards a distinction that
+  matters for cost accounting and retry logic.
 
-## Di deepagents
+## In deepagents
 
-Bentuk defaultnya **implisit** — `create_deep_agent(...)` mendelegasikan
-loop ke `langchain.agents.create_agent(...)`, yang didokumentasikan sebagai
-"creates an agent graph that calls tools in a loop until a stopping
-condition is met": loop model ⇄ tool berhenti ketika `AIMessage` terakhir
-tidak berisi `tool_calls` — keputusan berhenti itu murni implisit dari
-absennya tool call berikutnya, bukan diputuskan `deepagents` sendiri.
-`[code]` dikutip `../systems/deepagents.md` §1 (`langchain/agents/factory.py`
-baris 859-860). `recursion_limit=9999` yang dipasang otomatis **bukan**
-mekanisme "kapan berhenti" — ia jaring pengaman supaya task legit yang
-panjang tidak kepotong `GraphRecursionError` di limit LangGraph yang jauh
-lebih kecil (default 25). `[code]` dikutip `../systems/deepagents.md` §1.
-Tidak ada pola tool `submit`/`exit_forfeit` bawaan — kalau proyek butuh
-sinyal penyelesaian eksplisit ala SWE-agent, itu harus ditulis sebagai
-custom tool sendiri, `deepagents` tidak menyediakannya. `[inferred]`
-disimpulkan dari tool bawaan yang terdaftar di `../systems/deepagents.md`
-§3 (`ls`/`read_file`/`write_file`/`edit_file`/`glob`/`grep`/`execute`/`task`),
-tidak satu pun berfungsi sebagai sinyal penyelesaian tugas.
+The default shape is **implicit** — `create_deep_agent(...)` delegates the
+loop to `langchain.agents.create_agent(...)`, documented as creating "an
+agent graph that calls tools in a loop until a stopping condition is met":
+the model ⇄ tool loop stops when the last `AIMessage` contains no
+`tool_calls` — that stop decision is purely implicit in the absence of a
+next tool call, not something `deepagents` decides itself. `[code]` cited
+from `../systems/deepagents.md` §1 (`langchain/agents/factory.py` lines
+859-860). The automatically installed `recursion_limit=9999` is **not** a
+"when to stop" mechanism — it is a safety net so a legitimately long task
+isn't cut off by a `GraphRecursionError` at LangGraph's much smaller
+default limit (25). `[code]` cited from `../systems/deepagents.md` §1.
+There is no built-in `submit`/`exit_forfeit` tool pattern — a project
+needing a SWE-agent-style explicit completion signal has to write it as a
+custom tool; `deepagents` doesn't provide one. `[inferred]` concluded from
+the built-in tools listed in `../systems/deepagents.md` §3
+(`ls`/`read_file`/`write_file`/`edit_file`/`glob`/`grep`/`execute`/`task`),
+none of which serve as a task-completion signal.
 
-`response_format` pada `create_deep_agent`/`SubAgent` (skema Pydantic/dict
-yang memaksa keluaran akhir mengikuti struktur tertentu) memberi payload
-penyelesaian yang bisa diperiksa program — mirip efek tool `submit` SWE-agent
-(hasil akhir yang terstruktur, bukan teks bebas) — tapi **tidak** mengubah
-mekanisme berhenti itu sendiri: loop tetap berhenti implisit saat tidak ada
-`tool_calls`, `response_format` cuma membentuk isi pesan akhir begitu titik
-itu tercapai. `[code]` `deepagents/graph.py` baris 280, 507, 927;
-`deepagents/middleware/subagents.py` baris 127, 337, 388-430 (parameter
-`response_format` pada `create_deep_agent` dan spec `SubAgent`/`CompiledSubAgent`),
-venv riset yang sama dengan `../systems/deepagents.md`.
+`response_format` on `create_deep_agent`/`SubAgent` (a Pydantic schema or
+dict forcing the final output into a given structure) provides a
+program-inspectable completion payload — similar in effect to SWE-agent's
+`submit` tool (a structured final result rather than free text) — but does
+**not** change the stopping mechanism itself: the loop still stops
+implicitly when there are no `tool_calls`; `response_format` only shapes
+the content of the final message once that point is reached. `[code]`
+`deepagents/graph.py` lines 280, 507, 927;
+`deepagents/middleware/subagents.py` lines 127, 337, 388-430 (the
+`response_format` parameter on `create_deep_agent` and on the
+`SubAgent`/`CompiledSubAgent` spec), the same research venv as
+`../systems/deepagents.md`.
 
-Pembeda "selesai vs kehabisan anggaran" dari `## Pola` di atas dipetakan
-langsung ke `exit_behavior` `ToolCallLimitMiddleware`/`ModelCallLimitMiddleware`,
-sudah didokumentasikan lengkap di `guardrails.md` titik 5 — file ini tidak
-mengulang tabelnya, cuma menegaskan bahwa dua middleware itu adalah pemutus
-loop **ketiga** (selain "model implisit berhenti" dan "sinyal eksplisit
-kalau dibangun custom") yang beroperasi independen dari niat model.
+The "finished vs out of budget" distinction from `## Pattern` above maps
+directly onto `ToolCallLimitMiddleware`/`ModelCallLimitMiddleware`'s
+`exit_behavior`, already documented in full in `guardrails.md` point 5 —
+this file doesn't repeat that table, it only stresses that those two
+middlewares are a **third** loop breaker (besides "the model stops
+implicitly" and "an explicit signal, if built custom") operating
+independently of the model's intent.
 
-## Sumber
+## Sources
 
 - `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §1 Loop
-  shape (`create_agent`, kondisi berhenti implisit, `recursion_limit=9999`),
-  §3 Tool surface (daftar tool bawaan, dasar klaim tidak ada tool
-  penyelesaian eksplisit bawaan) — tier-1 reference terverifikasi Task 3,
-  dikutip tanpa membaca ulang `deepagents/graph.py` inti di task ini.
-- `[code]` `deepagents/graph.py` baris 280, 507, 927 (paket
-  `deepagents==0.7.8`, dibaca dari
-  `references/recipes/.venv/lib/python3.13/site-packages/`, venv sama
-  dengan `../systems/deepagents.md`) — parameter `response_format` pada
+  shape (`create_agent`, the implicit stop condition,
+  `recursion_limit=9999`), §3 Tool surface (the built-in tool list, the
+  basis for the claim that there is no built-in explicit completion tool) —
+  a tier-1 reference verified in Task 3, cited without re-reading the core
+  `deepagents/graph.py` in this task.
+- `[code]` `deepagents/graph.py` lines 280, 507, 927 (package
+  `deepagents==0.7.8`, read from
+  `references/recipes/.venv/lib/python3.13/site-packages/`, the same venv
+  as `../systems/deepagents.md`) — the `response_format` parameter on
   `create_deep_agent`.
-- `[code]` `deepagents/middleware/subagents.py` baris 127, 337, 388-430
-  (venv sama) — `response_format` pada spec `SubAgent`/`CompiledSubAgent`.
+- `[code]` `deepagents/middleware/subagents.py` lines 127, 337, 388-430
+  (same venv) — `response_format` on the `SubAgent`/`CompiledSubAgent`
+  spec.
 - `[code]` `tools/submit/config.yaml`, `tools/submit/bin/submit`,
-  `tools/forfeit/config.yaml`, repo `SWE-agent/SWE-agent`, dibaca via
+  `tools/forfeit/config.yaml`, repo `SWE-agent/SWE-agent`, read via
   `raw.githubusercontent.com/SWE-agent/SWE-agent/main/tools/submit/config.yaml`,
-  `.../tools/submit/bin/submit`, `.../tools/forfeit/config.yaml` — tool
-  `submit`/`exit_forfeit` sebagai sinyal penyelesaian eksplisit.
-- `[code]` [`guardrails.md`](guardrails.md) titik 5 (Loop) — tabel
-  `exit_behavior`/`ToolCallLimitMiddleware`/`ModelCallLimitMiddleware`,
-  dirujuk untuk pemutus loop berbasis anggaran, tidak diusulkan ulang di
-  sini.
-- `[code]` [`planning.md`](planning.md) — bentuk loop plan-execute dirujuk
-  sebagai varian taksonomi, analisis kapan planning eksplisit bermanfaat
-  didelegasikan ke file itu; ditulis dalam task yang sama, tidak diusulkan
-  ulang di sini.
+  `.../tools/submit/bin/submit`, `.../tools/forfeit/config.yaml` — the
+  `submit`/`exit_forfeit` tools as an explicit completion signal.
+- `[code]` [`guardrails.md`](guardrails.md) point 5 (Loop) — the
+  `exit_behavior`/`ToolCallLimitMiddleware`/`ModelCallLimitMiddleware`
+  table, referenced for the budget-based loop breaker, not re-proposed
+  here.
+- `[code]` [`planning.md`](planning.md) — the plan-execute loop shape
+  referenced as a taxonomy variant, with the analysis of when explicit
+  planning pays off delegated to that file; written in the same task, not
+  re-proposed here.
