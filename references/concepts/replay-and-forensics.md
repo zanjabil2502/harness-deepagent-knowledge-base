@@ -1,161 +1,165 @@
 # Replay & forensics
 
-## Masalah
+## Problem
 
-Kejadian nyata: satu run agent melakukan sesuatu yang tidak seharusnya —
-memanggil tool destruktif, membocorkan sesuatu, tersesat 40 langkah — dan
-tim butuh tahu **persis** apa yang terjadi di run **itu**. Ini beda dari
-`evaluation.md`: bukan menjalankan banyak kasus golden terhadap dunia yang
-dibekukan untuk mendeteksi regresi, tapi merekonstruksi **satu eksekusi
-nyata yang sudah terjadi**, di dunia yang variabel dan tidak terkontrol,
-untuk investigasi. Tanpa rekaman yang cukup, "apa yang terjadi" cuma bisa
-ditebak dari hasil akhirnya — argumen tool call yang sebenarnya, hasil
-mentah yang diterima, keputusan guardrail mana yang terpicu/tidak, versi
-model/prompt/threshold yang aktif saat itu — kalau salah satu dari itu tidak
-tercatat, celahnya permanen untuk run itu, tidak bisa diisi belakangan.
+A real incident: one agent run does something it shouldn't — calls a
+destructive tool, leaks something, wanders for 40 steps — and the team
+needs to know **exactly** what happened in **that** run. This differs from
+`evaluation.md`: it is not running many golden cases against a frozen
+world to detect regressions, but reconstructing **one real execution that
+already happened**, in a variable, uncontrolled world, for investigation.
+Without a sufficient recording, "what happened" can only be guessed from
+the final result — the tool call's actual arguments, the raw result it
+received, which guardrail decisions fired or didn't, the model/prompt/
+threshold versions active at the time — and if any of those went
+unrecorded, the gap is permanent for that run and cannot be filled later.
 
-Masalah kedua: apa yang wajib dicatat harus diputuskan **sebelum** insiden,
-bukan sesudahnya — insiden tidak bisa ditambah logging setelah kejadian.
-Field yang diam-diam tidak tercatat (mis. versi system prompt yang sungguh
-aktif, argumen mentah tool call) adalah celah yang baru ketahuan tepat saat
-paling dibutuhkan: saat investigasi insiden nyata sedang berlangsung.
+The second problem: what must be recorded has to be decided **before** the
+incident, not after — you cannot add logging to an incident retroactively.
+A field that silently goes unrecorded (e.g. the system prompt version
+actually in force, a tool call's raw arguments) is a gap discovered
+precisely when it is most needed: during a live investigation.
 
-## Pola
+## Pattern
 
-### Apa yang sudah tercatat, dan apa yang belum
+### What is already recorded, and what isn't
 
-`persistence-schema.md` sudah menyediakan sebagian besar bahan mentah —
-file ini **tidak mengusulkan skema baru**, cuma memetakan apa yang cukup dan
-apa yang masih celah:
+`persistence-schema.md` already provides most of the raw material — this
+file **proposes no new schema**, it only maps what suffices and what
+remains a gap:
 
-- **Checkpoint per langkah** (`checkpoints`/`writes`, dimiliki library
-  checkpointer, `thread_id` disamakan konvensi dengan `conversations.id`) —
-  state graph penuh di tiap batas langkah, cukup untuk **menjalankan ulang**
-  eksekusi persis dari titik itu (lihat §Rekonstruksi vs eksekusi-ulang di
-  bawah). Kelemahannya sudah dilaporkan jujur di `persistence-schema.md`:
-  byte-nya opaque, tidak ikut RLS, tidak bisa diquery per field (tidak bisa
-  `SELECT` argumen tool call tertentu dari blob checkpoint tanpa
-  mendeserialisasinya).
+- **Per-step checkpoints** (`checkpoints`/`writes`, owned by the
+  checkpointer library, with `thread_id` matched by convention to
+  `conversations.id`) — the full graph state at every step boundary,
+  enough to **re-run** execution exactly from that point (see
+  §Reconstruction vs re-execution below). Its weakness is reported
+  honestly in `persistence-schema.md`: the bytes are opaque, they are not
+  covered by RLS, and they cannot be queried per field (you cannot
+  `SELECT` a particular tool call argument out of a checkpoint blob
+  without deserialising it).
 - **`tool_calls`** (`message_id`, `sequence`, `tool_name`, `arguments`
-  JSONB, `result` JSONB, `status`, timestamp) — melengkapi kelemahan
-  checkpoint di atas: tabel biasa yang bisa diquery ("tampilkan semua
-  panggilan tool user ini dengan `tool_name=X` antara jam 2-3 pagi"), tidak
-  perlu mendeserialisasi apa pun.
-- **Celah yang belum tertutup skema Task 4** (dilaporkan di sini, bukan
-  didesain ulang — di luar scope task ini): (a) versi model yang sungguh
-  dipakai run itu — versi model berubah dari waktu ke waktu, replay dengan
-  model hari ini terhadap insiden kemarin bukan rekonstruksi yang setia;
-  (b) versi/threshold guardrail yang aktif saat itu — celah yang sama yang
-  sudah ditandai `guardrails.md` §Di deepagents titik 6 ("tidak ada tabel
-  audit bawaan"); (c) versi system prompt yang aktif — sudah ditandai
-  gerbang production-readiness KB ini ("Prompt & policy versioning: tidak
-  bisa rollback"). Ketiganya butuh **penanda versi eksplisit yang disimpan
-  bersama run** (mis. sebagai bagian metadata turn/trace), bukan diasumsikan
-  bisa direkonstruksi dari kode saat ini — kode saat ini bukan kode yang
-  jalan saat insiden terjadi.
-- **Keputusan guardrail per langkah** — tidak ada tempatnya di skema
-  Postgres Task 4 (tabel `tool_calls` mencatat *hasil* tool, bukan *kenapa*
-  guardrail meloloskan/memblokirnya). Rumah yang tepat untuk ini adalah
-  trace observability (`observability.md` §Span per langkah), **dengan
-  syarat** retensi trace itu cukup panjang untuk investigasi — kalau trace
-  dihapus lebih cepat dari jendela investigasi insiden, keputusan guardrail
-  untuk run lama tidak lagi bisa direkonstruksi dari mana pun.
+  JSONB, `result` JSONB, `status`, timestamps) — complements the
+  checkpoint weakness above: an ordinary table that can be queried ("show
+  every tool call by this user with `tool_name=X` between 02:00 and
+  03:00") with nothing to deserialise.
+- **Gaps the Task 4 schema does not close** (reported here, not redesigned
+  — out of scope for that task): (a) the model version actually used for
+  that run — model versions change over time, and replaying yesterday's
+  incident against today's model is not a faithful reconstruction; (b) the
+  guardrail version/thresholds active at the time — the same gap already
+  flagged in `guardrails.md` §In deepagents point 6 ("no built-in audit
+  table"); (c) the active system prompt version — already flagged in this
+  KB's production-readiness gate ("Prompt & policy versioning: cannot roll
+  back"). All three need an **explicit version marker stored alongside the
+  run** (e.g. as part of turn/trace metadata), rather than being assumed
+  reconstructable from today's code — today's code is not the code that
+  ran when the incident happened.
+- **Per-step guardrail decisions** — have no home in the Task 4 Postgres
+  schema (the `tool_calls` table records a tool's *result*, not *why* a
+  guardrail let it through or blocked it). The right home is the
+  observability trace (`observability.md` §Span per step), **provided**
+  that trace's retention is long enough for investigation — if traces are
+  deleted faster than the incident investigation window, guardrail
+  decisions for old runs can no longer be reconstructed from anywhere.
 
-### Rekonstruksi vs eksekusi-ulang — dua aktivitas beda di bawah satu kata "replay"
+### Reconstruction vs re-execution — two different activities under one word "replay"
 
-- **Rekonstruksi (read-only)** — menyusun linimasa dari checkpoint history +
-  `tool_calls` + trace yang sudah terekam, tanpa menjalankan apa pun ulang.
-  Selalu aman (tanpa efek samping, tanpa biaya tambahan), selalu bisa
-  dilakukan selama rekamannya masih ada.
-- **Eksekusi-ulang** — melanjutkan graph dari checkpoint tertentu, atau
-  menjalankan ulang input yang sama, dan membiarkannya jalan lagi. Ini
-  aktivitas yang **beda pertanyaan** dari rekonstruksi: bukan "apa yang
-  terjadi saat itu", tapi "apa yang terjadi kalau dijalankan ulang sekarang
-  (dg kode/model/guardrail hari ini)" — berguna untuk verifikasi fix, tapi
-  bukan bukti forensik tentang insiden aslinya kalau kode yang jalan sudah
-  berubah sejak itu.
+- **Reconstruction (read-only)** — assembling a timeline from checkpoint
+  history + `tool_calls` + already-recorded traces, without re-running
+  anything. Always safe (no side effects, no extra cost), always possible
+  as long as the recording still exists.
+- **Re-execution** — continuing the graph from a specific checkpoint, or
+  re-running the same input, and letting it run again. This answers a
+  **different question** from reconstruction: not "what happened then" but
+  "what happens if it runs now (with today's code/model/guardrails)" —
+  useful for verifying a fix, but not forensic evidence about the original
+  incident if the running code has changed since.
 
-Untuk eksekusi-ulang forensik, tool call **wajib** jalan lewat implementasi
-mock/dry-run, tidak pernah tool destruktif nyata — beda dg replay harness
-`evaluation.md` yang memang sejak awal didesain terhadap respons tool yang
-dibekukan; di sini risikonya lebih tinggi karena input asalnya insiden nyata
-yang mungkin memang memicu aksi destruktif — mengeksekusi ulang secara
-literal mengulang kerusakannya.
+For forensic re-execution, tool calls **must** run through a mock/dry-run
+implementation, never real destructive tools — unlike the `evaluation.md`
+replay harness, which was designed against frozen tool responses from the
+start; the risk here is higher because the input originates from a real
+incident that may well have triggered a destructive action — re-executing
+it literally repeats the damage.
 
-## Trade-off
+## Trade-offs
 
-- **Retensi penuh trace/checkpoint (demi forensik) vs biaya penyimpanan +
-  kewajiban retensi/privasi** (`retention-and-deletion.md` sudah menetapkan
-  kebijakan hapus untuk data aplikasi) — forensik ingin menyimpan selama
-  mungkin, retensi/privasi ingin menghapus sesuai jadwal/permintaan user.
-  Selesaikan dengan mengikat retensi trace/checkpoint ke jadwal retensi yang
-  **sudah** ditetapkan untuk data yang menjadi asalnya (bukan jam retensi
-  kedua yang terpisah) — dikutip, tidak didesain ulang di sini.
-- **Rekonstruksi-saja vs eksekusi-ulang** — rekonstruksi selalu aman tapi
-  cuma bisa menjawab dari apa yang **sudah** tercatat (kalau field tertentu
-  tidak pernah direkam, rekonstruksi tidak bisa mengisinya); eksekusi-ulang
-  bisa mengungkap perilaku baru (mis. "apakah fix ini memperbaiki kasusnya")
-  tapi punya biaya nyata (panggilan model/tool lagi) dan risiko efek samping
-  kalau tool call tidak di-mock — untuk investigasi insiden, mock **wajib**,
-  tidak opsional.
-- **Checkpoint (state graph literal, bisa dilanjutkan eksekusinya) vs tabel
-  aplikasi (`tool_calls`/`messages`, bisa diquery lintas banyak insiden)** —
-  keduanya perlu untuk tujuan berbeda, bukan salah satu menggantikan yang
-  lain; dualitas ini sudah ditetapkan `persistence-schema.md`, tidak
-  diusulkan ulang.
+- **Full trace/checkpoint retention (for forensics) vs storage cost plus
+  retention/privacy obligations** (`retention-and-deletion.md` already
+  defines deletion policy for application data) — forensics wants to keep
+  things as long as possible, retention/privacy wants to delete on
+  schedule or on request. Resolve it by tying trace/checkpoint retention
+  to the retention schedule **already** defined for the data it derives
+  from (not a second, separate retention clock) — cited, not redesigned
+  here.
+- **Reconstruction only vs re-execution** — reconstruction is always safe
+  but can only answer from what was **already** recorded (if a field was
+  never captured, reconstruction cannot fill it in); re-execution can
+  reveal new behaviour (e.g. "does this fix address the case?") but has
+  real cost (more model/tool calls) and risks side effects unless tool
+  calls are mocked — for incident investigation, mocking is **mandatory**,
+  not optional.
+- **Checkpoints (literal graph state, executable from there) vs
+  application tables (`tool_calls`/`messages`, queryable across many
+  incidents)** — both are needed for different purposes; neither replaces
+  the other. This duality is already established in
+  `persistence-schema.md` and is not re-argued here.
 
-## Di deepagents
+## In deepagents
 
-Checkpoint per langkah yang membuat eksekusi-ulang mungkin secara prinsip
-berasal dari `checkpointer` yang diteruskan **apa adanya** oleh `deepagents`
-ke `langchain.agents.create_agent` — `deepagents` tidak pernah membangun
-checkpointer sendiri, dan tidak membatasi kapabilitas checkpointer yang
-disuntik aplikasi. `[code]` — dikutip `../systems/deepagents.md` §5 (State &
-resume), `persistence-schema.md` §checkpointer.
+The per-step checkpoints that make re-execution possible in principle come
+from the `checkpointer` that `deepagents` passes **through unchanged** to
+`langchain.agents.create_agent` — `deepagents` never builds a checkpointer
+of its own, and never restricts the capabilities of the one the
+application injects. `[code]` — cited from `../systems/deepagents.md` §5
+(State & resume), `persistence-schema.md` §checkpointer.
 
-LangGraph (fondasi `create_agent`/`create_deep_agent`) mendokumentasikan
-fitur ini resmi sebagai **"time travel"**: tiap checkpoint disimpan dengan
-kunci `(thread_id, checkpoint_id)`, dan melanjutkan eksekusi dari checkpoint
-tertentu (bukan cuma checkpoint terbaru) dilakukan dengan meneruskan
-`config={"configurable": {"thread_id": ..., "checkpoint_id": ...}}` ke
-`invoke(None, config)` — argumen input `None` berarti "lanjutkan dari state
-tersimpan", bukan mulai state baru. Riwayat checkpoint suatu thread bisa
-dilihat lewat `get_state_history(config)`. `[docs]` —
+LangGraph (the foundation under `create_agent`/`create_deep_agent`)
+documents this feature officially as **"time travel"**: every checkpoint
+is stored under the key `(thread_id, checkpoint_id)`, and resuming from a
+particular checkpoint (not merely the latest) is done by passing
+`config={"configurable": {"thread_id": ..., "checkpoint_id": ...}}` to
+`invoke(None, config)` — an input argument of `None` means "continue from
+stored state" rather than starting fresh. A thread's checkpoint history is
+readable through `get_state_history(config)`. `[docs]` —
 `docs.langchain.com/oss/python/langgraph/use-time-travel`. `deepagents`
-tidak menambah atau membatasi API ini — API `checkpointer` yang diekspos
-persis API LangGraph, karena `deepagents` cuma meneruskannya.
+neither extends nor restricts this API — the `checkpointer` API it exposes
+is exactly LangGraph's, because `deepagents` merely passes it through.
 
-Konsekuensi konkret untuk pola di atas: eksekusi-ulang forensik (dari
-checkpoint tertentu) dan replay regresi `evaluation.md` (dari input awal
-terhadap tool yang dibekukan) sama-sama memakai mekanisme `checkpointer`
-yang sama secara teknis — bedanya cuma **titik mulai** (checkpoint tengah
-run vs awal run baru) dan **apakah tool call di-mock** (forensik: wajib;
-regresi: memang sejak awal didesain begitu) — bukan dua sistem berbeda yang
-perlu dibangun terpisah.
+The concrete consequence for the patterns above: forensic re-execution
+(from a specific checkpoint) and `evaluation.md` regression replay (from
+the original input against frozen tools) technically use the same
+`checkpointer` mechanism — they differ only in **starting point**
+(mid-run checkpoint vs the start of a new run) and **whether tool calls
+are mocked** (forensics: mandatory; regression: designed that way from the
+outset) — not two separate systems to build.
 
-## Sumber
+## Sources
 
 - `[code]` [`persistence-schema.md`](persistence-schema.md) §checkpointer,
-  tabel `tool_calls`, §Di deepagents — bahan mentah rekonstruksi
-  (checkpoint + tabel aplikasi), gap checkpoint tidak ikut RLS/tidak
-  queryable per field, dikutip tanpa mengusulkan skema baru.
-- `[code]` [`guardrails.md`](guardrails.md) §Di deepagents titik 6 — gap
-  "tidak ada tabel audit bawaan" untuk keputusan gerbang, dikutip ulang
-  sebagai celah yang sama untuk keputusan guardrail per langkah.
-- `[code]` [`observability.md`](observability.md) §Span per langkah — rumah
-  yang tepat untuk keputusan guardrail per langkah, dg syarat retensi trace
-  cukup panjang.
+  the `tool_calls` table, §In deepagents — the raw material for
+  reconstruction (checkpoints plus application tables), and the gap that
+  checkpoints are not covered by RLS and not queryable per field; cited
+  without proposing a new schema.
+- `[code]` [`guardrails.md`](guardrails.md) §In deepagents point 6 — the
+  "no built-in audit table" gap for gate decisions, cited again as the
+  same gap for per-step guardrail decisions.
+- `[code]` [`observability.md`](observability.md) §Span per step — the
+  right home for per-step guardrail decisions, provided trace retention is
+  long enough.
 - `[code]` [`evaluation.md`](evaluation.md) §Golden transcript + replay
-  harness — dirujuk untuk membedakan replay-regresi dari replay-forensik,
-  ditulis dalam task yang sama, tidak diusulkan ulang.
-- `[code]` [`retention-and-deletion.md`](retention-and-deletion.md) —
-  kebijakan hapus data aplikasi yang jadi dasar argumen "retensi
-  trace/checkpoint mengikuti jadwal yang sudah ada, bukan jam kedua".
+  harness — referenced to distinguish regression replay from forensic
+  replay; written in the same task, not re-argued here.
+- `[code]` [`retention-and-deletion.md`](retention-and-deletion.md) — the
+  application data deletion policy underpinning the argument that
+  trace/checkpoint retention follows an existing schedule rather than a
+  second clock.
 - `[docs]` LangGraph "time travel" —
-  `docs.langchain.com/oss/python/langgraph/use-time-travel`, resume dari
-  checkpoint tertentu lewat `config={"configurable": {"thread_id":,
-  "checkpoint_id":}}` + `invoke(None, config)`, `get_state_history(config)`.
-- `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §5 (State
-  & resume) — `checkpointer`/`store` diteruskan apa adanya oleh
-  `deepagents`, tier-1 reference terverifikasi Task 3, dikutip tanpa
-  membaca ulang source `deepagents` di task ini.
+  `docs.langchain.com/oss/python/langgraph/use-time-travel`, resuming from
+  a specific checkpoint via `config={"configurable": {"thread_id":,
+  "checkpoint_id":}}` plus `invoke(None, config)`, and
+  `get_state_history(config)`.
+- `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §5
+  (State & resume) — `checkpointer`/`store` passed through unchanged by
+  `deepagents`; a tier-1 reference verified in Task 3, cited without
+  re-reading `deepagents` source in this task.
