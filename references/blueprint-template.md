@@ -26,15 +26,25 @@ kolom yang disediakan.
 
 ## 7 sumbu harness
 
-| # | Sumbu | Keputusan |
+Kolom terakhir adalah bacaan sebelum mengisi kolom keputusan — tanpa itu
+sumbu diisi dari kebiasaan, bukan dari trade-off yang sudah dipetakan.
+
+| # | Sumbu | Keputusan | Timbang dulu |
+|---|---|---|---|
+| 1 | Loop shape | | [`agent-loop`](concepts/agent-loop.md), [`planning`](concepts/planning.md) |
+| 2 | Context | | [`context-engineering`](concepts/context-engineering.md), [`memory`](concepts/memory.md) |
+| 3 | Tool surface | | [`tool-design`](concepts/tool-design.md), [`mcp`](concepts/mcp.md), [`structured-output`](concepts/structured-output.md) |
+| 4 | Delegation | | [`delegation`](concepts/delegation.md), [`code-orchestration`](concepts/code-orchestration.md) — subagent dipilih model per giliran, atau di-dispatch dari kode? |
+| 5 | State & resume | | [`session-state`](concepts/session-state.md), [`streaming-protocol`](concepts/streaming-protocol.md) |
+| 6 | Safety gate | | [`human-in-the-loop`](concepts/human-in-the-loop.md), [`guardrails`](concepts/guardrails.md) — tiap titik: kebijakan + titik + mode kegagalan |
+| 7 | Capability routing & policy | | [`policy-as-data`](concepts/policy-as-data.md), [`skill-composition`](concepts/skill-composition.md), [`multilingual`](concepts/multilingual.md) |
+
+## Antarmuka & keluaran
+
+| Pertanyaan | Keputusan | Timbang dulu |
 |---|---|---|
-| 1 | Loop shape | |
-| 2 | Context | |
-| 3 | Tool surface | |
-| 4 | Delegation | |
-| 5 | State & resume | |
-| 6 | Safety gate | |
-| 7 | Capability routing & policy | |
+| Siapa yang memanggil harness ini — UI sendiri, editor, atau agent lain? | | [`agent-protocols`](concepts/agent-protocols.md) |
+| Keluaran selain prosa yang perlu dirender (tabel, chart, diagram, rumus)? | | [`scaffolds/skills/`](scaffolds/skills/README.md) |
 
 ## State & data
 
