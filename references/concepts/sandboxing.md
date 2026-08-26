@@ -1,210 +1,207 @@
 # Sandboxing
 
-## Masalah
+## Problem
 
-Tool `execute` — kode yang ditulis LLM, dijalankan sebagai perintah shell
-nyata — adalah permukaan tool yang paling berbahaya di harness manapun.
-Beda dari tool bertipe/berskema (baca file, panggil API tertentu) yang
-argumennya bisa divalidasi sebelum eksekusi, isi command shell bisa berupa
-apa saja yang model putuskan untuk ditulis, dan validasi "apakah command
-ini aman" secara umum tidak decidable. Pertanyaan yang harus dijawab
-bukan "bagaimana mencegah command berbahaya" (tidak bisa dijamin general),
-tapi **"kalau command itu berbahaya, seberapa jauh kerusakannya bisa
-menyebar?"** — itulah blast radius, dan jawabannya murni fungsi dari
-lapisan isolasi yang membungkus eksekusi itu.
+The `execute` tool — code written by an LLM, run as a real shell command —
+is the most dangerous tool surface in any harness. Unlike typed/schema'd
+tools (read a file, call a specific API) whose arguments can be validated
+before execution, a shell command's content can be anything the model
+decides to write, and validating "is this command safe" is in general
+undecidable. The question to answer isn't "how do we prevent dangerous
+commands" (not guaranteeable in general) but **"if that command is
+dangerous, how far can the damage spread?"** — that is the blast radius,
+and the answer is purely a function of the isolation layers wrapping the
+execution.
 
-Bahaya konkret yang harus dijawab lapisan isolasi: baca/tulis file di luar
-yang dimaksud (termasuk file milik sesi/tenant lain kalau eksekusi
-berbagi host), akses jaringan keluar tak terbatas (exfiltrasi data,
-serangan ke sistem internal lain), konsumsi resource tak terbatas
-(fork bomb, infinite loop menghabiskan CPU/memory host), dan — paling
-sering luput — akses ke kredensial/socket yang kebetulan ada di
-proses/container yang sama (Docker socket, environment variable API key
-aplikasi, filesystem host di luar workspace).
+The concrete dangers an isolation layer must answer: reading/writing files
+outside the intended scope (including another session's or tenant's files
+if execution shares a host), unrestricted outbound network access (data
+exfiltration, attacks on other internal systems), unbounded resource
+consumption (a fork bomb, an infinite loop consuming the host's CPU/memory),
+and — most often overlooked — access to credentials/sockets that happen to
+live in the same process/container (the Docker socket, the application's API
+key environment variables, the host filesystem outside the workspace).
 
-## Pola
+## Pattern
 
-### Spektrum blast radius
+### The blast radius spectrum
 
-| Lapisan isolasi | Yang dibatasi kalau kode jahat/buggy | Cold start | Contoh |
+| Isolation layer | What is bounded when the code is malicious/buggy | Cold start | Example |
 |---|---|---|---|
-| Tanpa isolasi (subprocess di proses host) | Tidak ada — kode punya akses penuh sebagaimana proses yang menjalankannya | Nol (langsung jalan) | `LocalShellBackend` bawaan `deepagents` (lihat `## Di deepagents`) |
-| Container (namespace + cgroup) | Filesystem/proses terisolasi dari host **kalau** dikonfigurasi benar; jaringan dan resource limit **opsional**, tidak otomatis | Detik (image sudah di-pull) | OpenHands docker runtime — satu container per task |
-| MicroVM (kernel terisolasi per sandbox) | Kernel sendiri, bukan cuma namespace — blast radius tidak menyentuh host meski container escape klasik | Lebih lama dari container biasa, tapi provider menyediakan pause/resume untuk memotongnya | E2B, Daytona (mode default) |
-| VM/host terdedikasi | Isolasi fisik penuh, termasuk dari sandbox tenant lain di infrastruktur yang sama | Paling lama, atau dibayar sebagai kapasitas selalu-nyala | Daytona VM sandbox (Linux/Windows VM eksplisit) |
+| No isolation (a subprocess in the host process) | Nothing — the code has the full access of the process running it | Zero (it runs immediately) | `deepagents`' built-in `LocalShellBackend` (see `## In deepagents`) |
+| A container (namespaces + cgroups) | Filesystem/processes isolated from the host **if** configured correctly; network and resource limits are **optional**, not automatic | Seconds (once the image is pulled) | The OpenHands docker runtime — one container per task |
+| A microVM (an isolated kernel per sandbox) | Its own kernel, not just namespaces — the blast radius doesn't reach the host even under a classic container escape | Longer than a plain container, though providers offer pause/resume to cut it | E2B, Daytona (default mode) |
+| A dedicated VM/host | Full physical isolation, including from other tenants' sandboxes on the same infrastructure | The longest, or paid for as always-on capacity | Daytona VM sandboxes (explicit Linux/Windows VMs) |
 
-Baris tabel ini naik dalam **jaminan isolasi**, dan turun dalam **latency +
-biaya**. Tidak ada baris yang benar secara universal — pilihannya
-tergantung siapa yang menulis kode yang dieksekusi (developer terpercaya di
-Workspace Agent, vs pengguna anonim di produk publik) dan seberapa mahal
-kalau blast radius meleset.
+The table's rows rise in **isolation guarantee** and fall in **latency +
+cost**. No row is universally right — the choice depends on who writes the
+code being executed (a trusted developer in a Workspace Agent, vs an
+anonymous user of a public product) and how expensive it is if the blast
+radius is misjudged.
 
-### OpenHands: container per task, tapi limit resource opsional
+### OpenHands: a container per task, but optional resource limits
 
-OpenHands men-spawn Docker container terpisah untuk tiap task, dengan
-agent's code berjalan di dalam sandbox terisolasi dari host controller
-`[docs]`. Tapi **isolasi resource** (CPU/memory) di dalamnya opsional,
-bukan default: PR `All-Hands-AI/OpenHands#6616` menambahkan opsi
-`memory_limit` ke `SandboxConfig` dan memetakannya ke parameter Docker
-`mem_limit` saat start container — sebelum PR itu (dan kalau opsi ini tidak
-diset), *"the container will have access to all available system
-memory"* `[code]` — dikutip dari diff PR itu (`openhands/core/config/sandbox_config.py`,
-`openhands/runtime/impl/docker/docker_runtime.py`). Container tanpa
-`mem_limit` eksplisit adalah isolasi filesystem/proses, bukan isolasi
-resource — kode jahat masih bisa menghabiskan seluruh memory host.
+OpenHands spawns a separate Docker container per task, with the agent's code
+running inside a sandbox isolated from the host controller `[docs]`. But
+**resource isolation** (CPU/memory) inside it is optional, not the default:
+PR `All-Hands-AI/OpenHands#6616` added a `memory_limit` option to
+`SandboxConfig` and mapped it to Docker's `mem_limit` parameter at container
+start — before that PR (and if the option isn't set), *"the container will
+have access to all available system memory"* `[code]` — cited from that
+PR's diff (`openhands/core/config/sandbox_config.py`,
+`openhands/runtime/impl/docker/docker_runtime.py`). A container without an
+explicit `mem_limit` is filesystem/process isolation, not resource
+isolation — malicious code can still exhaust the host's entire memory.
 
-Detail kedua yang memperbesar blast radius kalau tidak disadari:
-`entrypoint.sh` OpenHands memasang **Docker-out-of-Docker (DooD)** —
-memasang socket Docker host ke dalam container, dan menambahkan user
-container ke group yang punya akses socket itu `[docs]`. Ini pola yang
-kelihatannya "container = terisolasi" tapi sebenarnya container itu
-memegang kemampuan mengontrol container **sibling** lain di host yang
-sama lewat socket yang sama — kalau kode dalam sandbox itu sendiri jahat,
-DooD adalah jalan keluar dari batas container yang seharusnya
-membatasinya. Ini contoh konkret defect class yang harus dijaga di seluruh
-KB: nama "container isolation" tidak otomatis berarti kemampuan isolasi
-yang dibayangkan — harus dicek konfigurasi sebenarnya.
+A second detail that widens the blast radius if unnoticed: OpenHands'
+`entrypoint.sh` sets up **Docker-out-of-Docker (DooD)** — mounting the
+host's Docker socket into the container and adding the container user to the
+group with access to that socket `[docs]`. This is a pattern that looks like
+"a container, therefore isolated" while that container in fact holds the
+ability to control **sibling** containers on the same host through the same
+socket — if the code in that sandbox is itself malicious, DooD is the way
+out of the container boundary that was supposed to contain it. It is a
+concrete example of the defect class this whole KB guards against: the name
+"container isolation" doesn't automatically mean the isolation capability
+you imagine — the actual configuration has to be checked.
 
-> **Catatan repo (2026-08-23):** `All-Hands-AI/OpenHands` sudah di-redirect
-> ke `OpenHands/OpenHands`, yang isinya berganti total jadi "Agent Canvas";
-> agent coding aslinya pindah ke repo terpisah `OpenHands/software-agent-sdk`.
-> Path `openhands/core/config/sandbox_config.py` dan
-> `openhands/runtime/impl/docker/docker_runtime.py` yang dikutip di atas
-> tidak lagi ada di struktur repo saat ini — klaimnya tetap berlaku untuk
-> commit `db37f350` / PR `#6616` yang disitasi (snapshot historis, bukan
-> path yang bisa ditelusuri hari ini). Lihat
-> [`../systems/openhands.md`](../systems/openhands.md) untuk pivot repo ini
-> secara lengkap.
+> **Repo note (2026-08-23):** `All-Hands-AI/OpenHands` now redirects to
+> `OpenHands/OpenHands`, whose contents have been replaced entirely by
+> "Agent Canvas"; the original coding agent moved to the separate repo
+> `OpenHands/software-agent-sdk`. The paths
+> `openhands/core/config/sandbox_config.py` and
+> `openhands/runtime/impl/docker/docker_runtime.py` cited above no longer
+> exist in the current repo structure — the claims still hold for the cited
+> commit `db37f350` / PR `#6616` (a historical snapshot, not a path
+> traceable today). See [`../systems/openhands.md`](../systems/openhands.md)
+> for this repo pivot in full.
 
-### E2B dan Daytona: microVM, dua model penentuan resource yang berbeda
+### E2B and Daytona: microVMs, two different resource-sizing models
 
-Keduanya microVM-class isolation per sandbox — kernel terpisah, bukan
-sekadar namespace di kernel host — tapi cara ukuran resource ditentukan
-berbeda, dan ini trade-off ops yang nyata:
+Both are microVM-class isolation per sandbox — a separate kernel, not just
+namespaces in the host kernel — but how resource sizes are determined
+differs, and that is a real ops trade-off:
 
-- **E2B** — resource (CPU/memory) ditentukan di level **template/image**
-  saat build (`e2b.toml`), bukan parameter per panggilan `create()` di
+- **E2B** — resources (CPU/memory) are fixed at the **template/image**
+  level at build time (`e2b.toml`), not as a per-`create()` parameter in the
   Python SDK. `[code]` — `e2b/sandbox/main.py` (`class SandboxBase`):
-  `default_sandbox_timeout = 300` (5 menit) sebagai default; parameter
+  `default_sandbox_timeout = 300` (5 minutes) as the default; the
   `create(template=None, timeout=None, metadata=None, ..., lifecycle=...)`
-  `[code]` `e2b/sandbox_sync/main.py` tidak punya parameter `cpu`/`memory`
-  langsung — resource envelope sudah tetap begitu template dipilih.
-  Lifecycle: `lifecycle.on_timeout` bisa `"kill"` atau `"pause"`; pause
-  dengan `keep_memory=False` menjatuhkan state in-memory dan hanya
-  mempertahankan filesystem — resume dari kondisi itu **cold-boot ulang**
-  dari disk, bukan lanjut dari memory snapshot `[docs]` (dikutip dari
-  dokumentasi lifecycle E2B via WebFetch).
-- **Daytona** — resource ditentukan **per panggilan create**, lewat objek
-  `Resources(cpu, memory, disk, gpu, gpu_type)` `[code]` —
-  `daytona/common/sandbox.py` (`class Resources`, atribut
-  `cpu: int | None`, `memory: int | None` dalam GiB, `disk: int | None`
-  dalam GiB, `gpu`/`gpu_type`). Lifecycle-nya juga lebih granular:
-  `auto_stop_interval` (default 15 menit, 0 = nonaktif),
-  `auto_pause_interval` (default 60 menit untuk sandbox class yang
-  mendukung pause, saling eksklusif dengan `auto_stop_interval`),
-  `auto_archive_interval` (default 7 hari), `auto_delete_interval`
-  (nonaktif secara default), dan `ttl_minutes` sebagai batas keras
-  wall-clock sejak pembuatan — `[code]` `daytona/common/daytona.py`
-  (`class CreateSandboxBaseParams`, `class CreateSandboxFromImageParams`).
+  parameters `[code]` `e2b/sandbox_sync/main.py` include no direct
+  `cpu`/`memory` parameter — the resource envelope is fixed once the
+  template is chosen. Lifecycle: `lifecycle.on_timeout` can be `"kill"` or
+  `"pause"`; pausing with `keep_memory=False` drops in-memory state and
+  preserves only the filesystem — resuming from that state **cold-boots
+  again** from disk rather than continuing from a memory snapshot `[docs]`
+  (cited from the E2B lifecycle documentation via WebFetch).
+- **Daytona** — resources are set **per create call**, through a
+  `Resources(cpu, memory, disk, gpu, gpu_type)` object `[code]` —
+  `daytona/common/sandbox.py` (`class Resources`, attributes
+  `cpu: int | None`, `memory: int | None` in GiB, `disk: int | None` in
+  GiB, `gpu`/`gpu_type`). Its lifecycle is also more granular:
+  `auto_stop_interval` (15 minutes by default, 0 = disabled),
+  `auto_pause_interval` (60 minutes by default for sandbox classes
+  supporting pause, mutually exclusive with `auto_stop_interval`),
+  `auto_archive_interval` (7 days by default), `auto_delete_interval`
+  (disabled by default), and `ttl_minutes` as a hard wall-clock limit from
+  creation — `[code]` `daytona/common/daytona.py` (`class
+  CreateSandboxBaseParams`, `class CreateSandboxFromImageParams`).
 
-Catatan status: per pertengahan 2026, Daytona sudah tidak lagi
-self-hostable — codebase produksinya dipindah ke repo closed-source;
-paket `daytona` (klien Python) yang dikutip di atas tetap open dan yang
-dipakai untuk verifikasi ini, tapi jaminan isolasi sisi server (bagaimana
-persis microVM itu diimplementasikan) tidak lagi bisa dibaca dari source
-publik `[inferred]` — perilaku sisi-server disimpulkan dari dokumentasi
-publik, bukan dibaca dari implementasinya sendiri.
+Status note: as of mid-2026, Daytona is no longer self-hostable — its
+production codebase moved to a closed-source repo; the `daytona` package
+(the Python client) cited above remains open and is what these claims were
+verified against, but the server-side isolation guarantees (exactly how
+those microVMs are implemented) can no longer be read from public source
+`[inferred]` — server-side behaviour is concluded from public documentation,
+not read from its implementation.
 
-## Trade-off
+## Trade-offs
 
-- **Container per sesi (OpenHands) vs microVM per sandbox (E2B/Daytona)
-  vs tanpa isolasi (deepagents default)** — tanpa isolasi paling murah dan
-  paling cepat (zero cold start) tapi blast radius = seluruh proses/host
-  yang menjalankannya; layak cuma kalau kode yang dieksekusi datang dari
-  operator terpercaya (mis. Workspace Agent single-tenant lokal). Container
-  murah dan cepat relatif, tapi jaminannya bergantung penuh pada
-  konfigurasi (limit resource eksplisit, tidak ada DooD) — kalau
-  konfigurasinya longgar, "container" cuma nama, bukan jaminan. MicroVM
-  memberi jaminan terkuat yang masih terjangkau untuk multi-tenant publik,
-  dengan biaya cold-start lebih tinggi dan ketergantungan pada provider
-  pihak ketiga (dan untuk Daytona per 2026, ketergantungan pada layanan
-  closed-source, bukan self-hosted).
-- **Resource ditentukan di build-time (E2B) vs call-time (Daytona)** —
-  build-time lebih sederhana untuk operasi (satu image, kapasitas
-  predictable untuk capacity planning) tapi tidak bisa di-right-size per
-  task — `pip list` yang ringan dapat envelope resource yang sama dengan
-  build berat. Call-time (Daytona `Resources(...)`) lebih fleksibel tapi
-  menambah permukaan yang harus divalidasi: kalau nilai `cpu`/`memory`
-  datang dari argumen yang bisa dipengaruhi output model atau input user,
-  itu harus dibatasi ceiling di sisi aplikasi sebelum diteruskan ke SDK —
-  `[ours]`, bukan sesuatu yang dipaksakan SDK Daytona sendiri (SDK
-  menerima nilai apa pun yang valid secara tipe); vanilla-nya adalah
-  meneruskan nilai apa pun yang diminta caller mentah-mentah ke API
-  Daytona, kita memilih menambah validasi ceiling di sisi aplikasi karena
-  argumen resource yang bisa dipengaruhi hasil generate model adalah
-  permukaan abuse (minta `cpu=64` berulang) yang tidak boleh dipercaya
-  begitu saja.
-- **Cold start murni vs warm pool** — dibahas lebih lanjut di
-  `scaling.md`, relevan di sini karena `on_timeout: "pause"` (E2B) dan
-  `auto_pause_interval` (Daytona) ada justru untuk memotong biaya
-  cold-start lewat resume, bukan create dari nol — keduanya menyediakan
-  primitive-nya, keputusan memakainya untuk warm pool ada di lapis
-  scaling.
+- **A container per session (OpenHands) vs a microVM per sandbox
+  (E2B/Daytona) vs no isolation (the deepagents default)** — no isolation
+  is the cheapest and fastest (zero cold start) but the blast radius is the
+  entire process/host running it; defensible only when the executed code
+  comes from a trusted operator (e.g. a local single-tenant Workspace
+  Agent). Containers are relatively cheap and fast, but their guarantee
+  depends entirely on configuration (explicit resource limits, no DooD) —
+  with a loose configuration, "container" is a name, not a guarantee.
+  MicroVMs give the strongest guarantee still affordable for public
+  multi-tenant use, at the cost of a higher cold start and a dependency on
+  a third-party provider (and for Daytona as of 2026, a dependency on a
+  closed-source service rather than self-hosting).
+- **Resources fixed at build time (E2B) vs call time (Daytona)** —
+  build-time is operationally simpler (one image, predictable capacity for
+  planning) but can't be right-sized per task — a lightweight `pip list`
+  call gets exactly the same resource envelope as a heavy container
+  build. Call-time (Daytona's
+  `Resources(...)`) is more flexible but adds a surface that must be
+  validated: if the `cpu`/`memory` values come from arguments influenced by
+  model output or user input, they must be ceiling-capped on the
+  application side before being passed to the SDK — `[ours]`, not something
+  the Daytona SDK enforces itself (the SDK accepts any type-valid value);
+  vanilla is passing whatever the caller asks for straight through to the
+  Daytona API, and we chose to add ceiling validation on the application
+  side because a resource argument influenced by model generation is an
+  abuse surface (repeatedly asking for `cpu=64`) that must not be trusted
+  as-is.
+- **Pure cold start vs a warm pool** — discussed further in `scaling.md`,
+  relevant here because `on_timeout: "pause"` (E2B) and
+  `auto_pause_interval` (Daytona) exist precisely to cut cold-start cost
+  through resume rather than creating from scratch — both provide the
+  primitive; the decision to use it for a warm pool belongs to the scaling
+  layer.
 
-## Di deepagents
+## In deepagents
 
-`execute` di `deepagents` cuma jalan lewat backend yang mengimplementasi
-`SandboxBackendProtocol` — protokol itu sendiri **tidak** menjamin
-isolasi apa pun; ia cuma kontrak interface (§Backend filesystem
-`../systems/deepagents.md`). Isolasi sungguhan bergantung sepenuhnya pada
-implementasi backend yang dipasang:
+`execute` in `deepagents` runs only through a backend implementing
+`SandboxBackendProtocol` — and that protocol itself guarantees **no**
+isolation; it is only an interface contract (§Filesystem backend of
+`../systems/deepagents.md`). Real isolation depends entirely on the backend
+implementation installed:
 
-| Backend | Isolasi eksekusi |
+| Backend | Execution isolation |
 |---|---|
-| `LocalShellBackend` (bawaan) | Tidak ada — `subprocess.run(shell=True)` di proses/host yang sama, tanpa validasi isi command selain cek non-kosong; `virtual_mode` cuma membatasi operasi file (`read_file`/`write_file`/dst), **tidak** membatasi `execute()`. Secara eksplisit dilabeli *"not the default; it must be explicitly provided by the user"* di `THREAT_MODEL.md` `deepagents`. `[code]` — [`../systems/deepagents.md`](../systems/deepagents.md) §6 (kutipan langsung `THREAT_MODEL.md`). |
-| `LangSmithSandbox` | Isolasi mengikuti jaminan sandbox terkelola LangSmith, bukan proses host — satu-satunya implementasi `SandboxBackendProtocol` selain `LocalShellBackend`/`FilesystemBackend` yang disebut eksplisit di source. `[code]` — `deepagents/backends/langsmith.py`. |
-| Backend kustom (mis. pembungkus E2B/Daytona) | `deepagents` **tidak** menyediakan backend E2B/Daytona bawaan — memakai isolasi microVM berarti mengimplementasikan `SandboxBackendProtocol` sendiri yang membungkus SDK E2B/Daytona (buat sandbox, kirim command, kembalikan hasil sesuai kontrak protocol). `[code]`+`[inferred]` — disimpulkan dari daftar backend di §Backend filesystem yang tidak menyebut keduanya. |
+| `LocalShellBackend` (built in) | None — `subprocess.run(shell=True)` in the same process/host, with no validation of command content beyond a non-empty check; `virtual_mode` only restricts file operations (`read_file`/`write_file`/etc.), **not** `execute()`. Explicitly labelled *"not the default; it must be explicitly provided by the user"* in `deepagents`' `THREAT_MODEL.md`. `[code]` — [`../systems/deepagents.md`](../systems/deepagents.md) §6 (quoting `THREAT_MODEL.md` directly). |
+| `LangSmithSandbox` | Isolation follows LangSmith's managed sandbox guarantees rather than the host process — the only `SandboxBackendProtocol` implementation besides `LocalShellBackend`/`FilesystemBackend` named explicitly in the source. `[code]` — `deepagents/backends/langsmith.py`. |
+| A custom backend (e.g. an E2B/Daytona wrapper) | `deepagents` provides **no** built-in E2B/Daytona backend — using microVM isolation means implementing `SandboxBackendProtocol` yourself around the E2B/Daytona SDK (create the sandbox, send the command, return the result per the protocol contract). `[code]`+`[inferred]` — concluded from the backend list in §Filesystem backend, which names neither. |
 
-Implikasi langsung: memilih baris mana dari tabel "Spektrum blast radius"
-di atas, untuk proyek berbasis `deepagents`, murni ditentukan oleh backend
-mana yang disuntikkan ke `create_deep_agent(backend=...)` — bukan sesuatu
-yang `deepagents` putuskan sendiri secara default selain memberi
-`LocalShellBackend` sebagai opsi paling longgar (dan bukan default kalau
-tidak diminta eksplisit).
+The direct implication: which row of the "blast radius spectrum" table above
+applies to a `deepagents`-based project is determined purely by which
+backend is injected into `create_deep_agent(backend=...)` — not something
+`deepagents` decides by default, beyond offering `LocalShellBackend` as the
+loosest option (and not as the default unless explicitly requested).
 
-## Sumber
+## Sources
 
-- `[docs]` OpenHands — arsitektur runtime/sandbox (container per task,
-  isolasi dari host controller), dikutip via WebFetch dari
+- `[docs]` OpenHands — the runtime/sandbox architecture (a container per
+  task, isolated from the host controller), cited via WebFetch from
   `docs.openhands.dev/openhands/usage/architecture/runtime`.
 - `[code]` OpenHands `openhands/core/config/sandbox_config.py`,
-  `openhands/runtime/impl/docker/docker_runtime.py` — field `memory_limit`
-  dan pemetaannya ke `mem_limit` Docker, dibaca lewat diff PR
-  `All-Hands-AI/OpenHands#6616` via WebFetch.
-- `[docs]` OpenHands `containers/app/entrypoint.sh` — pola
-  Docker-out-of-Docker (mount socket Docker host, tambah user ke group
-  akses socket), dikutip via DeepWiki
-  (`deepwiki.com/All-Hands-AI/OpenHands/3.1-docker-runtime`) yang
-  mengutip baris `containers/app/entrypoint.sh#L31-L58` pada commit
-  `db37f350`.
-- `[code]` E2B Python SDK, paket `e2b` versi 2.45.1 dari PyPI, diunduh dan
-  dibaca langsung: `e2b/sandbox/main.py` (`class SandboxBase`,
-  `default_sandbox_timeout = 300`), `e2b/sandbox_sync/main.py` (signature
-  `create(template, timeout, metadata, ..., lifecycle)`).
-- `[docs]` E2B — semantik `lifecycle.on_timeout` (`"kill"`/`"pause"`) dan
-  `keep_memory` saat pause/resume, dikutip via WebFetch dari dokumentasi
-  E2B sandbox lifecycle.
-- `[code]` Daytona Python SDK, paket `daytona` versi 0.205.1 dari PyPI,
-  diunduh dan dibaca langsung: `daytona/common/sandbox.py` (`class
+  `openhands/runtime/impl/docker/docker_runtime.py` — the `memory_limit`
+  field and its mapping to Docker's `mem_limit`, read through the diff of
+  PR `All-Hands-AI/OpenHands#6616` via WebFetch.
+- `[docs]` OpenHands `containers/app/entrypoint.sh` — the
+  Docker-out-of-Docker pattern (mounting the host Docker socket, adding the
+  user to the socket-access group), cited via DeepWiki
+  (`deepwiki.com/All-Hands-AI/OpenHands/3.1-docker-runtime`), which quotes
+  `containers/app/entrypoint.sh#L31-L58` at commit `db37f350`.
+- `[code]` The E2B Python SDK, package `e2b` version 2.45.1 from PyPI,
+  downloaded and read directly: `e2b/sandbox/main.py` (`class SandboxBase`,
+  `default_sandbox_timeout = 300`), `e2b/sandbox_sync/main.py` (the
+  `create(template, timeout, metadata, ..., lifecycle)` signature).
+- `[docs]` E2B — the semantics of `lifecycle.on_timeout`
+  (`"kill"`/`"pause"`) and `keep_memory` on pause/resume, cited via
+  WebFetch from the E2B sandbox lifecycle documentation.
+- `[code]` The Daytona Python SDK, package `daytona` version 0.205.1 from
+  PyPI, downloaded and read directly: `daytona/common/sandbox.py` (`class
   Resources`: `cpu`, `memory`, `disk`, `gpu`, `gpu_type`),
   `daytona/common/daytona.py` (`class CreateSandboxBaseParams`:
   `auto_stop_interval`, `auto_pause_interval`, `auto_archive_interval`,
   `auto_delete_interval`, `ttl_minutes`; `class
   CreateSandboxFromImageParams`: `resources: Resources | None`).
-- `[inferred]` Status self-hosting Daytona (produksi jadi closed-source
-  per pertengahan 2026) — disimpulkan dari dokumentasi/analisis pihak
-  ketiga yang dikutip via WebSearch, bukan diverifikasi langsung dari
-  pengumuman resmi Daytona.
+- `[inferred]` Daytona's self-hosting status (production going closed-source
+  as of mid-2026) — concluded from third-party documentation/analysis cited
+  via WebSearch, not verified directly from a Daytona announcement.
 - `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §6,
-  §Backend filesystem — tier-1 reference terverifikasi Task 3, dikutip
-  tanpa membaca ulang source.
+  §Filesystem backend — a tier-1 reference verified in Task 3, cited
+  without re-reading the source.
