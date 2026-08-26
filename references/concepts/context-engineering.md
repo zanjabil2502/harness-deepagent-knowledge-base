@@ -1,279 +1,288 @@
 # Context engineering
 
-## Masalah
+## Problem
 
-Context window yang penuh dengan riwayat tool call, hasil pencarian, dan
-pesan lama terlihat seperti masalah tunggal dengan solusi jelas: kompaksi —
-ringkas pesan lama jadi lebih pendek, kirim lebih sedikit token per call.
-Instingnya benar untuk satu sumbu biaya (token per request) dan salah untuk
-sumbu lain yang jarang ditulis siapa pun: **kompaksi merusak prefix prompt
-cache**, dan begitu prefix berubah, penghematan dari mengirim lebih sedikit
-token bisa kalah telak oleh hilangnya diskon cache-hit pada *setiap* call
-berikutnya sampai cache alami itu kedaluwarsa lagi.
+A context window filled with tool call history, search results, and old
+messages looks like a single problem with an obvious solution: compaction —
+summarise the old messages into something shorter, send fewer tokens per
+call. That instinct is right for one cost axis (tokens per request) and
+wrong for another that almost nobody writes down: **compaction breaks the
+prompt prefix cache**, and once the prefix changes, the saving from sending
+fewer tokens can be dwarfed by the lost cache-hit discount on *every*
+subsequent call until that cache would have expired anyway.
 
-Mekanismenya, dikutip persis dari dokumentasi resmi Anthropic `[docs]`: cache
-dibentuk sebagai **hierarki kumulatif** — `tools` → `system` → `messages`.
-Tiap breakpoint (`cache_control`) menulis hash dari seluruh prefix sampai ke
-titik itu; sistem **tidak** menulis entri untuk posisi sebelumnya. "Changes
-at each level invalidate that level and all subsequent levels" — karena
-hash-nya kumulatif, **mengubah blok apa pun di titik breakpoint atau
-sebelumnya menghasilkan hash berbeda di request berikutnya**, dan cache-lookup
-mundur (lookback window 20 blok) tidak menemukan entri lama untuk hash baru
-itu. Akibatnya satu ringkasan yang menulis ulang pesan di tengah riwayat
-tidak cuma memangkas `messages` — ia menggeser identitas prefix di titik itu
-dan seterusnya, sehingga *seluruh* tail sesudahnya (termasuk apa pun yang
-tadinya sudah di-cache di sana) jadi cache miss.
+The mechanism, quoted directly from Anthropic's official documentation
+`[docs]`: the cache is formed as a **cumulative hierarchy** — `tools` →
+`system` → `messages`. Each breakpoint (`cache_control`) writes a hash of
+the entire prefix up to that point; the system writes **no** entry for
+earlier positions. "Changes at each level invalidate that level and all
+subsequent levels" — because the hash is cumulative, **changing any block at
+or before a breakpoint produces a different hash on the next request**, and
+the backwards cache lookup (a 20-block lookback window) finds no old entry
+for that new hash. So one summary rewriting messages mid-history doesn't just
+shorten `messages` — it shifts the prefix identity at that point and
+onwards, making the *entire* tail after it (including anything already
+cached there) a cache miss.
 
-Biaya cache miss itu konkret dan berlipat, bukan cuma "sedikit lebih mahal":
-menurut dokumentasi yang sama, token yang di-cache-write dikenakan **1.25×**
-harga base (TTL 5 menit) atau **2×** (TTL 1 jam), sementara cache-hit hanya
-**0.1×** — selisih 12.5× antara "prefix masih valid" dan "prefix baru saja
-kau tulis ulang". Di layanan multi-user di mana banyak turn berurutan
-bergantung pada prefix yang sama (system prompt + tool definition + riwayat
-awal yang stabil), satu keputusan kompaksi yang salah tempat membayar harga
-write-cache penuh berulang kali — sekali per turn — sampai konten itu stabil
-lagi cukup lama untuk ter-cache ulang. Ini yang jarang ditulis siapa pun
-karena dua metrik itu (token terkirim vs cache-hit rate) muncul di baris
-tagihan yang berbeda dan jarang dilihat berdampingan.
+The cost of that miss is concrete and compounding, not merely "slightly more
+expensive": per the same documentation, cache-written tokens are charged at
+**1.25×** the base price (5-minute TTL) or **2×** (1-hour TTL), while a
+cache hit costs only **0.1×** — a 12.5× spread between "the prefix is still
+valid" and "you just rewrote the prefix". In a multi-user service where many
+consecutive turns depend on the same prefix (the system prompt + tool
+definitions + a stable early history), one badly placed compaction decision
+pays the full write-cache price repeatedly — once per turn — until that
+content is stable long enough to be cached again. This is rarely written
+down because the two metrics (tokens sent vs cache-hit rate) appear on
+different lines of the bill and are seldom seen side by side.
 
-## Pola
+## Pattern
 
-### Urutan konteks ramah-cache: stabil di depan, volatil di belakang
+### A cache-friendly context order: stable first, volatile last
 
-Hierarki cache Anthropic (`tools` → `system` → `messages`) `[docs]` bukan
-detail implementasi yang bisa diabaikan — ia **adalah** aturan urutan
-konteks: taruh apa yang paling jarang berubah paling awal (definisi tool,
-instruksi sistem statis, skeleton dokumen/repo map yang stabil lintas turn),
-dan apa yang paling sering berubah paling akhir (giliran percakapan
-terbaru, hasil tool yang baru saja dipanggil). Breakpoint ditaruh di ujung
-blok stabil terakhir — **bukan** di ujung blok yang berubah tiap request.
-Dokumentasi Anthropic sendiri memberi contoh kesalahan paling umum: taruh
-breakpoint di blok yang memuat timestamp per-request, dan cache miss total
-tiap kali karena hash-nya selalu baru; perbaikannya adalah memindahkan
-breakpoint ke blok stabil terakhir **sebelum** konten yang berubah `[docs]`.
+Anthropic's cache hierarchy (`tools` → `system` → `messages`) `[docs]` isn't
+an implementation detail to be ignored — it **is** the context ordering rule:
+put what changes least often first (tool definitions, static system
+instructions, a document/repo map skeleton stable across turns), and what
+changes most often last (the latest conversation turn, the tool result just
+returned). Breakpoints go at the end of the last stable block — **not** at
+the end of a block that changes every request. Anthropic's own documentation
+gives the most common mistake: placing a breakpoint in a block containing a
+per-request timestamp, producing a total cache miss every time because the
+hash is always new; the fix is moving the breakpoint to the last stable block
+**before** the changing content `[docs]`.
 
-### Kompaksi bukan langkah pertama — teknik struktural lebih murah kalau bisa
+### Compaction isn't the first step — structural techniques are cheaper when available
 
-Sebelum menulis-ulang riwayat, tiga teknik menurunkan pertumbuhan konteks
-tanpa pernah menyentuh prefix yang sudah stabil:
+Before rewriting history, three techniques reduce context growth without
+ever touching an already-stable prefix:
 
-- **Bentuk tool output di sumbernya, jangan ringkas belakangan** — prinsip
-  *Agent-Computer Interface* SWE-agent: file viewer bawaan menampilkan 100
-  baris per giliran (bukan `cat` seluruh file), dan command pencarian
-  direktori sengaja dibuat ringkas — cuma daftar file yang match, tanpa
-  konteks tiap match, karena tim SWE-agent menemukan versi yang lebih
-  verbose "too confusing for the model" sekaligus lebih boros token.
-  `[code]` `docs/background/aci.md`, repo `SWE-agent/SWE-agent` (dibaca via
+- **Shape tool output at the source rather than summarising it later** —
+  SWE-agent's *Agent-Computer Interface* principle: its built-in file viewer
+  shows 100 lines per turn (rather than `cat`ing a whole file), and its
+  directory search commands are deliberately terse — just the list of
+  matching files, with no context per match, because the SWE-agent team
+  found the more verbose version "too confusing for the model" as well as
+  more token-hungry. `[code]` `docs/background/aci.md`, repo
+  `SWE-agent/SWE-agent` (read via
   `raw.githubusercontent.com/SWE-agent/SWE-agent/main/docs/background/aci.md`).
-  Konsekuensinya: hasil tool yang masuk context sejak awal kecil, jadi tidak
-  pernah butuh diringkas nanti — masalah dicegah di hulu, bukan dibersihkan
-  di hilir.
-- **Evict, jangan rewrite** — `FilesystemMiddleware` `deepagents` memindah
-  hasil tool besar (>20000 token) ke file di backend begitu melewati
-  ambang, menyisakan preview head/tail + rujukan path di posisi pesan
-  aslinya (`TOO_LARGE_TOOL_MSG`). `[code]` dikutip `../systems/deepagents.md`
-  §2. Ini beda mekanisme dari kompaksi meski efeknya sama-sama "hemat
-  token": eviction terjadi pada pesan yang **baru ditambahkan** (di ujung
-  volatil, sebelum breakpoint manapun sempat menandainya), bukan menulis
-  ulang pesan lama yang sudah jadi bagian prefix ter-cache.
-- **Hitung ulang konteks tiap turn dari sumber, jangan akumulasi lalu
-  pangkas** — repo map Aider membangun graf definisi/referensi simbol lintas
-  file, memberi bobot lebih tinggi ke identifier yang disebut di chat/nama
-  panjang (`mul *= 10`) dan file yang sedang dibuka (`mul *= 50`), lalu
-  menjalankan `networkx.pagerank` untuk meranking file mana yang paling
-  relevan disertakan. `[code]` `aider/repomap.py` baris 480-511 (bobot),
-  365-380 (pagerank), repo `Aider-AI/aider`. Ukuran keluaran dijaga pas
-  anggaran token lewat binary search jumlah tag yang disertakan
-  (`get_ranked_tags_map_uncached`, baris 629-703) `[code]` `aider/repomap.py`.
-  Pola ini menghindari pertanyaan "kapan kompaksi" sama sekali untuk bagian
-  konteks itu — repo map dihitung ulang tiap kali, bukan ditulis sekali lalu
-  diringkas belakangan.
+  The consequence: tool results entering the context are small from the
+  start, so they never need summarising later — the problem is prevented
+  upstream rather than cleaned up downstream.
+- **Evict, don't rewrite** — `deepagents`' `FilesystemMiddleware` moves
+  large tool results (>20000 tokens) into a file in the backend once they
+  cross that threshold, leaving a head/tail preview plus a path reference in
+  the original message's position (`TOO_LARGE_TOOL_MSG`). `[code]` cited
+  from `../systems/deepagents.md` §2. This is a different mechanism from
+  compaction even though the effect is likewise "fewer tokens": eviction
+  happens to a **newly added** message (at the volatile end, before any
+  breakpoint has marked it) rather than rewriting old messages already part
+  of a cached prefix.
+- **Recompute the context each turn from the source rather than
+  accumulating then trimming** — Aider's repo map builds a graph of symbol
+  definitions/references across files, weighting identifiers mentioned in
+  the chat and long names higher (`mul *= 10`) along with currently open
+  files (`mul *= 50`), then runs `networkx.pagerank` to rank which files are
+  most relevant to include. `[code]` `aider/repomap.py` lines 480-511
+  (weights), 365-380 (pagerank), repo `Aider-AI/aider`. Output size is kept
+  within the token budget through a binary search over how many tags to
+  include (`get_ranked_tags_map_uncached`, lines 629-703) `[code]`
+  `aider/repomap.py`. This pattern avoids the "when to compact" question
+  entirely for that part of the context — the repo map is recomputed each
+  time rather than written once and summarised later.
 
-### Kalau kompaksi tak terhindarkan, jaga batas pemisahan pesan tetap valid
+### If compaction is unavoidable, keep message boundaries valid
 
-Kompaksi yang memotong di tengah pasangan `tool_use`/`tool_result` membuat
-provider menolak request (setengah pasangan jadi anak yatim). Cline
-menegakkan ini eksplisit: titik potong "aman" hanya di pesan user berjenis
-teks atau di pesan asisten (karena `tool_use`-nya dan hasilnya tetap di sisi
-yang sama dari potongan); pesan user yang isinya cuma `tool_result` **tidak
-pernah** jadi titik potong yang aman karena `tool_use` pasangannya ada di
-pesan asisten sebelumnya dan akan terlipat ke ringkasan, meninggalkan
-`tool_result` yatim. `[code]` `sdk/packages/core/src/extensions/context/compaction-shared.ts`
-baris 317-325, repo `cline/cline`. `deepagents` menangani kelas masalah yang
-sama dengan cara berbeda — bukan mencegah potongan tak-aman, tapi menambal
-sesudahnya: `PatchToolCallsMiddleware` menyisipkan `ToolMessage` sintetis
-untuk tool call yang jadi dangling akibat kompaksi/interrupt, menjaga
-riwayat tetap valid untuk model berikutnya. `[code]` dikutip
-`../systems/deepagents.md` §2.
+Compaction cutting through the middle of a `tool_use`/`tool_result` pair
+makes the provider reject the request (half a pair is orphaned). Cline
+enforces this explicitly: a "safe" cut point exists only at a text-type user
+message or at an assistant message (because its `tool_use` and the result
+stay on the same side of the cut); a user message containing only a
+`tool_result` is **never** a safe cut point, because its paired `tool_use`
+is in the preceding assistant message and would be folded into the summary,
+orphaning the `tool_result`. `[code]`
+`sdk/packages/core/src/extensions/context/compaction-shared.ts` lines
+317-325, repo `cline/cline`. `deepagents` handles the same problem class
+differently — not by preventing unsafe cuts but by patching afterwards:
+`PatchToolCallsMiddleware` inserts a synthetic `ToolMessage` for tool calls
+left dangling by compaction/interrupts, keeping history valid for the next
+model call. `[code]` cited from `../systems/deepagents.md` §2.
 
-Cline juga membedakan **kapan** kompaksi dipicu dari **berapa banyak** yang
-dipangkas: trigger di 90% anggaran input yang dapat dipakai
-(`COMPACTION_TRIGGER_RATIO = 0.9`), target turun ke 70%
-(`DEFAULT_TARGET_RATIO = 0.7`), dan 20000 token terbaru
-(`DEFAULT_PRESERVE_RECENT_TOKENS`) selalu dipertahankan verbatim, tidak ikut
-dilipat. `[code]` `sdk/packages/core/src/extensions/context/compaction-shared.ts`
-baris 12-21. Pola "sisakan tail besar verbatim" ini selaras dengan aturan
-urutan ramah-cache di atas — tapi **tidak menyelesaikan** masalah
-invalidasi: bagian yang dilipat ada di *tengah* prefix, dan menurut mekanisme
-hierarki di atas, menulis ulang tengah tetap menggeser hash semua breakpoint
-di titik itu dan sesudahnya. Menyisakan tail verbatim mengurangi berapa
-banyak yang perlu ditulis ulang ke cache setelah kompaksi (tail-nya tidak
-perlu ditulis ulang), tapi tidak membuat kompaksi itu sendiri cache-neutral.
+Cline also distinguishes **when** compaction triggers from **how much** it
+trims: it triggers at 90% of the usable input budget
+(`COMPACTION_TRIGGER_RATIO = 0.9`), targets a drop to 70%
+(`DEFAULT_TARGET_RATIO = 0.7`), and always preserves the most recent 20000
+tokens verbatim (`DEFAULT_PRESERVE_RECENT_TOKENS`), excluded from the fold.
+`[code]` `sdk/packages/core/src/extensions/context/compaction-shared.ts`
+lines 12-21. That "leave a large verbatim tail" pattern aligns with the
+cache-friendly ordering rule above — but it **doesn't solve** invalidation:
+the folded portion sits in the *middle* of the prefix, and per the hierarchy
+mechanism above, rewriting the middle still shifts the hash of every
+breakpoint at and after that point. Leaving the tail verbatim reduces how
+much has to be re-written into cache after compaction (the tail doesn't need
+rewriting), but doesn't make the compaction itself cache-neutral.
 
-## Trade-off
+## Trade-offs
 
-- **Kompaksi vs biarkan cache-hit jalan** — bandingkan dua angka sebelum
-  memutuskan: (a) token yang dihemat dengan meringkas dikali harga token
-  base, versus (b) harga cache-write penuh (1.25×/2× base, bukan 0.1×) untuk
-  seluruh prefix yang sekarang harus ditulis ulang, dikali berapa banyak
-  turn lagi yang diperkirakan terjadi dalam TTL sebelum cache itu kedaluwarsa
-  secara alami. Kalau sesi masih akan berlanjut banyak turn dalam jendela
-  TTL, kehilangan cache-hit di semuanya biasanya lebih mahal dari sekali
-  penghematan token kompaksi. Kompaksi baru jelas untung kalau: (i) context
-  window benar-benar mendekati limit keras (tidak ada pilihan), atau (ii)
-  sesi memang akan diam lama sesudahnya (cache toh akan kedaluwarsa sendiri,
-  jadi tidak ada cache-hit yang hilang dengan menuliskannya lebih awal).
-- **Teknik struktural (ACI, eviction, repo map dihitung ulang) vs kompaksi
-  generik** — struktural mencegah pertumbuhan di sumbernya dan tidak pernah
-  menyentuh prefix stabil, tapi butuh kerja desain per jenis tool/konten di
-  muka (window viewer, threshold eviction, graf ranking) dan tidak generik —
-  tiap tool baru butuh pemikiran sendiri. Kompaksi generik (ringkas apa saja
-  yang lama) bekerja untuk konten apa pun tanpa desain khusus, tapi selalu
-  membayar ongkos cache di atas, dan reaktif (baru jalan setelah context
-  sudah penuh, bukan mencegahnya).
-- **Breakpoint di ujung blok besar (jarang berubah) vs breakpoint lebih ke
-  belakang (dekat konten terbaru)** — breakpoint yang menandai blok besar
-  dan stabil (system prompt + definisi tool, seperti yang dipilih
-  `AnthropicPromptCachingMiddleware` — menandai **blok terakhir** system
-  message dan **tool terakhir** saja, satu breakpoint trailing untuk seluruh
-  set tool `[code]` `langchain_anthropic/middleware/prompt_caching.py`
-  baris 232-262, repo `langchain-ai/langchain`) memberi cache-hit rate
-  tinggi karena jarang invalid, tapi kalau sesuatu di blok itu **harus**
-  berubah (mis. isi memory yang disuntik ke system prompt), seluruh blok
-  besar itu invalid sekaligus. Breakpoint yang ditaruh lebih dekat ke ujung
-  volatil membatasi blast radius invalidasi tapi menyisakan lebih sedikit
-  konten yang benar-benar ter-cache setiap saat.
+- **Compaction vs letting the cache hits run** — compare two numbers before
+  deciding: (a) the tokens saved by summarising, times the base token price,
+  versus (b) the full cache-write price (1.25×/2× base, not 0.1×) for the
+  whole prefix that now has to be rewritten, times how many more turns are
+  expected within the TTL before that cache would have expired naturally. If
+  the session will continue for many turns inside the TTL window, losing the
+  cache hits on all of them is usually more expensive than one compaction's
+  token saving. Compaction is clearly a win only when: (i) the context
+  window genuinely approaches a hard limit (no choice), or (ii) the session
+  is about to go quiet for a long time anyway (the cache would expire on its
+  own, so no cache hits are lost by rewriting it early).
+- **Structural techniques (ACI, eviction, a recomputed repo map) vs generic
+  compaction** — structural prevents growth at the source and never touches
+  a stable prefix, but needs design work per tool/content type up front (a
+  viewer window, an eviction threshold, a ranking graph) and isn't generic —
+  every new tool needs its own thinking. Generic compaction (summarise
+  whatever is old) works for any content with no special design, but always
+  pays the cache cost above, and is reactive (it runs only once the context
+  is already full rather than preventing that).
+- **A breakpoint at the end of a large (rarely changing) block vs one
+  further back (near the latest content)** — a breakpoint marking a large,
+  stable block (the system prompt + tool definitions, as
+  `AnthropicPromptCachingMiddleware` chooses — marking only the **last
+  block** of the system message and the **last tool**, one trailing
+  breakpoint for the whole tool set `[code]`
+  `langchain_anthropic/middleware/prompt_caching.py` lines 232-262, repo
+  `langchain-ai/langchain`) gives a high cache-hit rate because it rarely
+  invalidates, but if something in that block **must** change (e.g. memory
+  content injected into the system prompt), that entire large block
+  invalidates at once. A breakpoint placed closer to the volatile end bounds
+  the invalidation blast radius but leaves less content genuinely cached at
+  any moment.
 
-## Di deepagents
+## In deepagents
 
-`AnthropicPromptCachingMiddleware` (dari `langchain-anthropic`, disuntik
-otomatis oleh `deepagents` lewat `append_prompt_caching_middleware`)
-mengimplementasikan persis aturan "stabil di depan" di atas: ia menandai
-**blok konten terakhir** dari system message dan **tool terakhir** dalam
-daftar tool dengan `cache_control`, bukan tiap pesan — karena tool
-didefinisikan sebagai satu blok kontiguo, satu breakpoint trailing pada tool
-terakhir sudah men-cache seluruh set tool. `[code]`
-`langchain_anthropic/middleware/prompt_caching.py` baris 42-56, 122-151, 232-262
-(terinstal sebagai dependency `deepagents==0.7.8`,
-`langchain-anthropic==1.6.1`, venv riset yang sama dengan `../systems/deepagents.md`).
+`AnthropicPromptCachingMiddleware` (from `langchain-anthropic`, injected
+automatically by `deepagents` through `append_prompt_caching_middleware`)
+implements exactly the "stable first" rule above: it marks the **last
+content block** of the system message and the **last tool** in the tool list
+with `cache_control`, not every message — because tools are defined as one
+contiguous block, one trailing breakpoint on the last tool already caches
+the whole tool set. `[code]`
+`langchain_anthropic/middleware/prompt_caching.py` lines 42-56, 122-151,
+232-262 (installed as a dependency of `deepagents==0.7.8`,
+`langchain-anthropic==1.6.1`, the same research venv as
+`../systems/deepagents.md`).
 
-Koreksi presisi atas apa yang dikutip `../systems/deepagents.md` §2 soal
-urutan ini: dibaca ulang langsung dari `deepagents/graph.py` untuk task
-ini, urutan konstruksi list-nya adalah `append_prompt_caching_middleware(
-deepagent_middleware)` (baris 860) **lebih dulu**, baru `MemoryMiddleware`
-ditambahkan sesudahnya (baris 861-865) kalau `memory` diisi — kebalikan
-dari framing "memory dipasang sebelum tail prompt-caching" yang
-disimpulkan dari prosa `../systems/deepagents.md`. `[code]`
-`deepagents/graph.py` baris 860-865.
+A precision correction to what `../systems/deepagents.md` §2 says about this
+ordering: re-read directly from `deepagents/graph.py` for this task, the
+list construction order is `append_prompt_caching_middleware(deepagent_middleware)`
+(line 860) **first**, with `MemoryMiddleware` appended afterwards (lines
+861-865) if `memory` is set — the reverse of the "memory installed before
+the prompt-caching tail" framing inferred from `../systems/deepagents.md`'s
+prose. `[code]` `deepagents/graph.py` lines 860-865.
 
-Mekanisme sesungguhnya yang membuat update memory **tidak** merusak prefix
-cache bukan soal urutan antar-middleware itu — `MemoryMiddleware` punya
-parameter `add_cache_control: bool = False` sendiri (`deepagents` men-set
-`True` khusus untuk instance di stack utama), dan `wrap_model_call`-nya
-(lewat `modify_request`, method internal yang dipanggilnya langsung di
-baris pertama) menandai **blok terakhir** system message (setelah
-kontennya sendiri disisipkan) dengan `cache_control` kalau flag itu aktif
-dan `request.model` adalah `ChatAnthropic` — independen dari apakah
-`AnthropicPromptCachingMiddleware` berjalan sebelum atau sesudahnya di
-list. `[code]` `deepagents/middleware/memory.py` baris 193 (parameter
-`add_cache_control`), 342-374 (`modify_request`, penandaan blok terakhir),
-380, 394 (`wrap_model_call` memanggil `modify_request`); dipanggil dg
-`add_cache_control=True` di `deepagents/graph.py` baris 861-866. Komentar
-sumber di `deepagents/graph.py` baris 856-858 menyebut alasan berbeda
-untuk urutan **profil harness vs memory** (bukan caching vs memory):
-middleware ekstra profil disisipkan di antara middleware inti dan memory
-secara sengaja "supaya update memory (yang mengubah system prompt) tidak
-menginvalidasi prefix cache" milik konten profil — pola "stabil dulu,
-volatil belakangan" dari `## Pola` di atas, diterapkan ke posisi profil
-relatif terhadap memory, bukan ke posisi `AnthropicPromptCachingMiddleware`
-relatif terhadap memory seperti klaim awal `../systems/deepagents.md`
-sebelum dikoreksi. `[code]` `deepagents/graph.py` baris 856-858 (komentar
-sumber, dikutip apa adanya). Detail ini juga sudah dipakai memperbaiki
-`../systems/deepagents.md` §2 langsung (paragraf
-`AnthropicPromptCachingMiddleware`) di task ini — bukan cuma dicatat di
-sini, karena file itu tier-1 yang dibaca task-task lain sebagai otoritas.
+The actual mechanism keeping memory updates from breaking the prefix cache
+isn't that inter-middleware ordering — `MemoryMiddleware` has its own
+`add_cache_control: bool = False` parameter (`deepagents` sets `True`
+specifically for the main stack's instance), and its `wrap_model_call`
+(through `modify_request`, the internal method it calls on its first line)
+marks the **last block** of the system message (after its own content is
+inserted) with `cache_control` when that flag is on and `request.model` is a
+`ChatAnthropic` — independently of whether `AnthropicPromptCachingMiddleware`
+runs before or after it in the list. `[code]`
+`deepagents/middleware/memory.py` line 193 (the `add_cache_control`
+parameter), 342-374 (`modify_request`, marking the last block), 380, 394
+(`wrap_model_call` calling `modify_request`); invoked with
+`add_cache_control=True` in `deepagents/graph.py` lines 861-866. The source
+comment at `deepagents/graph.py` lines 856-858 gives a different reason for
+the **harness profile vs memory** ordering (not caching vs memory): a
+profile's extra middleware is inserted between the core middleware and
+memory deliberately "so that memory updates (which change the system
+prompt) don't invalidate the prefix cache" of the profile's content — the
+"stable first, volatile last" pattern from `## Pattern` above, applied to
+the profile's position relative to memory, not to
+`AnthropicPromptCachingMiddleware`'s position relative to memory as
+`../systems/deepagents.md` originally claimed before correction. `[code]`
+`deepagents/graph.py` lines 856-858 (the source comment, quoted as-is).
+This detail was also used to fix `../systems/deepagents.md` §2 directly (the
+`AnthropicPromptCachingMiddleware` paragraph) in this task — not merely
+noted here, because that file is a tier-1 reference other tasks read as
+authoritative.
 
-Sisi lain dari koin: `SummarizationMiddleware` (juga default, selalu
-terpasang) bekerja dengan menulis ulang segmen `messages` begitu token
-terlampaui ambang yang dihitung dari profil model
-(`compute_summarization_defaults`). `[code]` dikutip
-`../systems/deepagents.md` §2. Menurut hierarki cache di atas, penulisan
-ulang ini **selalu** menggeser hash level `messages` di titik itu —
-`deepagents` tidak melakukan apa pun secara default untuk menahan trigger
-`SummarizationMiddleware` sampai titik yang cache-neutral (mis. hanya
-kompaksi tepat sebelum context window mentok, bukan pada ambang yang lebih
-dini) — keputusan *kapan* threshold itu tercapai relatif terhadap siklus
-TTL cache sepenuhnya diserahkan ke aplikasi pemanggil lewat parameter model
-yang dipakai. `[inferred]` — disimpulkan dari tidak ditemukannya parameter
-di `create_summarization_middleware`/`compute_summarization_defaults` yang
-menyadari status cache TTL saat ini; ini bukan klaim bug, cuma observasi
-bahwa dua mekanisme (`SummarizationMiddleware` dan
-`AnthropicPromptCachingMiddleware`) berjalan independen tanpa saling
-memberi tahu.
+The other side of the coin: `SummarizationMiddleware` (also a default,
+always installed) works by rewriting a `messages` segment once tokens exceed
+a threshold computed from the model profile
+(`compute_summarization_defaults`). `[code]` cited from
+`../systems/deepagents.md` §2. Per the cache hierarchy above, that rewrite
+**always** shifts the `messages`-level hash at that point — and `deepagents`
+does nothing by default to hold `SummarizationMiddleware`'s trigger until a
+cache-neutral point (e.g. compacting only just before the context window is
+exhausted rather than at an earlier threshold) — *when* that threshold is
+reached relative to the cache TTL cycle is left entirely to the calling
+application through the model parameters it uses. `[inferred]` — concluded
+from the absence of any parameter in
+`create_summarization_middleware`/`compute_summarization_defaults` aware of
+the current cache TTL status; this isn't a bug claim, only the observation
+that the two mechanisms (`SummarizationMiddleware` and
+`AnthropicPromptCachingMiddleware`) run independently without informing each
+other.
 
-`FilesystemMiddleware` (evict tool result besar, lihat `## Pola` di atas)
-adalah mitigasi tersedia yang **tidak** membayar ongkos ini, karena ia
-bekerja pada pesan yang baru ditambahkan sebelum breakpoint manapun sempat
-menandainya — konsekuensinya, menaikkan agresivitas eviction (menurunkan
-`tool_token_limit_before_evict`) adalah tuas yang lebih murah untuk menahan
-pertumbuhan context sebelum `SummarizationMiddleware` sempat terpicu sama
-sekali, dibanding mengandalkan kompaksi sebagai satu-satunya katup.
+`FilesystemMiddleware` (evicting large tool results, see `## Pattern` above)
+is the available mitigation that **doesn't** pay this cost, because it works
+on a newly added message before any breakpoint has marked it — consequently,
+raising eviction aggressiveness (lowering
+`tool_token_limit_before_evict`) is a cheaper lever for restraining context
+growth before `SummarizationMiddleware` triggers at all, compared with
+relying on compaction as the only valve.
 
-## Sumber
+## Sources
 
-- `[docs]` Anthropic — `platform.claude.com/docs/en/build-with-claude/prompt-caching`,
-  hierarki cache `tools`→`system`→`messages`, mekanisme hash kumulatif per
-  breakpoint, lookback window 20 blok, batas 4 breakpoint eksplisit, TTL
-  5 menit/1 jam, pricing multiplier (write 1.25×/2×, read 0.1×), contoh
-  kesalahan breakpoint pada konten yang berubah tiap request.
-- `[code]` `langchain_anthropic/middleware/prompt_caching.py` (paket
-  `langchain-anthropic==1.6.1`, dibaca dari
-  `references/recipes/.venv/lib/python3.13/site-packages/`, venv yang sama
-  dipakai `../systems/deepagents.md`) — `AnthropicPromptCachingMiddleware`,
+- `[docs]` Anthropic —
+  `platform.claude.com/docs/en/build-with-claude/prompt-caching`, the
+  `tools`→`system`→`messages` cache hierarchy, the cumulative per-breakpoint
+  hash mechanism, the 20-block lookback window, the 4 explicit breakpoint
+  limit, the 5-minute/1-hour TTLs, the pricing multipliers (write 1.25×/2×,
+  read 0.1×), and the example mistake of a breakpoint on content that
+  changes every request.
+- `[code]` `langchain_anthropic/middleware/prompt_caching.py` (package
+  `langchain-anthropic==1.6.1`, read from
+  `references/recipes/.venv/lib/python3.13/site-packages/`, the same venv
+  used by `../systems/deepagents.md`) — `AnthropicPromptCachingMiddleware`,
   `_tag_system_message`, `_tag_tools`.
-- `[code]` `deepagents/middleware/_prompt_caching.py` (venv sama) —
-  `append_prompt_caching_middleware`, pemasangan otomatis tanpa syarat.
-- `[code]` `deepagents/middleware/memory.py` baris 193, 342-374, 380, 394
-  (venv sama) — parameter `add_cache_control`, `modify_request` (dipanggil
-  `wrap_model_call`) menandai blok terakhir system message sendiri,
-  independen dari `AnthropicPromptCachingMiddleware`.
-- `[code]` `deepagents/graph.py` baris 856-866 (venv sama, dibaca ulang
-  langsung untuk task ini) — urutan konstruksi list middleware utama
-  (`append_prompt_caching_middleware` sebelum `MemoryMiddleware`
-  ditambahkan), komentar sumber soal posisi middleware profil vs memory;
-  dasar koreksi presisi atas `../systems/deepagents.md` §2 (diperbaiki
-  langsung di task ini, lihat `## Di deepagents`).
-- `[code]` `docs/background/aci.md`, repo `SWE-agent/SWE-agent`, dibaca via
-  `raw.githubusercontent.com/SWE-agent/SWE-agent/main/docs/background/aci.md` —
-  prinsip desain ACI: linter gate, file viewer 100-baris, search ringkas.
-- `[code]` `tools/search/config.yaml`, repo `SWE-agent/SWE-agent`, dibaca
-  via `raw.githubusercontent.com/SWE-agent/SWE-agent/main/tools/search/config.yaml` —
-  signature command pencarian yang dirujuk di `## Pola`.
-- `[code]` `aider/repomap.py`, repo `Aider-AI/aider`, dibaca via
-  `raw.githubusercontent.com/Aider-AI/aider/main/aider/repomap.py` — bobot
-  personalisasi (baris 480-511), `get_ranked_tags` + `nx.pagerank` (baris
-  365-380, 519-529), binary search anggaran token
-  `get_ranked_tags_map_uncached` (baris 629-703).
+- `[code]` `deepagents/middleware/_prompt_caching.py` (same venv) —
+  `append_prompt_caching_middleware`, its unconditional automatic
+  installation.
+- `[code]` `deepagents/middleware/memory.py` lines 193, 342-374, 380, 394
+  (same venv) — the `add_cache_control` parameter; `modify_request` (called
+  by `wrap_model_call`) marking the system message's last block itself,
+  independently of `AnthropicPromptCachingMiddleware`.
+- `[code]` `deepagents/graph.py` lines 856-866 (same venv, re-read directly
+  for this task) — the main middleware list construction order
+  (`append_prompt_caching_middleware` before `MemoryMiddleware` is
+  appended), and the source comment on the profile vs memory middleware
+  position; the basis for the precision correction to
+  `../systems/deepagents.md` §2 (fixed directly in this task, see `## In
+  deepagents`).
+- `[code]` `docs/background/aci.md`, repo `SWE-agent/SWE-agent`, read via
+  `raw.githubusercontent.com/SWE-agent/SWE-agent/main/docs/background/aci.md`
+  — the ACI design principles: the linter gate, the 100-line file viewer,
+  terse search.
+- `[code]` `tools/search/config.yaml`, repo `SWE-agent/SWE-agent`, read via
+  `raw.githubusercontent.com/SWE-agent/SWE-agent/main/tools/search/config.yaml`
+  — the search command signatures referenced in `## Pattern`.
+- `[code]` `aider/repomap.py`, repo `Aider-AI/aider`, read via
+  `raw.githubusercontent.com/Aider-AI/aider/main/aider/repomap.py` — the
+  personalisation weights (lines 480-511), `get_ranked_tags` +
+  `nx.pagerank` (lines 365-380, 519-529), and the token budget binary search
+  in `get_ranked_tags_map_uncached` (lines 629-703).
 - `[code]` `sdk/packages/core/src/extensions/context/compaction-shared.ts`,
-  repo `cline/cline`, dibaca via
-  `raw.githubusercontent.com/cline/cline/main/sdk/packages/core/src/extensions/context/compaction-shared.ts` —
-  konstanta `COMPACTION_TRIGGER_RATIO`/`DEFAULT_TARGET_RATIO`/
-  `DEFAULT_PRESERVE_RECENT_TOKENS` (baris 12-21), aturan titik-potong aman
-  (baris 317-325).
+  repo `cline/cline`, read via
+  `raw.githubusercontent.com/cline/cline/main/sdk/packages/core/src/extensions/context/compaction-shared.ts`
+  — the `COMPACTION_TRIGGER_RATIO`/`DEFAULT_TARGET_RATIO`/`DEFAULT_PRESERVE_RECENT_TOKENS`
+  constants (lines 12-21) and the safe cut-point rules (lines 317-325).
 - `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §2
   Context (`SummarizationMiddleware`, `FilesystemMiddleware`,
-  `AnthropicPromptCachingMiddleware`, urutan tail stack, alasan urutan
-  memory-sebelum-caching) — tier-1 reference terverifikasi Task 3, dikutip
-  tanpa membaca ulang source `deepagents/graph.py` di task ini kecuali file
-  `_prompt_caching.py` dan `langchain_anthropic/middleware/prompt_caching.py`
-  yang dibaca ulang langsung untuk task ini.
+  `AnthropicPromptCachingMiddleware`, the tail stack order, the reasoning
+  for memory-before-caching) — a tier-1 reference verified in Task 3, cited
+  without re-reading the `deepagents/graph.py` source in this task except
+  for `_prompt_caching.py` and
+  `langchain_anthropic/middleware/prompt_caching.py`, which were re-read
+  directly for it.
