@@ -1,195 +1,193 @@
 # Evaluation
 
-## Masalah
+## Problem
 
-Eval yang cuma menilai "jawaban akhir cocok/tidak" (pola QA klasik: satu
-input, satu output, satu skor) tidak menangkap sebagian besar kegagalan yang
-mungkin di agent loop. Agent bisa sampai ke jawaban akhir yang benar lewat
-jalan yang salah — memanggil tool destruktif yang seharusnya minta approval
-lalu membatalkannya, membaca file di luar scope yang diizinkan lalu tidak
-memakainya di jawaban, atau menghabiskan 40 langkah untuk tugas yang
-seharusnya 3 langkah — dan semua itu **lolos** eval yang cuma memeriksa teks
-akhir, karena metriknya tidak pernah melihat apa yang terjadi di antaranya.
-Regresi jenis ini (path yang memburuk, jawaban akhir tetap sama) tidak
-kelihatan sampai insiden nyata terjadi — approval gate yang "kebetulan"
-selalu lolos di eval karena eval tidak pernah memeriksa apakah gate itu
-sungguh dipanggil.
+An eval that only scores "does the final answer match" (the classic QA
+shape: one input, one output, one score) misses most of the failures
+possible in an agent loop. An agent can arrive at a correct final answer by
+the wrong route — calling a destructive tool that should have required
+approval and then undoing it, reading files outside the permitted scope and
+not using them in the answer, or spending 40 steps on a task that should
+take 3 — and all of that **passes** an eval that only inspects the final
+text, because the metric never looks at what happened in between.
+Regressions of this kind (a worsening path, an unchanged final answer) stay
+invisible until a real incident — an approval gate that "happens to" always
+pass in eval because the eval never checks whether the gate was actually
+invoked.
 
-Masalah kedua: golden test yang cuma ditulis dalam satu bahasa (biasanya
-bahasa tim yang menulisnya) membuat regresi di **bahasa lain** sepenuhnya tak
-terlihat, bukan cuma kurang terlihat. Perubahan prompt, ganti model, atau
-geser threshold guardrail yang memperbaiki perilaku di satu bahasa bisa
-merusak total di bahasa lain tanpa sinyal apa pun di CI — sinyal pertama
-yang didapat tim adalah laporan user, dan user yang melapor duluan biasanya
-bukan yang berbahasa mayoritas suite eval-nya.
+Second problem: golden tests written in only one language (usually the
+language of the team writing them) make regressions in **other languages**
+entirely invisible, not merely less visible. A prompt change, a model swap,
+or a shifted guardrail threshold that improves behaviour in one language can
+break another completely with no signal in CI — the team's first signal is a
+user report, and the user who reports first is usually not the one speaking
+the eval suite's majority language.
 
-Masalah ketiga, federasi langsung dari `guardrails.md`: guardrail yang
-dipasang tanpa pernah diukur presisi/recall-nya adalah klaim vendor yang
-belum diverifikasi di domain produk sendiri — file ini adalah tempat klaim
-itu diverifikasi.
+Third problem, federated directly from `guardrails.md`: a guardrail
+installed without ever measuring its precision/recall is a vendor claim
+unverified in your own product domain — this file is where that claim gets
+verified.
 
-## Pola
+## Pattern
 
-### Eval berbasis trajektori, bukan cuma jawaban akhir
+### Trajectory-based eval, not just the final answer
 
-Unit yang dinilai adalah **trajektori** penuh — urutan (panggilan model,
-panggilan tool + argumen, hasil tool, keputusan guardrail) sepanjang satu
-run — bukan cuma string jawaban terakhir. `[ours]` — vanilla-nya eval NLP
-klasik: satu pasangan (input, output yang diharapkan), dinilai exact-match/
-similarity. Kita menyimpang karena benar tidaknya jawaban agent bergantung
-pada jalan yang ditempuh (tool apa yang dipanggil, apakah approval gate
-sungguh dipicu, berapa langkah dipakai) — output akhir yang identik bisa
-berasal dari trajektori yang aman atau yang berbahaya, dan hanya trajektori
-yang bisa membedakannya.
+The unit being scored is the full **trajectory** — the sequence of (model
+call, tool call + arguments, tool result, guardrail decision) across one
+run — not just the final answer string. `[ours]` — vanilla is classic NLP
+eval: one (input, expected output) pair, scored by exact match or
+similarity. We diverge because whether an agent's answer is right depends on
+the route taken (which tools were called, whether the approval gate actually
+fired, how many steps were used) — an identical final output can come from a
+safe trajectory or a dangerous one, and only the trajectory tells them
+apart.
 
-Metrik konkret di luar "jawaban benar":
+Concrete metrics beyond "the answer is correct":
 
-- **Ketepatan tool call** — tool yang dipanggil dan argumennya, dibanding
-  yang seharusnya untuk kasus itu.
-- **Efisiensi langkah** — jumlah langkah dibanding rentang wajar untuk kelas
-  tugas itu (regresi "loop makin panjang" kelihatan di sini sebelum jadi
-  masalah biaya nyata — lihat `cost-control.md`).
-- **Ketepatan pemicu guardrail** — apakah approval gate/blokir sungguh
-  terpicu pada kasus yang seharusnya, dan **tidak** terpicu pada kasus yang
-  seharusnya lolos (lihat subbagian di bawah).
+- **Tool-call accuracy** — which tools were called and with what arguments,
+  against what the case required.
+- **Step efficiency** — step count against the reasonable range for that
+  task class (the "the loop keeps getting longer" regression shows up here
+  before it becomes a real cost problem — see `cost-control.md`).
+- **Guardrail trigger accuracy** — whether the approval gate/block actually
+  fired on the cases that required it, and **didn't** fire on the cases that
+  should pass (see the subsection below).
 
-Dua cara menilai trajektori, bertingkat seperti guardrail (`guardrails.md`):
-**assertion deterministik** (urutan tool call persis yang diharapkan) murah
-dan reproducible, cocok untuk tugas berbentuk workflow yang jalannya memang
-tunggal; **LLM-as-judge** menilai trajektori penuh terhadap rubric, dipakai
-untuk tugas open-ended yang punya lebih dari satu jalan benar — dan judge
-itu sendiri berbentuk guardrail (punya FP/FN rate, butuh kalibrasi berkala
-terhadap sampel yang dinilai manusia), bukan kebenaran mutlak.
+Two ways to score a trajectory, tiered like guardrails themselves
+(`guardrails.md`): **deterministic assertions** (the exact expected tool call
+sequence) are cheap and reproducible, suited to workflow-shaped tasks with
+genuinely one route; **LLM-as-judge** scores the full trajectory against a
+rubric, used for open-ended tasks with more than one correct route — and that
+judge is itself guardrail-shaped (it has an FP/FN rate and needs periodic
+calibration against a human-scored sample), not absolute truth.
 
-### Golden transcript + replay harness
+### Golden transcripts + a replay harness
 
-**Golden transcript** `[ours]` — pasangan (input awal, rentang trajektori
-yang diharapkan, state akhir yang diharapkan, tag `{bahasa, guardrail_ids}`)
-yang di-versioning bersama kode prompt/tool, bukan disimpan terpisah sebagai
-dokumen QA. Vanilla-nya: golden set klasik cuma menyimpan (input, output
-yang diharapkan) — kita menambah rentang trajektori dan tag karena keduanya
-persis yang dibutuhkan dua tuntutan lain di file ini (trajektori dan
-multibahasa) supaya bisa diquery/diagregasi per dimensi itu, bukan cuma
-dibaca satu-satu.
+A **golden transcript** `[ours]` — a tuple of (initial input, expected
+trajectory range, expected final state, tags `{language, guardrail_ids}`)
+versioned alongside the prompt/tool code, not filed separately as a QA
+document. Vanilla: a classic golden set stores only (input, expected
+output) — we add the trajectory range and the tags because both are exactly
+what the file's other two demands (trajectory and multilingual) need in
+order to be queried/aggregated along those dimensions rather than read one
+case at a time.
 
-**Replay harness** menjalankan ulang input yang sama terhadap build agent
-**saat ini** (bukan memutar ulang output yang direkam) lalu men-diff
-trajektori hasilnya terhadap ekspektasi golden. Supaya hasilnya tidak flaky
-karena dunia luar berubah (API pencarian yang dipanggil tool berubah hasil
-antar run), respons tool eksternal **direkam dan dibekukan** saat golden
-transcript dibuat — yang boleh bervariasi run-ke-run cuma keputusan model,
-bukan lingkungan yang ia tindaklanjuti. Ini beda tujuan dari
-[`replay-and-forensics.md`](replay-and-forensics.md): replay di sana
-merekonstruksi **satu run produksi nyata** (dunia yang variabel, kejadian
-tunggal) untuk investigasi insiden; replay di sini menjalankan ulang agent
-terhadap **dunia yang dibekukan** untuk mendeteksi regresi sebelum rilis.
-Sumber materi golden transcript bisa berasal dari transcript produksi nyata
-yang "dipromosikan" — tabel `messages`/`tool_calls`
-(`persistence-schema.md`) adalah bahan mentahnya, tool result-nya dibekukan
-saat dipromosikan jadi golden.
+The **replay harness** re-runs the same input against the **current** agent
+build (not replaying recorded output) and diffs the resulting trajectory
+against the golden expectation. So results aren't flaky because the outside
+world moved (a search API a tool calls returning different results between
+runs), external tool responses are **recorded and frozen** when the golden
+transcript is created — the only thing allowed to vary run to run is the
+model's decisions, not the environment it acts on. This differs in purpose
+from [`replay-and-forensics.md`](replay-and-forensics.md): replay there
+reconstructs **one real production run** (a variable world, a single event)
+for incident investigation; replay here re-runs the agent against a **frozen
+world** to detect regressions before release. Golden transcript material can
+come from real production transcripts that are "promoted" — the
+`messages`/`tool_calls` tables (`persistence-schema.md`) are the raw
+material, with tool results frozen at promotion time.
 
-### Guardrail sebagai objek terukur
+### Guardrails as measurable objects
 
-Federasi langsung dari `guardrails.md` §Guardrail punya false-positive rate:
-tiap guardrail (dari keenam titik) butuh dataset berlabel sendiri —
-contoh-known-positive yang **wajib** memicu guardrail, contoh-known-negative
-yang **wajib tidak** memicu — dan presisi/recall/F1-nya diukur tiap kali
-threshold, model classifier, atau versi guardrail berubah, bukan sekali saat
-dipasang. Harness trajektori yang sama memperlakukan keputusan guardrail
-sebagai kejadian kelas satu di trajektori, jadi satu golden transcript bisa
-menyatakan dua arah kegagalan sekaligus: "guardrail X seharusnya **tidak**
-terpicu di sini" (menangkap over-blocking, false positive) sama pentingnya
-dengan "guardrail Y seharusnya terpicu di sini" (menangkap under-blocking,
-false negative) — kedua arah wajib ada di golden set, bukan cuma kasus
-positif.
+Federated directly from `guardrails.md` §A guardrail has a false-positive
+rate: each guardrail (of the six points) needs its own labelled dataset —
+known-positive examples that **must** fire it, known-negative examples that
+**must not** — with precision/recall/F1 measured every time the threshold,
+classifier model, or guardrail version changes, not once at installation.
+The same trajectory harness treats guardrail decisions as first-class
+trajectory events, so one golden transcript can express both failure
+directions at once: "guardrail X should **not** fire here" (catching
+over-blocking, false positives) matters as much as "guardrail Y should fire
+here" (catching under-blocking, false negatives) — both directions belong in
+the golden set, not just the positive cases.
 
-### Kewajiban eval multibahasa
+### The multilingual eval obligation
 
-Ini bukan "nice-to-have" atau sesuatu yang ditambahkan setelah insiden
-produksi membuktikan celahnya — untuk produk dengan basis user non-satu-
-bahasa, golden set **wajib** mencakup campuran bahasa nyata yang dilihat
-produksi sejak golden set pertama dibuat, bukan cuma bahasa tim yang menulis
-kode. Golden test satu bahasa secara struktural buta terhadap regresi di
-bahasa lain — bukan kurang sensitif, buta total: perubahan prompt/model/
-threshold guardrail yang merusak bahasa Indonesia sambil bahasa Inggris
-tetap baik menghasilkan **nol** sinyal di suite berbahasa Inggris saja,
-karena suite itu tidak pernah menjalankan kasus yang bisa gagal dengan cara
-itu.
+This is not a nice-to-have or something added after a production incident
+proves the gap — for a product whose user base isn't monolingual, the golden
+set **must** cover the real language mix production sees from the first
+golden set onward, not just the language of the team writing the code. A
+single-language golden test is structurally blind to regressions in other
+languages — not less sensitive, entirely blind: a prompt/model/guardrail
+threshold change that breaks Indonesian while English stays fine produces
+**zero** signal in an English-only suite, because that suite never runs a
+case that could fail that way.
 
-Kasus konkret kenapa ini bukan spekulasi: guardrail model-based
-(`guardrails.md` §Bertingkat) yang dilatih dominan pada korpus Inggris punya
-performa yang tidak seragam lintas bahasa — bahkan Llama Guard yang secara
-eksplisit mengklaim dukungan 8 bahasa `[docs]` (dikutip di `guardrails.md`
-§Sumber) tetap butuh diukur presisi/recall-nya **per bahasa**, cakupan
-"mendukung 8 bahasa" bukan bukti performa seragam di kedelapannya — ini
-persis kenapa §Guardrail sebagai objek terukur di atas dan kewajiban
-multibahasa di sini adalah tuntutan yang sama, bukan dua tuntutan terpisah:
-golden set yang tidak berlabel bahasa tidak bisa menjawab "guardrail ini
-akurat di bahasa mana saja".
+The concrete reason this isn't speculation: model-based guardrails
+(`guardrails.md` §Tiered) trained predominantly on English corpora perform
+unevenly across languages — even Llama Guard, which explicitly claims
+support for 8 languages `[docs]` (cited in `guardrails.md` §Sources), still
+needs its precision/recall measured **per language**; "supports 8 languages"
+is not evidence of uniform performance across all eight — which is exactly
+why §Guardrails as measurable objects above and the multilingual obligation
+here are the same demand, not two separate ones: a golden set without
+language labels cannot answer "in which languages is this guardrail
+accurate".
 
-## Trade-off
+## Trade-offs
 
-- **LLM-as-judge vs assertion deterministik untuk skor trajektori** — judge
-  menangani trajektori open-ended yang assertion-nya mahal ditulis tangan,
-  dengan biaya: judge sendiri jadi masalah berbentuk guardrail (FP/FN rate,
-  butuh kalibrasi berkala, satu panggilan model per eval jadi biaya eval
-  sendiri). Assertion deterministik gratis dan reproducible tapi cuma benar
-  untuk tugas yang jalan benarnya memang tunggal (arketipe Workflow Agent),
-  rapuh untuk apa pun yang punya lebih dari satu jalan sah.
-- **Respons tool dibekukan vs panggilan live ke layanan eksternal saat
-  replay** — dibekukan berarti deterministik, murah, cepat, aman dijalankan
-  di CI tiap PR; live menangkap drift integrasi nyata (kontrak API berubah)
-  tapi flaky/mahal/lambat dan tidak bisa memisahkan "agent regresi" dari
-  "layanan eksternal berubah". Default: dibekukan sebagai gate CI utama,
-  suite integrasi-live terpisah yang lebih jarang dijalankan untuk kelas
-  drift yang tidak tertangkap versi beku.
-- **Cakupan bahasa golden set vs biaya** — tiap bahasa tambahan melipat-
-  gandakan ukuran suite dan butuh peninjau yang fasih bahasa itu untuk
-  menulis/memvalidasi contohnya — biaya ini nyata, tapi bukan alasan untuk
-  menunda: kegagalan lazy-nya adalah melewatkan bahasa "untuk nanti" dan
-  baru dapat sinyal setelah kerusakan sudah terjadi di produksi.
+- **LLM-as-judge vs deterministic assertions for trajectory scoring** — a
+  judge handles open-ended trajectories whose assertions are expensive to
+  hand-write, at a cost: the judge itself becomes a guardrail-shaped problem
+  (an FP/FN rate, periodic calibration, one model call per eval becoming the
+  eval's own cost). Deterministic assertions are free and reproducible but
+  only correct for tasks with genuinely one right route (the Workflow Agent
+  archetype), and brittle for anything with more than one valid path.
+- **Frozen tool responses vs live calls to external services during replay**
+  — frozen means deterministic, cheap, fast, safe to run in CI on every PR;
+  live catches real integration drift (an API contract changing) but is
+  flaky, expensive, slow, and cannot separate "the agent regressed" from
+  "the external service changed". Default: frozen as the primary CI gate,
+  with a separate, less frequent live-integration suite for the drift class
+  the frozen version can't catch.
+- **Golden set language coverage vs cost** — each additional language
+  multiplies the suite's size and needs a reviewer fluent in it to write and
+  validate the examples — that cost is real, but not a reason to defer: the
+  lazy failure is leaving a language "for later" and getting the signal only
+  after the damage has happened in production.
 
-## Di deepagents
+## In deepagents
 
-`RubricMiddleware` (dikutip `guardrails.md`/`../systems/deepagents.md`
-§Middleware bawaan) adalah analog *in-band* di runtime — ia mengiterasi
-jawaban terhadap rubric selama satu run yang sedang berjalan — tapi **bukan**
-eval harness itu sendiri: ia tidak punya konsep golden dataset, replay, atau
-agregasi presisi/recall lintas banyak kasus terekam, cuma beroperasi pada
-turn yang sedang aktif. `[code]` — dikutip `../systems/deepagents.md`
-§Middleware bawaan (`deepagents/middleware/rubric.py`). Eval harness
-karenanya adalah sistem **di luar** `deepagents`: sesuatu yang berulang kali
-memanggil graph terkompilasi yang sama (`create_deep_agent(...)`, graph yang
-sama persis yang melayani request nyata) dengan state/pesan awal tetap dan
-lingkungan terkendali (backend/tool yang dimock), bukan sesuatu yang
-disediakan `deepagents`.
+`RubricMiddleware` (cited from `guardrails.md`/`../systems/deepagents.md`
+§Built-in middleware) is the *in-band* runtime analogue — it iterates an
+answer against a rubric during a run in progress — but is **not** the eval
+harness itself: it has no notion of a golden dataset, replay, or
+precision/recall aggregation across many recorded cases, and only operates
+on the currently active turn. `[code]` — cited from
+`../systems/deepagents.md` §Built-in middleware
+(`deepagents/middleware/rubric.py`). The eval harness is therefore a system
+**outside** `deepagents`: something that repeatedly invokes the same
+compiled graph (`create_deep_agent(...)`, exactly the graph serving real
+requests) with fixed initial state/messages and a controlled environment
+(mocked backends/tools) — not something `deepagents` provides.
 
-Satu detail yang wajib diperhitungkan saat men-diff trajektori replay:
-`SummarizationMiddleware` mengompaksi pesan lama berdasarkan threshold yang
-dihitung otomatis dari profil model (`compute_summarization_defaults`,
-berbasis `max_input_tokens`) — mengganti model yang dites (mis. eval
-terhadap model baru) bisa mengubah **kapan** kompaksi terjadi untuk input
-yang identik, walau isi jawabannya tidak berubah. `[code]` — dikutip
-`../systems/deepagents.md` §2 Context. Diff trajektori golden karenanya
-wajib toleran terhadap bentuk kompaksi yang berbeda (jumlah/lokasi pesan
-ringkasan), bukan byte-diff pesan mentah — atau replay harness mengunci
-profil model yang threshold-nya dipakai, sesuai kasus yang diuji (regresi
-prompt vs regresi ganti-model adalah dua eval yang berbeda).
+One detail that must be accounted for when diffing replay trajectories:
+`SummarizationMiddleware` compacts old messages based on a threshold
+computed automatically from the model profile
+(`compute_summarization_defaults`, based on `max_input_tokens`) — swapping
+the model under test (e.g. evaluating a new model) can change **when**
+compaction happens for identical input, even when the answer's content
+doesn't change. `[code]` — cited from `../systems/deepagents.md` §2
+Context. A golden trajectory diff must therefore tolerate a different
+compaction shape (the number/position of summary messages) rather than
+byte-diffing raw messages — or the replay harness pins the model profile
+whose thresholds are in use, depending on the case under test (a prompt
+regression and a model-swap regression are two different evals).
 
-## Sumber
+## Sources
 
-- `[code]` [`guardrails.md`](guardrails.md) — §Guardrail punya
-  false-positive rate (federasi langsung ke file ini), tabel enam titik dan
-  klaim dukungan-bahasa Llama Guard yang dikutip ulang di §Kewajiban eval
-  multibahasa.
-- `[code]` [`persistence-schema.md`](persistence-schema.md) — tabel
-  `messages`/`tool_calls`, sumber bahan mentah golden transcript yang
-  dipromosikan dari transcript produksi nyata.
-- `[code]` [`replay-and-forensics.md`](replay-and-forensics.md) — dirujuk
-  untuk membedakan replay-untuk-regresi (file ini) dari replay-untuk-
-  forensik (file itu), ditulis dalam task yang sama, tidak diusulkan ulang.
-- `[code]` [`../systems/deepagents.md`](../systems/deepagents.md)
-  §Middleware bawaan (`RubricMiddleware`), §2 Context
-  (`SummarizationMiddleware`, `compute_summarization_defaults`) — tier-1
-  reference terverifikasi Task 3, dikutip tanpa membaca ulang source
-  `deepagents` di task ini.
+- `[code]` [`guardrails.md`](guardrails.md) — §A guardrail has a
+  false-positive rate (federated directly into this file), the six-point
+  table, and the Llama Guard language-support claim re-cited in §The
+  multilingual eval obligation.
+- `[code]` [`persistence-schema.md`](persistence-schema.md) — the
+  `messages`/`tool_calls` tables, the raw material for golden transcripts
+  promoted from real production transcripts.
+- `[code]` [`replay-and-forensics.md`](replay-and-forensics.md) —
+  referenced to distinguish replay-for-regression (this file) from
+  replay-for-forensics (that one), written in the same task, not
+  re-proposed.
+- `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §Built-in
+  middleware (`RubricMiddleware`), §2 Context (`SummarizationMiddleware`,
+  `compute_summarization_defaults`) — a tier-1 reference verified in Task 3,
+  cited without re-reading the `deepagents` source in this task.

@@ -1,31 +1,31 @@
 # Artifacts & canvas
 
-## Masalah
+## Problem
 
-Artefak (dokumen, kode, canvas) yang dihasilkan agent cenderung besar dan
-sering diedit ulang. Kalau byte-nya ditaruh langsung di kolom pesan
-transcript, dua hal rusak sekaligus: transcript membengkak tiap kali artefak
-diedit (tiap edit = pesan baru berisi salinan penuh), dan model context ikut
-membengkak tiap kali riwayat dimuat ulang ke model — padahal model jarang
-butuh isi artefak penuh, cukup tahu bahwa artefak itu ada dan versi mana yang
-sedang dibicarakan. Masalah kedua: tanpa versi eksplisit, "edit artefak" jadi
-`UPDATE` yang menimpa — riwayat perubahan dan kemampuan undo hilang.
+Artifacts (documents, code, canvases) produced by an agent tend to be large and
+repeatedly edited. Putting their bytes straight into a transcript message column
+breaks two things at once: the transcript balloons with every edit (each edit =
+a new message holding a full copy), and the model context balloons every time
+history is reloaded into the model — even though the model rarely needs the full
+content, only that the artifact exists and which version is under discussion.
+Second problem: without an explicit version, "edit the artifact" becomes an
+overwriting `UPDATE` — the change history and any undo capability are gone.
 
-## Pola
+## Pattern
 
-### Aturan by-reference
+### The by-reference rule
 
-- **Transcript** menyimpan `artifact_id + version` — pointer, bukan byte.
-- **Model context** menyimpan handle (`artifact_id`, judul, kind) + ringkasan
-  singkat — cukup untuk model tahu artefak itu ada dan bisa merujuknya lewat
-  tool, tanpa isi penuh ikut termakan token tiap call.
-- **Byte sungguhan** hidup di object store (S3/GCS); Postgres cuma menyimpan
-  metadata + kunci object.
+- **The transcript** stores `artifact_id + version` — a pointer, not bytes.
+- **The model context** stores a handle (`artifact_id`, title, kind) plus a
+  short summary — enough to know the artifact exists and to reference it
+  through a tool, without its content consuming tokens on every call.
+- **The actual bytes** live in an object store (S3/GCS); Postgres holds
+  metadata plus the object key.
 
-### Skema versioning
+### The versioning schema
 
-Meluaskan tabel di [`persistence-schema.md`](persistence-schema.md) — jalankan
-setelah skema itu (butuh tabel `users` dan `messages`).
+Extends the tables in [`persistence-schema.md`](persistence-schema.md) —
+run after that schema (it needs `users` and `messages`).
 
 ```sql
 CREATE TABLE artifacts (
@@ -45,7 +45,7 @@ CREATE TABLE artifact_versions (
     version          INT NOT NULL,
     edit_mode        TEXT NOT NULL CHECK (edit_mode IN ('initial', 'rewrite', 'patch')),
     storage_backend  TEXT NOT NULL DEFAULT 's3',
-    content_ref      TEXT NOT NULL,  -- kunci object store, mis. s3://bucket/artifacts/<id>/<version>
+    content_ref      TEXT NOT NULL,  -- object store key, e.g. s3://bucket/artifacts/<id>/<version>
     byte_size        BIGINT,
     checksum         TEXT,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -53,9 +53,9 @@ CREATE TABLE artifact_versions (
 );
 CREATE INDEX artifact_versions_artifact_idx ON artifact_versions (artifact_id, version DESC);
 
--- By-reference dengan integritas nyata: transcript pegang artifact_id +
--- version lewat baris yang bisa di-FK, bukan cuma field di messages.content
--- JSONB (Postgres tidak bisa FK ke dalam JSONB).
+-- By-reference with real integrity: the transcript holds artifact_id +
+-- version through a row that can carry an FK, not just a field inside
+-- messages.content JSONB (Postgres cannot FK into JSONB).
 CREATE TABLE message_artifact_refs (
     message_id   UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     artifact_id  UUID NOT NULL,
@@ -84,107 +84,106 @@ CREATE POLICY message_artifact_refs_scope ON message_artifact_refs
     WITH CHECK (user_id = current_setting('app.current_user_id', true)::uuid);
 ```
 
-`version` adalah integer monotonik per `artifact_id` (`UNIQUE (artifact_id,
-version)`), bukan timestamp. `[ours]` — vanilla-nya, dicontohkan Vercel
-`ai-chatbot` `lib/db/schema.ts`: tabel `document` pakai **composite primary
-key `(id, createdAt)`**, versi didapat dari `createdAt`, tanpa kolom versi
-terpisah. `[code]` — dibaca langsung dari
-`raw.githubusercontent.com/vercel/chatbot/main/lib/db/schema.ts`. Kita pilih
-integer eksplisit karena timestamp tidak dijamin monoton di bawah concurrent
-write/clock skew, dan versi manusiawi ("v3") lebih jelas daripada timestamp
-mentah di UI — konsekuensinya app harus menghitung `MAX(version) + 1` dalam
-transaksi yang sama saat insert (atau `SELECT ... FOR UPDATE` di baris
-`artifacts` untuk mencegah race).
+`version` is a monotonic integer per `artifact_id` (`UNIQUE (artifact_id,
+version)`), not a timestamp. `[ours]` — vanilla, as demonstrated by Vercel's
+`ai-chatbot` `lib/db/schema.ts`: the `document` table uses a **composite
+primary key `(id, createdAt)`**, deriving the version from `createdAt` with
+no separate version column. `[code]` — read directly from
+`raw.githubusercontent.com/vercel/chatbot/main/lib/db/schema.ts`. We chose an
+explicit integer because timestamps aren't guaranteed monotonic under
+concurrent writes or clock skew, and a human version ("v3") reads more
+clearly than a raw timestamp in the UI — the consequence being that the app
+must compute `MAX(version) + 1` inside the same transaction as the insert
+(or `SELECT ... FOR UPDATE` on the `artifacts` row to prevent a race).
 
-Setiap edit — rewrite maupun patch — adalah `INSERT` baris baru ke
-`artifact_versions`, tidak pernah `UPDATE` konten yang sudah ada. Ini
-dikonfirmasi jadi pola nyata di `ai-chatbot`: `saveDocument()` di
-`lib/db/queries.ts` baris 323-325 memanggil `db.insert(document)` untuk
-setiap penyimpanan dokumen, dipanggil balik dari kedua tool edit di bawah.
-`[code]`.
+Every edit — rewrite or patch — is an `INSERT` of a new `artifact_versions`
+row, never an `UPDATE` of existing content. This is confirmed as real
+practice in `ai-chatbot`: `saveDocument()` in `lib/db/queries.ts` lines
+323-325 calls `db.insert(document)` for every document save, invoked from
+both edit tools below. `[code]`.
 
-### Rewrite penuh vs patch
+### Full rewrite vs patch
 
-`ai-chatbot` mengekspos **dua tool terpisah** untuk mengedit satu artefak,
-`[code]` dibaca dari `lib/ai/tools/update-document.ts` dan
+`ai-chatbot` exposes **two separate tools** for editing one artifact,
+`[code]` read from `lib/ai/tools/update-document.ts` and
 `lib/ai/tools/edit-document.ts`:
 
-| Aspek | Rewrite penuh (`updateDocument`) | Patch (`editDocument`) |
+| Aspect | Full rewrite (`updateDocument`) | Patch (`editDocument`) |
 |---|---|---|
-| Deskripsi tool asli | *"Full rewrite of an existing artifact. Only use for major changes where most content needs replacing. Prefer editDocument for targeted changes."* | *"Make a targeted edit to an existing artifact by finding and replacing an exact string. Preferred over updateDocument for small changes. The old_string must match exactly."* |
-| Mekanisme | Model men-generate ulang **seluruh** konten lewat `streamText` (LLM call baru, `smoothStream`), hasilnya menimpa draft penuh | App melakukan `content.replace(old_string, new_string)` string biasa (atau `replaceAll` kalau `replace_all: true`) — tidak ada LLM call kedua |
-| Biaya token/latency | Tinggi — sebanding panjang seluruh dokumen, LLM harus keluarkan ulang bagian yang sama sekali tidak berubah | Rendah — model hanya keluarkan `old_string`/`new_string`, independen dari panjang dokumen |
-| Mode kegagalan | Diam-diam bisa drift — bagian yang tidak dimaksud berubah ikut ter-generate ulang beda | Eksplisit & aman — gagal keras kalau `old_string` tidak ditemukan persis di `document.content` (`"old_string not found in document"`), tidak pernah menimpa hal yang salah |
-| Kapan dipakai | Restrukturisasi besar, >separuh isi berubah, atau draft awal (`onCreateDocument`) | Perubahan bertarget — typo, satu fungsi, satu paragraf; ini yang **disukai secara default** menurut deskripsi tool-nya sendiri |
+| Original tool description | *"Full rewrite of an existing artifact. Only use for major changes where most content needs replacing. Prefer editDocument for targeted changes."* | *"Make a targeted edit to an existing artifact by finding and replacing an exact string. Preferred over updateDocument for small changes. The old_string must match exactly."* |
+| Mechanism | The model regenerates the **entire** content through `streamText` (a fresh LLM call, `smoothStream`), the result overwriting the full draft | The app performs a plain `content.replace(old_string, new_string)` (or `replaceAll` if `replace_all: true`) — no second LLM call |
+| Token/latency cost | High — proportional to the whole document's length; the LLM has to re-emit parts that didn't change at all | Low — the model emits only `old_string`/`new_string`, independent of document length |
+| Failure mode | Can drift silently — unintended parts get regenerated differently | Explicit and safe — hard-fails if `old_string` isn't found exactly in `document.content` (`"old_string not found in document"`), never overwriting the wrong thing |
+| When to use | Large restructuring, more than half the content changing, or the initial draft (`onCreateDocument`) | Targeted changes — a typo, one function, one paragraph; this is the one **preferred by default** according to its own tool description |
 
-Keduanya berujung ke `INSERT` baris versi baru yang sama (lihat "Skema
-versioning" di atas) — perbedaannya cuma *bagaimana* konten baru itu
-dihasilkan, bukan *bagaimana* ia disimpan. `edit_mode` di `artifact_versions`
-mencatat mana yang dipakai (`'rewrite'` / `'patch'` / `'initial'` untuk
-draft pertama) supaya riwayat versi bisa menjawab "apakah ini regenerasi
-penuh atau tambalan kecil" tanpa membuka diff.
+Both end in the same `INSERT` of a new version row (see "The versioning
+schema" above) — the difference is only in *how* the new content is
+produced, not *how* it is stored. `edit_mode` in `artifact_versions` records
+which was used (`'rewrite'` / `'patch'` / `'initial'` for the first draft)
+so the version history can answer "was this a full regeneration or a small
+patch" without opening a diff.
 
-## Trade-off
+## Trade-offs
 
-- **By-reference vs inline** — inline (byte artefak langsung di
-  `messages.content`) lebih sederhana untuk dibaca ulang (tidak perlu join
-  ke object store), tapi melanggar batas transcript vs model context: setiap
-  reload riwayat ikut menyeret byte artefak penuh ke context. By-reference
-  butuh satu round-trip tambahan (fetch content_ref) tapi menjaga context
-  tetap murah.
-- **Rewrite vs patch** — rewrite murah secara implementasi (satu jalur kode:
-  "minta model tulis ulang") tapi mahal token dan berisiko drift diam-diam;
-  patch murah token dan aman-secara-gagal tapi butuh `old_string` yang cukup
-  unik (model harus menyertakan konteks sekitar supaya match tidak ambigu) —
-  `ai-chatbot` menanganinya dengan instruksi eksplisit di deskripsi tool
-  ("Include 3-5 surrounding lines for uniqueness"), bukan validasi terpisah.
-- **`version INT` vs `createdAt` sebagai versi** — dibahas di atas; trade-off
-  intinya sederhana-tapi-berisiko-race (timestamp) vs eksplisit-tapi-butuh-
-  koordinasi-insert (integer monotonik).
-- **Satu `artifact_versions` row per edit selamanya** — history lengkap +
-  undo gratis, tapi storage tumbuh linear dengan jumlah edit. Kalau volume
-  edit sangat tinggi (mis. canvas realtime keystroke-per-keystroke), pola ini
-  butuh diubah jadi checkpoint periodik + diff, bukan satu row per keystroke
-  — belum relevan untuk artefak level dokumen/kode yang diedit lewat tool
-  call diskrit seperti di atas.
+- **By-reference vs inline** — inline (artifact bytes directly in
+  `messages.content`) is simpler to read back (no join to the object store),
+  but violates the transcript vs model context boundary: every history
+  reload drags the full artifact bytes into context. By-reference needs one
+  extra round-trip (fetching `content_ref`) but keeps the context cheap.
+- **Rewrite vs patch** — rewrite is cheap to implement (one code path: "ask
+  the model to rewrite it") but expensive in tokens and prone to silent
+  drift; patch is token-cheap and fail-safe but needs a sufficiently unique
+  `old_string` (the model must include surrounding context so the match
+  isn't ambiguous) — `ai-chatbot` handles that with an explicit instruction
+  in the tool description ("Include 3-5 surrounding lines for uniqueness"),
+  not separate validation.
+- **`version INT` vs `createdAt` as the version** — discussed above; the
+  trade-off in essence is simple-but-race-prone (timestamps) vs
+  explicit-but-needing-insert-coordination (a monotonic integer).
+- **One `artifact_versions` row per edit forever** — full history plus undo
+  for free, but storage grows linearly with edit count. At very high edit
+  volume (e.g. a realtime canvas, keystroke by keystroke) this pattern needs
+  to become periodic checkpoints plus diffs rather than one row per
+  keystroke — not yet relevant for document/code-level artifacts edited
+  through discrete tool calls as above.
 
-## Di deepagents
+## In deepagents
 
-`deepagents` tidak punya primitive "artifact"/dokumen versi bawaan — tidak
-ada tool `update_document`/`edit_document` di base stack manapun
-(`create_deep_agent`). Yang tersedia adalah backend filesystem yang bisa
-dipakai sebagai lapisan durable di baliknya, `[code]` — lihat
-[`../systems/deepagents.md`](../systems/deepagents.md) §Backend filesystem:
+`deepagents` has no built-in "artifact"/versioned-document primitive —
+there is no `update_document`/`edit_document` tool in any base stack
+(`create_deep_agent`). What it does provide is a filesystem backend usable
+as the durable layer beneath one, `[code]` — see
+[`../systems/deepagents.md`](../systems/deepagents.md) §Filesystem backend:
 
-| Backend | Cocok untuk lapis apa di sini |
+| Backend | Which layer here it suits |
 |---|---|
-| `StateBackend` (default) | Draft ephemeral selama satu run — bukan tempat artefak *permanen* hidup |
-| `FilesystemBackend` / `LocalShellBackend` | Working file di disk host — isolasi antar user jadi tanggung jawab pemanggil, tidak cocok untuk artefak multi-user tanpa proses/container terpisah |
-| `StoreBackend(namespace=...)` | Paling dekat dengan "durable lintas-thread" — tapi tetap tidak punya konsep versi/`edit_mode`; app yang menaruh versioning di atasnya |
-| `CompositeBackend` | Pola hybrid: rute `/artifacts/` ke `StoreBackend`, sisanya ke `StateBackend` — masih butuh app menulis skema `artifact_versions` sendiri (tabel di atas) untuk metadata terstruktur |
+| `StateBackend` (default) | Ephemeral drafts during one run — not where *permanent* artifacts live |
+| `FilesystemBackend` / `LocalShellBackend` | Working files on the host disk — isolation between users is the caller's responsibility, unsuitable for multi-user artifacts without a separate process/container |
+| `StoreBackend(namespace=...)` | Closest to "durable across threads" — but still has no notion of versions or `edit_mode`; the app layers versioning on top |
+| `CompositeBackend` | The hybrid pattern: route `/artifacts/` to `StoreBackend`, the rest to `StateBackend` — the app still has to write its own `artifact_versions` schema (the tables above) for structured metadata |
 
-Konsekuensinya: skema `artifacts`/`artifact_versions`/`message_artifact_refs`
-di atas, dan keputusan rewrite-vs-patch sebagai dua tool terpisah, adalah
-sesuatu yang harus ditulis eksplisit sebagai tool aplikasi (mirip
-`update-document.ts`/`edit-document.ts` di `ai-chatbot`) yang dipasang lewat
-parameter `tools=[...]` ke `create_deep_agent` — bukan sesuatu yang datang
-dari `deepagents` itu sendiri.
+The consequence: the `artifacts`/`artifact_versions`/`message_artifact_refs`
+schema above, and the rewrite-vs-patch decision as two separate tools, is
+something that must be written explicitly as application tools (like
+`update-document.ts`/`edit-document.ts` in `ai-chatbot`) and attached
+through the `tools=[...]` parameter of `create_deep_agent` — not something
+that comes from `deepagents` itself.
 
-## Sumber
+## Sources
 
-- `[code]` Vercel `ai-chatbot` (`vercel/chatbot`, repo di-rename dari
-  `ai-chatbot`) `lib/db/schema.ts` — tabel `document`, `suggestion`,
-  composite primary key `(id, createdAt)`; dibaca utuh via
+- `[code]` Vercel `ai-chatbot` (`vercel/chatbot`, the repo renamed from
+  `ai-chatbot`) `lib/db/schema.ts` — the `document` and `suggestion` tables,
+  the composite primary key `(id, createdAt)`; read in full via
   `raw.githubusercontent.com/vercel/chatbot/main/lib/db/schema.ts`.
-- `[code]` `lib/ai/tools/update-document.ts` — tool rewrite penuh, deskripsi
-  tool verbatim, pemanggilan `documentHandler.onUpdateDocument`.
-- `[code]` `lib/ai/tools/edit-document.ts` — tool patch, deskripsi tool
-  verbatim, mekanisme `content.replace`/`replaceAll` + error eksplisit kalau
-  `old_string` tidak ditemukan.
-- `[code]` `lib/db/queries.ts` baris 310-325 (`saveDocument`) — konfirmasi
-  bahwa kedua tool berujung `db.insert(document)`, bukan `update`.
-- `[code]` `artifacts/text/server.ts` — konfirmasi `onUpdateDocument`
-  memanggil `streamText` baru (LLM call penuh) untuk kasus rewrite.
-- `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §Backend
-  filesystem — tier-1 reference yang sudah diverifikasi di Task 3, dikutip
-  di sini tanpa membaca ulang source.
+- `[code]` `lib/ai/tools/update-document.ts` — the full-rewrite tool, its
+  verbatim description, the `documentHandler.onUpdateDocument` call.
+- `[code]` `lib/ai/tools/edit-document.ts` — the patch tool, its verbatim
+  description, the `content.replace`/`replaceAll` mechanism plus the
+  explicit error when `old_string` isn't found.
+- `[code]` `lib/db/queries.ts` lines 310-325 (`saveDocument`) — confirmation
+  that both tools end in `db.insert(document)`, not `update`.
+- `[code]` `artifacts/text/server.ts` — confirmation that `onUpdateDocument`
+  issues a fresh `streamText` (a full LLM call) for the rewrite case.
+- `[code]` [`../systems/deepagents.md`](../systems/deepagents.md)
+  §Filesystem backend — a tier-1 reference already verified in Task 3,
+  cited here without re-reading the source.
