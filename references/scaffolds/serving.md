@@ -1,76 +1,76 @@
-# Serving topology — lintas arketipe
+# Serving topology — across archetypes
 
-Ditulis **sekali**, berlaku untuk ketujuh arketipe: topologi deployment
-ditentukan oleh **tool apa yang dipasang ke agent**, bukan oleh identitas
-arketipenya. Dua project yang sama-sama "Workflow Agent" bisa butuh topologi
-berbeda total kalau satu punya tool `execute` dan yang lain cuma tool API
-pihak-ketiga sempit — dan dua arketipe berbeda (Workspace Agent, Generative
-Builder) bisa butuh topologi yang **sama** kalau keduanya sama-sama punya
-`execute`. Mengelompokkan topologi per arketipe di `deltas/*.md` akan
-menduplikasi keputusan yang sama tujuh kali dan tetap salah begitu ada
-project yang mencampur tool lintas kategori — makanya file ini berdiri
-sendiri, bukan section di tiap delta.
+Written **once**, applying to all seven archetypes: deployment topology is
+determined by **which tools the agent has installed**, not by its archetype's
+identity. Two projects both called "Workflow Agent" can need entirely
+different topologies when one has an `execute` tool and the other only narrow
+third-party API tools — and two different archetypes (Workspace Agent,
+Generative Builder) can need the **same** topology when both have `execute`.
+Grouping topology per archetype in `deltas/*.md` would duplicate the same
+decision seven times and still be wrong as soon as a project mixes tools
+across categories — hence this file standing alone rather than a section in
+each delta.
 
-Baseline deployment (`_base.md`) dan tabel komponen→bound→sinyal HPA sudah
-dipatok penuh di [`../concepts/serving-topology.md`](../concepts/serving-topology.md)
-dan [`../concepts/scaling.md`](../concepts/scaling.md) — **tidak diulang di
-sini**. File ini menjawab satu pertanyaan yang belum dijawab keduanya:
-untuk *project konkret* dengan tool surface tertentu, komponen mana dari
-tabel itu yang sungguh perlu dipisah dari orchestrator lebih dulu, dan apa
-persisnya yang berubah saat pemisahan itu terjadi.
+The deployment baseline (`_base.md`) and the component→bound→HPA signal table
+are already pinned down in full in
+[`../concepts/serving-topology.md`](../concepts/serving-topology.md) and
+[`../concepts/scaling.md`](../concepts/scaling.md) — **not repeated here**.
+This file answers one question neither of them does: for a *concrete project*
+with a given tool surface, which component from that table genuinely needs
+splitting from the orchestrator first, and what exactly changes when that
+split happens.
 
-## Tool surface menentukan komponen yang perlu dipisah
+## The tool surface determines which component to split
 
-`serving-topology.md` mendaftar lima komponen (Gateway/SSE, Orchestrator,
-Tool executor, Retrieval/embedding, State store). Semua project mulai dari
-`_base` — modular monolith, kelima "komponen" itu kolokasi di satu
-deployable. Kolom kanan tabel berikut adalah komponen mana yang **realistis
-jadi kandidat pisah pertama** kalau beban tumbuh, ditentukan murni dari tool
-apa yang dipasang di tiap arketipe (dikutip dari `## Bangun ini pakai
-deepagents`/`## Posisi di 6 sumbu` tiap file arketipe) — bukan dari nama
-arketipenya:
+`serving-topology.md` lists five components (Gateway/SSE, Orchestrator, Tool
+executor, Retrieval/embedding, State store). Every project starts from `_base`
+— a modular monolith with all five "components" colocated in one deployable.
+The right-hand column of the table below is which component **realistically
+becomes the first split candidate** as load grows, determined purely from
+which tools each archetype installs (cited from each archetype file's
+`## Building this with deepagents`/`## Position on the 6 axes`) — not from the
+archetype's name:
 
-| Arketipe | Tool surface (ringkas) | Kandidat pisah pertama |
+| Archetype | Tool surface (in brief) | First split candidate |
 |---|---|---|
-| 01 Workspace Agent | `execute` (bash luas), lewat `LocalShellBackend`/backend sandbox — lihat `deltas/01-workspace-agent.md` | **Tool executor** — `execute` adalah fase CPU-bound (`resource-profiling.md`); tanpa isolasi tambahan blast radius = mesin host (`sandboxing.md`) |
-| 02 Generative Builder | `execute` di sandbox milik sendiri (`DaytonaSandbox`/setara) | **Tool executor** — sama alasan seperti 01, tapi backend sudah microVM sejak `_base` delta-nya (biaya sandbox dominan lebih awal) |
-| 03 General Task Agent | Campuran: `execute` **dan/atau** tool retrieval, tergantung subagent yang didelegasikan | **Tool executor DAN/ATAU Retrieval** — ditentukan tool nyata yang dipasang tiap subagent, bukan aturan tetap untuk arketipe ini |
-| 04 Research/Analyst | `web_search`/retrieval, `think_tool` — tidak ada `execute` sama sekali | **Retrieval/embedding** saja — tidak pernah butuh Tool executor terpisah karena tidak ada tool CPU-bound |
-| 05 In-App Copilot | Tool sempit ke API produk tuan rumah, tanpa `execute`, tanpa retrieval mandiri | **Tidak ada** — orchestrator saja cukup; tidak ada tool CPU/GPU-bound yang layak dipisah |
-| 06 Workflow Agent | Tool API pihak ketiga, kadang `execute` tergantung workflow konkret | Sama seperti baris 03 — ditentukan tool nyata, "workflow" bukan sinyal topologi |
-| 07 Computer-Use Agent | click/type/screenshot lewat backend automasi browser (Playwright/CDP), idealnya di sandbox | **Tool executor** — browser automation CPU/memory-bound sama seperti `execute`, alasan isolasi sama (`sandboxing.md`) |
+| 01 Workspace Agent | `execute` (a broad bash), through `LocalShellBackend`/a sandbox backend — see `deltas/01-workspace-agent.md` | **The tool executor** — `execute` is the CPU-bound phase (`resource-profiling.md`); without extra isolation its blast radius is the host machine (`sandboxing.md`) |
+| 02 Generative Builder | `execute` in its own sandbox (`DaytonaSandbox`/equivalent) | **The tool executor** — the same reason as 01, but the backend is already a microVM from its `_base` delta (sandbox cost dominates earlier) |
+| 03 General Task Agent | Mixed: `execute` **and/or** retrieval tools, depending on the subagents delegated to | **The tool executor AND/OR retrieval** — determined by the actual tools each subagent installs, not a fixed rule for this archetype |
+| 04 Research/Analyst | `web_search`/retrieval, `think_tool` — no `execute` at all | **Retrieval/embedding** only — it never needs a separate tool executor because it has no CPU-bound tools |
+| 05 In-App Copilot | Narrow tools into the host product's API, no `execute`, no retrieval of its own | **None** — the orchestrator alone suffices; there is no CPU/GPU-bound tool worth splitting |
+| 06 Workflow Agent | Third-party API tools, sometimes `execute` depending on the concrete workflow | The same as row 03 — determined by the actual tools; "workflow" is not a topology signal |
+| 07 Computer-Use Agent | click/type/screenshot through a browser automation backend (Playwright/CDP), ideally in a sandbox | **The tool executor** — browser automation is CPU/memory-bound just like `execute`, for the same isolation reasons (`sandboxing.md`) |
 
-Konsekuensi langsung: **05 In-App Copilot tidak pernah butuh Tool
-executor/Retrieval terpisah** berapa pun skalanya — bukan karena arketipe
-itu "kecil", tapi karena tool surface-nya secara struktural tidak pernah
-punya kandidat CPU/GPU-bound untuk dipisah. Sebaliknya, dua project "06
-Workflow Agent" bisa berakhir di topologi yang sama sekali berbeda kalau
-satu memasang `execute` dan satu tidak — baris tabel untuk 06 memang sengaja
-tidak memberi jawaban tunggal.
+The direct consequence: **05 In-App Copilot never needs a separate tool
+executor or retrieval** at any scale — not because that archetype is "small",
+but because its tool surface structurally never has a CPU/GPU-bound candidate
+to split. Conversely, two "06 Workflow Agent" projects can end up with
+entirely different topologies when one installs `execute` and the other
+doesn't — the 06 row deliberately gives no single answer.
 
-## Migrasi modular monolith → microservice
+## Migrating from a modular monolith to microservices
 
-`_base.md` sudah menulis tiga jahitan (`Orchestrator` Protocol, tool
-executor lewat `SandboxBackendProtocol`, retrieval lewat `StoreBackend`)
-supaya migrasi ini adalah **ganti binding + manifest**, bukan rewrite
-(`serving-topology.md` §Modular monolith dengan jahitan dipotong). Konkretnya:
+`_base.md` already writes three seams (the `Orchestrator` Protocol, the tool
+executor through `SandboxBackendProtocol`, retrieval through `StoreBackend`)
+so this migration is **a binding + manifest change** rather than a rewrite
+(`serving-topology.md` §A modular monolith with the seams cut). Concretely:
 
-### Yang berubah: binding
+### What changes: the binding
 
-Hari ini `app/api/deps.py`'s `build_orchestrator(model, checkpointer)`
-mengembalikan `DeepAgentsOrchestrator(...)` (in-process, `_base.md` §Binding).
-Begitu Tool executor (atau orchestrator itu sendiri) dipisah jadi service
-sendiri, satu-satunya yang berubah adalah **isi fungsi itu** — implementasi
-baru yang **memenuhi Protocol yang sama**:
+Today `app/api/deps.py`'s `build_orchestrator(model, checkpointer)` returns a
+`DeepAgentsOrchestrator(...)` (in-process, `_base.md` §Binding). Once the tool
+executor (or the orchestrator itself) is split into its own service, the only
+thing that changes is **that function's body** — a new implementation
+**satisfying the same Protocol**:
 
 ```python
-"""RemoteOrchestratorClient -- binding pengganti DeepAgentsOrchestrator SAAT
-tool executor/orchestrator dipisah jadi service sendiri. Implementasi
-Protocol Orchestrator yang SAMA (orchestrator/interface.py) -- return value
-build_orchestrator() (app/api/deps.py) diganti ke ini. routes/turns.py
-tidak berubah satu baris pun; main.py lifespan dapat dua baris tambahan
-untuk buka/tutup httpx.AsyncClient yang dibutuhkan kelas ini (lihat
-paragraf setelah blok ini).
+"""RemoteOrchestratorClient -- the replacement binding for
+DeepAgentsOrchestrator WHEN the tool executor/orchestrator is split into its
+own service. It implements the SAME Orchestrator Protocol
+(orchestrator/interface.py) -- build_orchestrator()'s return value
+(app/api/deps.py) is switched to this. routes/turns.py doesn't change by a
+single line; main.py's lifespan gains two lines to open/close the
+httpx.AsyncClient this class needs (see the paragraph after this block).
 """
 from __future__ import annotations
 
@@ -90,9 +90,9 @@ class RemoteOrchestratorClient:
     async def run_turn(
         self, scope: Scope, turn_id: str, thread_id: str, user_input: str
     ) -> AsyncIterator[TurnEvent]:
-        # Scope diteruskan eksplisit di payload -- BUKAN ambient state --
-        # syarat 4 modular monolith (serving-topology.md): begitu jadi
-        # network call sungguhan, otorisasi harus ikut eksplisit.
+        # Scope is passed explicitly in the payload -- NOT ambient state --
+        # condition 4 of the modular monolith (serving-topology.md): once it
+        # becomes a real network call, authorisation must be explicit too.
         payload = {
             "user_id": scope.user_id,
             "turn_id": turn_id,
@@ -109,28 +109,28 @@ class RemoteOrchestratorClient:
                 yield TurnEvent(**data)
 ```
 
-`app/api/routes/turns.py` **tidak berubah satu baris pun** — ia menerima
+`app/api/routes/turns.py` **doesn't change by a single line** — it receives
 `orchestrator: Orchestrator = Depends(get_orchestrator)` (`_base.md`
-§Binding) dan memanggil `orchestrator.run_turn(...)` lewat Protocol, tidak
-pernah tahu (atau perlu tahu) apakah implementasinya lokal atau network
-call. Ini persis syarat 1 modular monolith (`serving-topology.md`):
-panggilan lintas komponen lewat interface eksplisit, bukan pemanggilan
-langsung.
+§Binding) and calls `orchestrator.run_turn(...)` through the Protocol, never
+knowing (or needing to know) whether its implementation is local or a network
+call. This is exactly condition 1 of the modular monolith
+(`serving-topology.md`): cross-component calls go through an explicit
+interface rather than direct calls into internals.
 
-**Klaim satu-file berlaku untuk *keputusan implementasi*, bukan untuk
-seluruh migrasi.** `RemoteOrchestratorClient` butuh `base_url` (config
-baru, `ORCHESTRATOR_SERVICE_URL` lewat `os.environ`, pola yang sama
-dengan `APP_DATABASE_URL`) dan `client: httpx.AsyncClient` — yang
-terakhir ini tidak boleh dikonstruksi di dalam `build_orchestrator()`: ia
-butuh siklus hidup buka/tutup eksplisit seperti pool checkpointer/DB
-`_base.md` (`init_pool`/`close_pool`, `async with build_checkpointer(...)`),
-kalau tidak jadi koneksi yang tidak pernah ditutup rapi saat shutdown —
-persis kontradiksi yang dihindari `_base.md` untuk tiap resource lain.
-Jadi migrasi ke remote menyentuh **dua file**: `deps.py`
-(`build_orchestrator()` melebar menerima `http_client`/`base_url`, return
-`RemoteOrchestratorClient(...)`) dan `main.py` lifespan (buka
-`httpx.AsyncClient()` sebelum memanggil `build_orchestrator`, tutup
-setelah drain):
+**The one-file claim applies to the *implementation decision*, not to the
+whole migration.** `RemoteOrchestratorClient` needs a `base_url` (new config,
+`ORCHESTRATOR_SERVICE_URL` through `os.environ`, the same pattern as
+`APP_DATABASE_URL`) and a `client: httpx.AsyncClient` — and that last one
+must not be constructed inside `build_orchestrator()`: it needs an explicit
+open/close lifecycle like `_base.md`'s checkpointer/DB pool
+(`init_pool`/`close_pool`, `async with build_checkpointer(...)`), or it
+becomes a connection never closed cleanly at shutdown — exactly the
+contradiction `_base.md` avoids for every other resource. So migrating to
+remote touches **two files**: `deps.py` (`build_orchestrator()` widening to
+accept `http_client`/`base_url` and returning
+`RemoteOrchestratorClient(...)`) and `main.py`'s lifespan (opening
+`httpx.AsyncClient()` before calling `build_orchestrator`, closing it after
+the drain):
 
 ```python
 client = httpx.AsyncClient()
@@ -139,61 +139,60 @@ app.state.orchestrator = build_orchestrator(
 )
 ...
 await app.state.drain.wait_empty(timeout=DRAIN_TIMEOUT_S)
-await client.aclose()  # setelah drain, sebelum proses keluar -- urutan sama seperti close_pool()
+await client.aclose()  # after the drain, before the process exits -- the same order as close_pool()
 ```
 
-Yang tetap satu titik adalah **keputusan implementasi mana yang dipakai**
-— itu klaim asli syarat 1 modular monolith, dan itu yang bertahan; sumber
-daya baru yang datang bersama implementasi baru (di sini: koneksi
-jaringan) selalu butuh baris lifecycle di `main.py`, sama seperti resource
-lain di scaffold ini — bukan pengecualian yang membuat klaim satu-file
-menutupi kebocoran koneksi.
+What stays a single point is **which implementation is chosen** — that is the
+original claim of modular monolith condition 1, and it holds; a new resource
+arriving with a new implementation (here: a network connection) always needs
+its lifecycle lines in `main.py`, like every other resource in this scaffold —
+not an exception making the one-file claim a cover for a connection leak.
 
-### Yang berubah: manifest
+### What changes: the manifest
 
-`k8s/deployment.yaml` (`_base.md`) yang tadinya satu Deployment pecah jadi
-dua, masing-masing dengan sinyal scaling sendiri dari `scaling.md`:
+`k8s/deployment.yaml` (`_base.md`), previously one Deployment, splits into
+two, each with its own scaling signal from `scaling.md`:
 
-| | Sebelum (`_base.md`) | Sesudah (dipisah) |
+| | Before (`_base.md`) | After (split) |
 |---|---|---|
-| Deployment | Satu (`harness-orchestrator`), replicas tetap | Dua: `harness-orchestrator` (in-flight turns) + `harness-tool-executor` (queue depth/CPU, `scaling.md` §Konfigurasi konkret per komponen) |
-| Service | Satu | Dua — `harness-tool-executor` jadi tujuan network call `RemoteOrchestratorClient`/backend baru di atas |
-| Scaling | Tidak ada HPA/KEDA di `_base.md` (sengaja, lihat `_base.md` §Manifest K8s dasar) | KEDA `ScaledObject` terpisah per Deployment, trigger `prometheus` masing-masing atas gauge/queue-depth miliknya sendiri — konfigurasi konkretnya `scaling.md`, tidak diulang di sini |
-| Node pool | Homogen | Kalau komponen yang dipisah GPU-bound (Retrieval), tambah taint+toleration+nodeAffinity (`scaling.md` §Node pool GPU) |
+| Deployment | One (`harness-orchestrator`), fixed replicas | Two: `harness-orchestrator` (in-flight turns) + `harness-tool-executor` (queue depth/CPU, `scaling.md` §Concrete configuration per component) |
+| Service | One | Two — `harness-tool-executor` becoming the target of the network call from `RemoteOrchestratorClient`/the new backend above |
+| Scaling | No HPA/KEDA in `_base.md` (deliberately, see `_base.md` §The basic K8s manifest) | A separate KEDA `ScaledObject` per Deployment, each with a `prometheus` trigger over its own gauge/queue depth — the concrete configuration is in `scaling.md`, not repeated here |
+| Node pool | Homogeneous | If the split component is GPU-bound (retrieval), add a taint+toleration+nodeAffinity (`scaling.md` §GPU node pool) |
 
-### Yang TIDAK berubah: logika
+### What does NOT change: the logic
 
-- Skema DDL (`persistence-schema.md`) dan RLS — sama persis, `db/session.py`
-  tidak berubah.
-- Kontrak `SandboxBackendProtocol`/`StoreBackend` yang dipakai
-  `FilesystemMiddleware` di dalam `deepagents` — sama persis, backend
-  implementasinya (lokal vs microVM eksternal) sudah selalu berupa binding
-  yang bisa diganti sejak `_base`, migrasi ini tidak mengubah kontraknya.
-- Skema event streaming (`streaming-protocol.md`) dan kontrak reattach —
-  `TurnEvent` yang di-yield `Orchestrator.run_turn(...)` bentuknya sama
-  baik yang men-generate-nya proses lokal atau service jarak jauh yang
-  mem-forward SSE upstream (lihat `RemoteOrchestratorClient` di atas —
-  ia mem-parse ulang event dari service lain jadi `TurnEvent` yang sama,
-  bukan skema baru).
-- Guardrail dan safety gate — titik penegakan (`guardrails.md`) tetap
-  hidup di `middleware=[...]`/`interrupt_on=` saat `create_deep_agent(...)`
-  dipanggil; pindah proses tidak memindahkan *di mana* guardrail dievaluasi.
+- The DDL schema (`persistence-schema.md`) and RLS — identical;
+  `db/session.py` doesn't change.
+- The `SandboxBackendProtocol`/`StoreBackend` contract used by
+  `FilesystemMiddleware` inside `deepagents` — identical; its backend
+  implementation (local vs an external microVM) has always been a swappable
+  binding since `_base`, and this migration doesn't change its contract.
+- The event streaming schema (`streaming-protocol.md`) and the reattach
+  contract — the `TurnEvent` yielded by `Orchestrator.run_turn(...)` has the
+  same shape whether generated by a local process or by a remote service
+  forwarding upstream SSE (see `RemoteOrchestratorClient` above — it reparses
+  events from the other service into the same `TurnEvent`, not a new schema).
+- Guardrails and safety gates — the enforcement points (`guardrails.md`) still
+  live in `middleware=[...]`/`interrupt_on=` when `create_deep_agent(...)` is
+  called; moving processes doesn't move *where* a guardrail is evaluated.
 
-## Sumber
+## Sources
 
 - `[code]` [`../concepts/serving-topology.md`](../concepts/serving-topology.md)
-  — tabel komponen→bound→sinyal HPA, empat syarat modular monolith, dan
-  argumen in-flight-turns vs RPS; tidak diulang di sini.
-- `[code]` [`../concepts/scaling.md`](../concepts/scaling.md) — konfigurasi
-  KEDA/taint konkret yang dirujuk di tabel migrasi manifest, tidak diulang.
+  — the component→bound→HPA signal table, the four modular monolith
+  conditions, and the in-flight-turns vs RPS argument; not repeated here.
+- `[code]` [`../concepts/scaling.md`](../concepts/scaling.md) — the concrete
+  KEDA/taint configuration referenced in the manifest migration table, not
+  repeated.
 - `[code]` [`../concepts/resource-profiling.md`](../concepts/resource-profiling.md)
-  — dasar "Tool executor = kandidat pisah pertama begitu ada `execute`",
-  argumen lima fase/empat bound.
-- `[code]` [`../concepts/sandboxing.md`](../concepts/sandboxing.md) — dasar
-  kenapa `execute`/browser automation butuh isolasi tambahan begitu
-  dipisah, bukan cuma alasan performa.
-- `[code]` `../archetypes/01..07-*.md` §Bangun ini pakai deepagents/§Posisi
-  di 6 sumbu — sumber tool surface tiap baris tabel §Tool surface
-  menentukan komponen di atas, dikutip tanpa membaca ulang.
-- `[code]` `_base.md` — `Orchestrator` Protocol dan tiga jahitan yang jadi
-  dasar §Migrasi di file ini.
+  — the basis for "the tool executor = the first split candidate as soon as
+  `execute` exists", the five phases/four bounds argument.
+- `[code]` [`../concepts/sandboxing.md`](../concepts/sandboxing.md) — the
+  basis for why `execute`/browser automation needs extra isolation once split
+  out, not merely for performance reasons.
+- `[code]` `../archetypes/01..07-*.md` §Building this with deepagents/§Position
+  on the 6 axes — the source for each row's tool surface in §The tool surface
+  determines which component above, cited without re-reading.
+- `[code]` `_base.md` — the `Orchestrator` Protocol and the three seams
+  underpinning §Migrating in this file.
