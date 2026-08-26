@@ -564,7 +564,7 @@ longer appear in the `grep`, so numbers 1 and 17 are deliberately empty.
 | 49 | `concepts/queueing-and-backpressure.md:68` | The queue schema | outside `deepagents` |
 | 50 | `concepts/resource-profiling.md:95` | Phase colocation vs splitting per bound | outside `deepagents` |
 | 51 | `concepts/sandboxing.md:140` | Sandbox policy is not forced by the Daytona SDK | related to D-17 |
-| 52 | `concepts/serving-topology.md:167` | Monolith first, split later | outside `deepagents` |
+| 52 | `concepts/serving-topology.md:166` | Monolith first, split later | outside `deepagents` |
 | 53 | `concepts/streaming-protocol.md:142` | Stream granularity per unit | outside `deepagents` |
 | 54 | `concepts/guardrails.md:94` | Fail-deferred must be paired with a timeout plus an on-expiry policy (vanilla: an unbounded `await`, OpenWorker `inbox.py:362-371`) | outside `deepagents` |
 | 56-58 | `scaffolds/skills/README.md:18,132,170` | Fenced-block syntax for tagged output (`table`/`chart` JSON, `mermaid`, `math`), its JSON schemas, and the inline→artifact thresholds of ~50 rows / ~200 points (vanilla: `response_format`, which forces the **whole** reply into one schema'd object — unable to express prose with zero to n heterogeneous insertions) | outside `deepagents`; alongside `SkillsMiddleware`, not replacing it |
