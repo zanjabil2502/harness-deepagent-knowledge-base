@@ -1,232 +1,238 @@
 # Letta
 
-> Label tiap klaim: [code] / [docs] / [inferred]
+> Label every claim: [code] / [docs] / [inferred]
 
-Tier **T2**. Catatan identitas penting, sama polanya dengan OpenHands: repo
-`letta-ai/letta` (kandidat asli di spec §10 untuk "memory lintas sesi") sudah
-**diarsipkan**. `README.md`-nya sendiri menyatakan: *"This repository now
-serves as a landing page for the Letta project. The retired Letta V1 server
-source is preserved on the `archive` branch... The current source code lives
-in `letta-ai/letta-code`"*. `[code]` — `README.md` repo `letta-ai/letta`
-(`git clone --depth 1`, 2026-08-23; commit terakhir sebelum arsip: `87fd37a
-chore: archive the legacy server repository`). Letta modern (npm
-`@letta-ai/letta-code`) adalah **harness coding-agent** (CLI interaktif +
-App Server + channel Slack/Telegram/Discord/WhatsApp/Signal), bukan lagi
-murni "platform memori API" — file ini mendokumentasikan `letta-code` karena
-itulah software yang benar-benar berjalan hari ini, dan mencatat eksplisit
-bahwa memori lintas-sesi (alasan Letta masuk kandidat T2) berpindah bentuk:
-dari memory-block REST API murni menjadi **filesystem memori git-backed
-per-agent** di atas server yang masih mengekspos primitif memory-block lama
-lewat `@letta-ai/letta-client`.
+Tier **T2**. An important identity note, the same pattern as OpenHands': the
+`letta-ai/letta` repo (the original candidate in spec §10 for "cross-session
+memory") has been **archived**. Its own `README.md` states: *"This repository
+now serves as a landing page for the Letta project. The retired Letta V1
+server source is preserved on the `archive` branch... The current source code
+lives in `letta-ai/letta-code`"*. `[code]` — the `README.md` of the
+`letta-ai/letta` repo (`git clone --depth 1`, 2026-08-23; the last commit
+before archiving: `87fd37a chore: archive the legacy server repository`).
+Modern Letta (npm `@letta-ai/letta-code`) is a **coding-agent harness** (an
+interactive CLI + an App Server + Slack/Telegram/Discord/WhatsApp/Signal
+channels), no longer a pure "memory API platform" — this file documents
+`letta-code` because that is the software genuinely running today, and records
+explicitly that cross-session memory (the reason Letta was a T2 candidate) has
+changed shape: from a purely memory-block REST API into a **git-backed
+per-agent memory filesystem** on top of a server that still exposes the older
+memory-block primitives through `@letta-ai/letta-client`.
 
-## Arketipe
+## Archetype
 
-**Workspace Agent (01)** — CLI terminal interaktif dengan tool bash/file,
-permission mode, dan sandbox OS-level (lihat sumbu 6), sangat paralel
-strukturnya dengan `claude-code.md` (bedanya: Letta bisa dibaca sebagai
-`[code]`, Claude Code tidak). Horizon bisa panjang (App Server + channel
-async: Slack/Telegram/cron). `[code]` — `letta-ai/letta-code` `README.md`,
-struktur direktori `src/channels/`, `src/cron/`.
+A **Workspace Agent (01)** — an interactive terminal CLI with bash/file tools,
+permission modes, and OS-level sandboxing (see axis 6), structurally very
+parallel to `claude-code.md` (the difference: Letta can be read as `[code]`,
+Claude Code cannot). Its horizon can be long (an App Server + async channels:
+Slack/Telegram/cron). `[code]` — `letta-ai/letta-code`'s `README.md`, the
+`src/channels/`, `src/cron/` directory structure.
 
 ## 1. Loop shape
 
-Eksekusi giliran model (LLM call ⇄ tool call) berjalan **di sisi server**,
-dipanggil lewat `@letta-ai/letta-client` (tipe `MessageCreate` dari
-`resources/agents/agents`) — `letta-code` sendiri tidak mengimplementasi
-loop ReAct-nya sendiri, ia klien dari agent server Letta (self-hosted lewat
-`letta server` atau Letta Cloud). `[code]` — import
-`@letta-ai/letta-client/resources/agents/agents` di
-`src/queue/turn-queue-runtime.ts` baris 1; `README.md` ("Run the App Server
+Model turn execution (an LLM call ⇄ tool call) runs **server-side**, invoked
+through `@letta-ai/letta-client` (the `MessageCreate` type from
+`resources/agents/agents`) — `letta-code` itself doesn't implement its own
+ReAct loop; it is a client of the Letta agent server (self-hosted through
+`letta server` or Letta Cloud). `[code]` — the
+`@letta-ai/letta-client/resources/agents/agents` import in
+`src/queue/turn-queue-runtime.ts` line 1; the `README.md` ("Run the App Server
 for local or self-hosted agents").
 
-Yang **memang** diimplementasikan di `letta-code` adalah **penggabungan
-input sebelum giliran dikirim**: `QueuedTurnInput` punya tiga jenis —
-`"user"` (pesan user), `"task_notification"`, `"cron_prompt"` — digabung
-lewat `mergeQueuedTurnInput` (helper `appendContentParts`,
-`normalizeUserContent`) jadi satu `MessageCreate.content` sebelum dikirim ke
-server. Ini pola coalescing input multi-sumber (chat interaktif + notifikasi
-task async + cron), bukan loop tool-calling. `[code]` —
-`src/queue/turn-queue-runtime.ts` baris 1-30.
+What `letta-code` **does** implement is **merging input before a turn is
+sent**: `QueuedTurnInput` has three kinds — `"user"` (a user message),
+`"task_notification"`, `"cron_prompt"` — merged through `mergeQueuedTurnInput`
+(the `appendContentParts`, `normalizeUserContent` helpers) into one
+`MessageCreate.content` before being sent to the server. This is a
+multi-source input coalescing pattern (interactive chat + async task
+notifications + cron), not a tool-calling loop. `[code]` —
+`src/queue/turn-queue-runtime.ts` lines 1-30.
 
 ## 2. Context
 
-Dua lapis memori berbeda hidup berdampingan:
+Two different memory layers coexist:
 
-- **Memory block klasik** (warisan MemGPT/Letta V1) — label `persona`,
-  `human` (`MEMORY_BLOCK_LABELS = ["persona", "human"]`), dimuat dari file
-  `.mdx` di `src/agent/prompts/<label>.mdx`, dikirim ke server lewat tipe
-  `CreateBlock` dari `@letta-ai/letta-client`. Catatan versi: field
-  per-project (`skills`/`loaded_skills`) **dihapus** dari memory block
-  (referensi tiket `LET-7353` di komentar kode) — skill sekarang disuntik
-  lewat *system reminder*, bukan block memori. `[code]` —
-  `src/agent/memory.ts` baris 1-21.
-- **Memory filesystem git-backed ("MemFS")** — lapisan baru: tiap agent
-  punya direktori `~/.letta/agents/<agentId>/memory/` di disk, dan
-  `memory-git.ts` (2128 baris) mengelola direktori itu sebagai **repo git
-  sungguhan**: commit, hook, worktree, config lock, dan signing commit
-  sendiri (`memory-git-hooks.ts`, `memory-git-signing.ts`,
-  `memory-git-config-lock.ts`, `memory-worktree.ts`). Komentar modul
-  eksplisit menyebut migrasi: *"With git-backed memory, most sync/hash logic
-  is removed"* — versi lama memakai hashing manual, versi sekarang memakai
-  git sebagai mesin versi. `[code]` — `src/agent/memory-filesystem.ts` baris
-  1-30 (docstring modul, konstanta `MEMORY_FS_ROOT = ".letta"`).
+- **Classic memory blocks** (the MemGPT/Letta V1 inheritance) — the labels
+  `persona` and `human` (`MEMORY_BLOCK_LABELS = ["persona", "human"]`), loaded
+  from `.mdx` files in `src/agent/prompts/<label>.mdx` and sent to the server
+  through `@letta-ai/letta-client`'s `CreateBlock` type. A version note: the
+  per-project fields (`skills`/`loaded_skills`) were **removed** from memory
+  blocks (the ticket reference `LET-7353` in a code comment) — skills are now
+  injected through a *system reminder* rather than a memory block. `[code]` —
+  `src/agent/memory.ts` lines 1-21.
+- **A git-backed memory filesystem ("MemFS")** — the new layer: each agent has
+  a `~/.letta/agents/<agentId>/memory/` directory on disk, and `memory-git.ts`
+  (2128 lines) manages that directory as a **real git repo**: commits, hooks,
+  worktrees, a config lock, and its own commit signing
+  (`memory-git-hooks.ts`, `memory-git-signing.ts`,
+  `memory-git-config-lock.ts`, `memory-worktree.ts`). The module comment names
+  the migration explicitly: *"With git-backed memory, most sync/hash logic is
+  removed"* — the old version used manual hashing, the current one uses git as
+  its versioning engine. `[code]` — `src/agent/memory-filesystem.ts` lines
+  1-30 (the module docstring, the constant `MEMORY_FS_ROOT = ".letta"`).
 
-Ini adalah bentuk "memory lintas sesi" yang jauh lebih literal dibanding
-kebanyakan sistem lain di grid ini — bukan vector store atau ringkasan,
-tapi **riwayat git yang bisa di-diff, di-rollback, dan di-branch** persis
-seperti kode.
+This is a far more literal form of "cross-session memory" than most other
+systems in this grid — not a vector store or a summary, but **git history that
+can be diffed, rolled back, and branched** exactly like code.
 
 ## 3. Tool surface
 
-Tidak diverifikasi detail daftar tool bawaan (modul `src/tools/` ada tapi
-tidak dibaca isinya di task ini) — namun frontmatter skill builtin
-menunjukkan pola tool minimal per-skill: skill `memory` (defragmentasi
-memori, lihat sumbu 4) hanya diberi `tools: Bash, TaskOutput` — subset kecil
-dan eksplisit, bukan seluruh tool surface agent utama. `[code]` —
-`src/agent/subagents/builtin/memory.md` frontmatter (baris 1-7). `[inferred]`
-untuk generalisasi ke tool surface agent utama (tidak dibaca).
+The built-in tool list's details weren't verified (a `src/tools/` module
+exists but its contents weren't read in this task) — however, the built-in
+skill frontmatter shows a minimal per-skill tool pattern: the `memory` skill
+(memory defragmentation, see axis 4) is given only `tools: Bash, TaskOutput` —
+a small explicit subset rather than the main agent's whole tool surface.
+`[code]` — the `src/agent/subagents/builtin/memory.md` frontmatter (lines
+1-7). `[inferred]` for generalising to the main agent's tool surface (unread).
 
 ## 4. Delegation
 
-Ada mekanisme subagent eksplisit dan matang: `src/agent/subagents/manager.ts`
-+ `subagent-launcher.ts` + `context-budget.ts` (**subagent punya anggaran
-token/context sendiri, terpisah dari parent** — `buildMinimalParentMemorySection`/
-`shrinkParentMemorySection`/`hardTruncateReflectionPrompt` menunjukkan parent
-memory disuntik ke subagent dalam bentuk terpangkas, bukan penuh) +
-`spawnSubagent` (async, dengan catatan komentar soal timing "runs after
-several async yields"). `[code]` — `src/agent/subagents/manager.ts` baris
-92-189, 340, 726-803 (nama fungsi & docstring, isi implementasi detail tidak
-dibaca penuh).
+There is an explicit and mature subagent mechanism:
+`src/agent/subagents/manager.ts` + `subagent-launcher.ts` +
+`context-budget.ts` (**subagents have their own token/context budget, separate
+from the parent's** — `buildMinimalParentMemorySection`/
+`shrinkParentMemorySection`/`hardTruncateReflectionPrompt` show parent memory
+is injected into a subagent in trimmed form rather than in full) +
+`spawnSubagent` (async, with a comment noting the timing "runs after several
+async yields"). `[code]` — `src/agent/subagents/manager.ts` lines 92-189, 340,
+726-803 (function names & docstrings; the implementation details weren't read
+in full).
 
-Subagent didefinisikan sebagai **skill dengan frontmatter tambahan**:
-`launchProfile: memory-subagent` di `subagents/builtin/memory.md` — pola
-sama dengan skill biasa (Markdown + YAML frontmatter) tapi dengan
-`launchProfile` yang menandainya bisa di-spawn sebagai proses subagent
-terpisah, bukan disuntik sebagai instruksi ke agent utama. `[code]` —
+A subagent is defined as **a skill with extra frontmatter**:
+`launchProfile: memory-subagent` in `subagents/builtin/memory.md` — the same
+pattern as an ordinary skill (Markdown + YAML frontmatter) but with a
+`launchProfile` marking it as spawnable as a separate subagent process rather
+than injected as instructions into the main agent. `[code]` — the
 `src/agent/subagents/builtin/memory.md` frontmatter.
 
-**Hasil kembali ke pemanggil**: skill `memory` didefinisikan eksplisit
-sebagai *"You run autonomously and return a **single final report** when
-done. You **cannot ask questions** mid-execution."* — kontrak fire-and-report,
-bukan interaktif, bukan transkrip penuh. `[code]` — `memory.md` baris 9-10.
+**The result returning to the caller**: the `memory` skill is defined
+explicitly as *"You run autonomously and return a **single final report** when
+done. You **cannot ask questions** mid-execution."* — a fire-and-report
+contract, not interactive, not a full transcript. `[code]` — `memory.md` lines
+9-10.
 
 ## 5. State & resume
 
-Tiga lapis state berbeda:
+Three different state layers:
 
-| Lapis | Mekanisme |
+| Layer | Mechanism |
 |---|---|
-| Transkrip percakapan | Server Letta (via `@letta-ai/letta-client`) — tidak dibaca detail di task ini |
-| Memori agent | Repo git per-agent di `~/.letta/agents/<id>/memory/` (sumbu 2) |
-| Giliran tertunda | `QueuedTurnInput` (`user`/`task_notification`/`cron_prompt`) digabung sebelum dikirim |
+| The conversation transcript | The Letta server (through `@letta-ai/letta-client`) — not read in detail in this task |
+| Agent memory | A per-agent git repo at `~/.letta/agents/<id>/memory/` (axis 2) |
+| Pending turns | `QueuedTurnInput` (`user`/`task_notification`/`cron_prompt`) merged before sending |
 
-`[code]` — `src/agent/memory-filesystem.ts` (konstanta path),
-`src/queue/turn-queue-runtime.ts` (tipe `QueuedTurnInput`).
+`[code]` — `src/agent/memory-filesystem.ts` (the path constants),
+`src/queue/turn-queue-runtime.ts` (the `QueuedTurnInput` type).
 
-Resume: `resolve-startup-agent.ts` dan `reconcile-existing-agent-state.ts`
-ada sebagai modul terpisah (nama file dikonfirmasi, isi tidak dibaca) —
-menunjukkan ada jalur eksplisit "sambung ke agent yang sudah ada" saat CLI
-start ulang, konsisten dengan model "agent sebagai entitas persisten di
-server", bukan sesi sekali pakai. `[code]` (listing) /
-`[inferred]` (isi mekanisme resume detail).
+Resume: `resolve-startup-agent.ts` and `reconcile-existing-agent-state.ts`
+exist as separate modules (filenames confirmed, contents unread) — showing
+there is an explicit "reconnect to an existing agent" path when the CLI
+restarts, consistent with an "agent as a persistent server-side entity" model
+rather than a single-use session. `[code]` (the listing) / `[inferred]` (the
+resume mechanism's details).
 
 ## 6. Safety gate
 
-Sistem permission **empat mode**, mirip filosofi Claude Code tapi dengan
-default berbeda:
+A **four-mode** permission system, similar in philosophy to Claude Code's but
+with a different default:
 
 ```ts
 export type PermissionMode = "standard" | "acceptEdits" | "unrestricted" | "strict";
 export const DEFAULT_PERMISSION_MODE: PermissionMode = "unrestricted";
 ```
 
-**Temuan kejujuran**: default mode adalah `"unrestricted"`, bukan mode
-paling ketat — kontras dengan asumsi umum "harness coding-agent modern
-default-nya minta approval". Kode juga mempertahankan migrasi nama mode
-lama: `"default"` → `"standard"`, `"bypassPermissions"`/`"fullAccess"` →
-`"unrestricted"` (backward-compat literal string dari versi sebelumnya).
-`[code]` — `src/permissions/mode.ts` baris 3-32.
+**An honest finding**: the default mode is `"unrestricted"`, not the strictest
+one — contrasting with the common assumption that "a modern coding-agent
+harness defaults to asking for approval". The code also preserves migrations
+of the older mode names: `"default"` → `"standard"`,
+`"bypassPermissions"`/`"fullAccess"` → `"unrestricted"` (literal
+backwards-compatibility strings from earlier versions). `[code]` —
+`src/permissions/mode.ts` lines 3-32.
 
-Sandbox OS-level nyata, dua backend: **Seatbelt** (macOS,
-`sandbox/seatbelt.ts`) dan **bubblewrap/`bwrap`** (Linux, `sandbox/bwrap.ts`),
-digerakkan oleh satu `FsSandboxPolicy` deklaratif yang sama di kedua backend
-— `baseWritableRoots`, `deniedRoots`, `readonlyRoots`, `writableRoots`,
-`restrictWrites`, dengan urutan penerapan eksplisit: *"global write-deny →
-baseWritableRoots → deniedRoots → writableRoots → readonlyRoots"* (spesifik
-menang lewat urutan, bukan kedalaman nesting). Kegunaan konkret yang dikutip
-di komentar kode: memberi subagent memori akses tulis luas ke `~/.letta`
-tapi tetap **menolak** akses ke `~/.letta/agents` milik agent lain
-(cross-agent memory isolation) — kecuali carve-out sempit untuk memori
-miliknya sendiri (`writableRoots` menang atas `deniedRoots`). `[code]` —
-`src/sandbox/policy.ts` baris 1-40 (docstring modul, interface
-`FsSandboxPolicy`); `src/permissions/cross-agent-guard.ts` (nama file,
-dikonfirmasi lewat referensi di komentar `policy.ts`).
+Real OS-level sandboxing, with two backends: **Seatbelt** (macOS,
+`sandbox/seatbelt.ts`) and **bubblewrap/`bwrap`** (Linux, `sandbox/bwrap.ts`),
+both driven by the same declarative `FsSandboxPolicy` — `baseWritableRoots`,
+`deniedRoots`, `readonlyRoots`, `writableRoots`, `restrictWrites`, with an
+explicit application order: *"global write-deny → baseWritableRoots →
+deniedRoots → writableRoots → readonlyRoots"* (specificity winning through
+order rather than nesting depth). The concrete use cited in a code comment:
+giving a memory subagent broad write access to `~/.letta` while still
+**denying** access to another agent's `~/.letta/agents` (cross-agent memory
+isolation) — except for a narrow carve-out for its own memory (`writableRoots`
+beating `deniedRoots`). `[code]` — `src/sandbox/policy.ts` lines 1-40 (the
+module docstring, the `FsSandboxPolicy` interface);
+`src/permissions/cross-agent-guard.ts` (the filename, confirmed through a
+reference in `policy.ts`'s comments).
 
 ## 7. Capability routing & policy
 
-**Prosa + judgment model murni, empat sumber berlapis prioritas** — pola
-sama seperti Agent Skills (Anthropic) yang juga dipakai `deepagents`. Skill
-ditemukan dari:
+**Pure prose + model judgement, with four priority-layered sources** — the
+same pattern as Agent Skills (Anthropic), which `deepagents` also uses. Skills
+are discovered from:
 
-1. Project skills (`.agents/skills/`, fallback legacy `.skills/`) —
-   prioritas tertinggi, override.
+1. Project skills (`.agents/skills/`, with a legacy `.skills/` fallback) —
+   the highest priority, overriding.
 2. Agent skills (`~/.letta/agents/{agent-id}/memory/skills/`).
 3. Global skills (`~/.letta/skills/`).
-4. Bundled skills (dalam paket npm) — prioritas terendah, default.
+4. Bundled skills (inside the npm package) — the lowest priority, the
+   defaults.
 
-`[code]` — `src/agent/skills.ts` baris 1-9 (docstring modul). Tiap skill
-adalah file Markdown dengan frontmatter YAML (`name`, `description`,
-`tools`, `model`, opsional `launchProfile` untuk subagent) — model memilih
-skill berdasar `description` yang terlihat, tidak ada classifier kode yang
-mencocokkan keyword/path seperti di OpenHands (`skills/trigger.py`,
-lihat `openhands.md`). Ini kontras eksplisit yang sama dengan yang dibahas
-`references/concepts/skill-composition.md` dan `references/concepts/
-policy-as-data.md`: layering sumber (project > agent > global > bundled)
-adalah **presedensi deklaratif** (siapa menang saat nama sama), tapi
-**pemilihan skill mana yang relevan untuk giliran tertentu** tetap
-sepenuhnya judgment model — tidak ada keputusan runtime yang ditegakkan
-kode di luar urutan override sumber. `[code]` — `src/agent/skills.ts`,
-`src/agent/skill-sources.ts` (nama tipe `SkillSource`/`ALL_SKILL_SOURCES`).
+`[code]` — `src/agent/skills.ts` lines 1-9 (the module docstring). Each skill
+is a Markdown file with YAML frontmatter (`name`, `description`, `tools`,
+`model`, optionally `launchProfile` for a subagent) — the model picks a skill
+from the visible `description`, with no code classifier matching
+keywords/paths as in OpenHands (`skills/trigger.py`, see `openhands.md`). This
+is the same explicit contrast discussed in
+`references/concepts/skill-composition.md` and
+`references/concepts/policy-as-data.md`: source layering (project > agent >
+global > bundled) is **declarative precedence** (who wins on a name clash),
+but **which skill is relevant for a given turn** remains entirely model
+judgement — there is no runtime decision enforced by code beyond the source
+override order. `[code]` — `src/agent/skills.ts`,
+`src/agent/skill-sources.ts` (the `SkillSource`/`ALL_SKILL_SOURCES` type
+names).
 
-## Sumber
+## Sources
 
-Dua repo dikloning shallow (`git clone --depth 1`) 2026-08-23 dan dibaca
-langsung sebagai file:
+Two repos were shallow-cloned (`git clone --depth 1`) on 2026-08-23 and read
+directly as files:
 
-- `letta-ai/letta` (`github.com/letta-ai/letta`) — `README.md` utuh, untuk
-  mengonfirmasi status arsip dan lokasi source baru. `git log --oneline -1`
-  dikonfirmasi: `87fd37a chore: archive the legacy server repository (#3430)`.
+- `letta-ai/letta` (`github.com/letta-ai/letta`) — the `README.md` in full, to
+  confirm its archived status and the new source's location. `git log
+  --oneline -1` confirmed: `87fd37a chore: archive the legacy server
+  repository (#3430)`.
 - `letta-ai/letta-code` (`github.com/letta-ai/letta-code`, npm
   `@letta-ai/letta-code`):
-  - `README.md` utuh
-  - `src/agent/memory.ts` baris 1-21 (`MEMORY_BLOCK_LABELS`, docstring
-    migrasi `LET-7353`)
-  - `src/agent/memory-filesystem.ts` baris 1-60 (docstring modul, konstanta
-    path `MEMORY_FS_ROOT`, `MEMORY_FS_AGENTS_DIR`, `MEMORY_FS_MEMORY_DIR`)
-  - `src/agent/subagents/manager.ts` baris 92-189, 340, 726-803 (nama fungsi
-    via grep — isi tidak dibaca penuh)
-  - `src/agent/subagents/builtin/memory.md` — utuh (frontmatter + badan
-    deskripsi tugas)
-  - `src/agent/skills.ts` baris 1-40 (docstring modul + fungsi
-    `getBundledSkillsPath`)
-  - `src/permissions/mode.ts` — utuh (32 baris awal, tipe `PermissionMode`,
-    `DEFAULT_PERMISSION_MODE`, `migratePermissionMode`)
-  - `src/sandbox/policy.ts` baris 1-40 (docstring modul, interface
-    `FsSandboxPolicy`)
-  - `src/queue/turn-queue-runtime.ts` baris 1-40 (tipe `QueuedTurnInput`,
-    import `MessageCreate` dari `@letta-ai/letta-client`)
-  - Listing direktori untuk konfirmasi struktur (isi tak dibaca detail):
-    `src/permissions/*.ts` (>30 file — `sandbox-policy.ts`,
+  - `README.md` in full
+  - `src/agent/memory.ts` lines 1-21 (`MEMORY_BLOCK_LABELS`, the `LET-7353`
+    migration docstring)
+  - `src/agent/memory-filesystem.ts` lines 1-60 (the module docstring, the
+    `MEMORY_FS_ROOT`, `MEMORY_FS_AGENTS_DIR`, `MEMORY_FS_MEMORY_DIR` path
+    constants)
+  - `src/agent/subagents/manager.ts` lines 92-189, 340, 726-803 (function
+    names through grep — contents not read in full)
+  - `src/agent/subagents/builtin/memory.md` — in full (the frontmatter + the
+    task description body)
+  - `src/agent/skills.ts` lines 1-40 (the module docstring + the
+    `getBundledSkillsPath` function)
+  - `src/permissions/mode.ts` — in full (its first 32 lines, the
+    `PermissionMode` type, `DEFAULT_PERMISSION_MODE`, `migratePermissionMode`)
+  - `src/sandbox/policy.ts` lines 1-40 (the module docstring, the
+    `FsSandboxPolicy` interface)
+  - `src/queue/turn-queue-runtime.ts` lines 1-40 (the `QueuedTurnInput` type,
+    the `MessageCreate` import from `@letta-ai/letta-client`)
+  - Directory listings to confirm the structure (contents not read in detail):
+    `src/permissions/*.ts` (>30 files — `sandbox-policy.ts`,
     `cross-agent-guard.ts`, `workspace-sandbox.ts`, `read-only-shell.ts`,
-    dst), `src/sandbox/{bwrap,seatbelt,wrap,availability}.ts`,
+    etc.), `src/sandbox/{bwrap,seatbelt,wrap,availability}.ts`,
     `src/channels/{slack,telegram,discord,whatsapp,signal}/`, `src/cron/`,
-    `src/agent/memory-git*.ts` (2128 baris di `memory-git.ts`, tidak dibaca
-    utuh)
+    `src/agent/memory-git*.ts` (2128 lines in `memory-git.ts`, not read in
+    full)
 
-Catatan kejujuran: loop tool-calling aktual (giliran LLM ⇄ tool) berjalan di
-**server** Letta (paket/repo terpisah, kemungkinan closed atau di repo lain
-yang tidak diverifikasi task ini) — klaim di sumbu 1 dibatasi pada apa yang
-`letta-code` (klien) lakukan sebelum mengirim giliran, bukan bagaimana
-server mengeksekusinya. `memory-git.ts` (2128 baris) dan
-`SubagentExecutor`-setaranya di `manager.ts` **tidak** dibaca utuh — klaim
-dibatasi pada docstring modul dan nama fungsi yang dikutip.
+An honesty note: the actual tool-calling loop (an LLM turn ⇄ tools) runs on
+the Letta **server** (a separate package/repo, possibly closed or in another
+repo not verified in this task) — the axis 1 claims are limited to what
+`letta-code` (the client) does before sending a turn, not how the server
+executes it. `memory-git.ts` (2128 lines) and the `SubagentExecutor`
+equivalent in `manager.ts` were **not** read in full — the claims are limited
+to the module docstrings and function names cited.
