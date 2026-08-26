@@ -1,47 +1,48 @@
 # Persistence schema
 
-## Masalah
+## Problem
 
-Skema state agent yang ditulis ad hoc gagal dengan pola yang berulang: riwayat
-disimpan sebagai list rata sehingga "edit pesan lalu regenerate" menimpa
-riwayat lama; tool call ditaruh sebagai field JSON di dalam pesan sehingga
-tidak bisa di-query/di-redact per baris; kompaksi mengganti isi pesan asli
-langsung (transcript ikut hilang, bukan cuma context yang dipangkas); retry
-jaringan pada satu turn membuat turn kedua karena tidak ada kunci idempotensi;
-dan satu tabel lupa kolom `user_id` sehingga bocor antar user — pasti terjadi
-di codebase yang hidup cukup lama (§8.2).
+An ad hoc agent state schema fails in a recurring pattern: history stored as
+a flat list, so "edit a message then regenerate" overwrites the old history;
+tool calls stored as a JSON field inside a message, so they can't be
+queried/redacted per row; compaction replacing the original message content
+directly (the transcript is lost too, not just the context trimmed); a
+network retry on one turn creating a second turn because there is no
+idempotency key; and one table missing its `user_id` column so it leaks
+between users — a certainty in a codebase that lives long enough (§8.2).
 
-DDL di bawah adalah jawaban langsung: bisa di-paste ke `psql` apa adanya.
+The DDL below is the direct answer: pasteable into `psql` as-is.
 
-## Pola
+## Pattern
 
-Urutan `CREATE TABLE` sudah mengikuti urutan dependency FK — jalankan dari
-atas ke bawah.
+The `CREATE TABLE` order already follows FK dependency order — run it top to
+bottom.
 
 ```sql
 -- ============================================================
 -- Extensions
 -- ============================================================
 CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- gen_random_uuid()
--- CREATE EXTENSION IF NOT EXISTS vector;  -- pgvector, opsional — hanya kalau
---                                          -- embedding memory disimpan di
---                                          -- Postgres, lihat memory_entries.
+-- CREATE EXTENSION IF NOT EXISTS vector;  -- pgvector, optional — only if
+--                                          -- memory embeddings are stored in
+--                                          -- Postgres, see memory_entries.
 
 -- ============================================================
--- Identitas & scope
+-- Identity & scope
 -- ============================================================
 CREATE TABLE users (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
--- [ours] Tabel users lokal ada di sini supaya skema ini runnable mandiri di
--- psql. Di deployment nyata baris identitas sering dimiliki IdP eksternal
--- (mis. Supabase auth.users, Clerk) dan tabel ini jadi foreign
--- table/view, bukan sumber kebenaran. Vanilla-nya: tidak ada tabel users
--- lokal sama sekali, user_id di tabel lain cukup UUID opak tanpa FK lokal.
+-- [ours] A local users table exists here so this schema is runnable
+-- standalone in psql. In a real deployment identity rows are often owned by
+-- an external IdP (e.g. Supabase auth.users, Clerk) and this table becomes a
+-- foreign table/view rather than the source of truth. Vanilla: no local
+-- users table at all, with user_id in other tables just an opaque UUID with
+-- no local FK.
 
 -- ============================================================
--- Percakapan & turn (idempotency key per turn)
+-- Conversations & turns (an idempotency key per turn)
 -- ============================================================
 CREATE TABLE conversations (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -52,12 +53,12 @@ CREATE TABLE conversations (
 );
 CREATE INDEX conversations_user_id_idx ON conversations (user_id, created_at DESC);
 
--- Satu "turn" = satu unit permintaan pengguna -> respons agent (termasuk
--- semua tool call di dalamnya). idempotency_key dikirim client per turn
--- (mis. UUID dibuat client saat submit) supaya retry jaringan atau
--- duplicate-submit tidak membuat turn kedua: INSERT kedua dengan
--- (user_id, idempotency_key) yang sama akan gagal kena UNIQUE, app cukup
--- tangkap error itu dan kembalikan turn yang sudah ada.
+-- One "turn" = one unit of user request -> agent response (including every
+-- tool call within it). idempotency_key is sent by the client per turn
+-- (e.g. a UUID the client generates on submit) so a network retry or a
+-- duplicate submit doesn't create a second turn: a second INSERT with the
+-- same (user_id, idempotency_key) fails the UNIQUE constraint, and the app
+-- simply catches that error and returns the existing turn.
 CREATE TABLE turns (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     conversation_id  UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
@@ -72,7 +73,7 @@ CREATE TABLE turns (
 CREATE INDEX turns_conversation_id_idx ON turns (conversation_id, created_at);
 
 -- ============================================================
--- Transcript sebagai TREE, bukan list
+-- The transcript as a TREE, not a list
 -- ============================================================
 CREATE TABLE messages (
     id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -81,8 +82,8 @@ CREATE TABLE messages (
     turn_id          UUID REFERENCES turns(id) ON DELETE SET NULL,
     user_id          UUID NOT NULL REFERENCES users(id),
     role             TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'tool')),
-    content          JSONB NOT NULL,  -- parts array; artifact ref hidup di sini,
-                                       -- lihat artifacts-and-canvas.md
+    content          JSONB NOT NULL,  -- a parts array; artifact refs live here,
+                                       -- see artifacts-and-canvas.md
     status           TEXT NOT NULL DEFAULT 'complete'
                        CHECK (status IN ('complete', 'streaming', 'error')),
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -92,37 +93,40 @@ CREATE INDEX messages_conversation_created_idx ON messages (conversation_id, cre
 CREATE INDEX messages_turn_id_idx ON messages (turn_id);
 
 COMMENT ON COLUMN messages.parent_id IS
-  'NULL = root pesan di conversation. Edit pesan lama = INSERT baris baru '
-  'dengan parent_id sama dengan versi lama (bukan UPDATE) -> bercabang.';
+  'NULL = a root message in the conversation. Editing an old message = '
+  'INSERTing a new row with the same parent_id as the old version (not an '
+  'UPDATE) -> it branches.';
 
--- Path aktif DIPERSIST, bukan dihitung ulang dari timestamp. Heuristik naif
--- "leaf dengan created_at terbesar se-conversation" salah begitu user
--- switch balik ke cabang lama lalu melanjutkannya -- leaf cabang itu bukan
--- max(created_at) global, tapi itulah yang seharusnya jadi path aktif.
+-- The active path is PERSISTED, not recomputed from timestamps. The naive
+-- "the leaf with the largest created_at in the conversation" heuristic is
+-- wrong as soon as the user switches back to an old branch and continues it
+-- -- that branch's leaf is not the global max(created_at), yet it is what
+-- should be the active path.
 ALTER TABLE conversations
     ADD COLUMN active_leaf_id UUID REFERENCES messages(id) ON DELETE SET NULL;
 
 COMMENT ON COLUMN conversations.active_leaf_id IS
-  'Pointer ke message yang jadi ujung path aktif yang sedang dilihat/'
-  'dilanjutkan user. Path aktif = jalan dari root sampai baris ini, '
-  'ditelusuri lewat parent_id (tidak perlu algoritma rekursif terpisah '
-  'untuk resolusi -- pointer inilah resolusinya). Diperbarui app di dua '
-  'momen saja, dalam transaksi yang sama dengan perubahan yang memicunya: '
-  '(1) fork -- INSERT pesan baru, lalu UPDATE conversations SET '
-  'active_leaf_id = <id pesan baru>; '
-  '(2) switch branch -- user pilih cabang lama, UPDATE active_leaf_id ke '
-  'leaf existing cabang itu (message tanpa child di cabang tsb, dicari '
-  'sekali saat switch, bukan dihitung ulang tiap render). Lihat '
-  'session-state.md untuk penjelasan kenapa ini dipersist, bukan dihitung.';
+  'A pointer to the message at the end of the active path the user is '
+  'viewing/continuing. The active path = the walk from the root to this row '
+  'through parent_id (no separate recursive algorithm is needed for '
+  'resolution -- this pointer is the resolution). Updated by the app at two '
+  'moments only, in the same transaction as the change that triggers it: '
+  '(1) fork -- INSERT the new message, then UPDATE conversations SET '
+  'active_leaf_id = <the new message id>; '
+  '(2) branch switch -- the user picks an old branch, UPDATE active_leaf_id '
+  'to that branch''s existing leaf (the message with no child in that '
+  'branch, found once at switch time rather than recomputed on every '
+  'render). See session-state.md for why this is persisted rather than '
+  'computed.';
 
 -- ============================================================
--- Tool call sebagai row transcript KELAS SATU
+-- Tool calls as FIRST-CLASS transcript rows
 -- ============================================================
 CREATE TABLE tool_calls (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     message_id   UUID NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
     user_id      UUID NOT NULL REFERENCES users(id),
-    sequence     INT NOT NULL DEFAULT 0,  -- urutan dalam satu message (bisa >1 tool call/turn)
+    sequence     INT NOT NULL DEFAULT 0,  -- order within one message (>1 tool call/turn is possible)
     tool_name    TEXT NOT NULL,
     arguments    JSONB NOT NULL,
     result       JSONB,
@@ -136,7 +140,7 @@ CREATE INDEX tool_calls_message_id_idx ON tool_calls (message_id);
 CREATE INDEX tool_calls_user_tool_idx ON tool_calls (user_id, tool_name, started_at DESC);
 
 -- ============================================================
--- Compaction event -> menunjuk pesan yang DIGANTIKAN, tidak menghapusnya
+-- Compaction events -> pointing at the messages REPLACED, not deleting them
 -- ============================================================
 CREATE TABLE compaction_events (
     id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -157,40 +161,42 @@ CREATE TABLE compaction_event_messages (
 CREATE INDEX compaction_event_messages_message_idx ON compaction_event_messages (message_id);
 
 COMMENT ON TABLE compaction_events IS
-  'Pesan lama TIDAK dihapus saat kompaksi -- transcript tetap permanen. '
-  'summary_message_id menunjuk pesan ringkasan baru; '
-  'compaction_event_messages menunjuk pesan-pesan asli yang diringkas. '
-  'Model context (lapis ephemeral) yang berhenti mengirim pesan asli ke '
-  'model, bukan transcript yang kehilangan barisnya -- lihat session-state.md.';
+  'Old messages are NOT deleted on compaction -- the transcript stays '
+  'permanent. summary_message_id points at the new summary message; '
+  'compaction_event_messages points at the original messages summarised. '
+  'It is the model context (the ephemeral layer) that stops sending the '
+  'original messages to the model, not the transcript losing its rows -- '
+  'see session-state.md.';
 
 -- ============================================================
--- Memory lintas sesi (Postgres + vector) -- baris minimal untuk lapis
--- "Memory" di tabel 5 lapis; desain lengkap ada di concepts/memory.md
--- (bidang Cognition, belum ditulis di task ini).
+-- Cross-session memory (Postgres + vector) -- the minimal rows for the
+-- "Memory" layer in the 5-layer table; the full design is in
+-- concepts/memory.md (the Cognition field, not written in this task).
 -- ============================================================
 CREATE TABLE memory_entries (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id     UUID NOT NULL REFERENCES users(id),
     key         TEXT,
     value       TEXT NOT NULL,
-    -- embedding VECTOR(1536),  -- aktifkan setelah CREATE EXTENSION vector
+    -- embedding VECTOR(1536),  -- enable after CREATE EXTENSION vector
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX memory_entries_user_idx ON memory_entries (user_id, updated_at DESC);
 ```
 
-### Row-Level Security — penegakan scope, bukan `WHERE` manual (§8.2)
+### Row-Level Security — scope enforcement, not a manual `WHERE` (§8.2)
 
 ```sql
--- App wajib set variabel sesi ini per koneksi/transaksi SEBELUM query apa pun:
---   SET LOCAL app.current_user_id = '<uuid user yang sedang login>';
+-- The app MUST set this session variable per connection/transaction BEFORE any query:
+--   SET LOCAL app.current_user_id = '<the logged-in user uuid>';
 
 ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
-ALTER TABLE conversations FORCE ROW LEVEL SECURITY;  -- berlaku juga untuk owner tabel
--- CATATAN: FORCE tidak berlaku untuk superuser / BYPASSRLS. Aplikasi WAJIB
--- konek sebagai role non-superuser -- lihat isolation-and-scoping.md
--- Prasyarat yang membatalkan semuanya. Konek sebagai `postgres` = RLS nol efek.
+ALTER TABLE conversations FORCE ROW LEVEL SECURITY;  -- applies to the table owner too
+-- NOTE: FORCE does not apply to superusers / BYPASSRLS. The application MUST
+-- connect as a non-superuser role -- see isolation-and-scoping.md §The
+-- prerequisite that voids all of it. Connecting as `postgres` = RLS with zero
+-- effect.
 CREATE POLICY conversations_scope ON conversations
     USING (user_id = current_setting('app.current_user_id', true)::uuid)
     WITH CHECK (user_id = current_setting('app.current_user_id', true)::uuid);
@@ -225,30 +231,30 @@ CREATE POLICY compaction_events_scope ON compaction_events
     USING (user_id = current_setting('app.current_user_id', true)::uuid)
     WITH CHECK (user_id = current_setting('app.current_user_id', true)::uuid);
 
--- compaction_event_messages discope lewat kolom user_id MILIKNYA SENDIRI
--- (didenormalisasi saat insert), bukan lewat JOIN ke compaction_events/
--- messages -- pilihan yang sama seperti alasan di Trade-off untuk junction
--- table ini: USING lewat subquery JOIN tidak sargable dan lebih lambat di
--- tabel besar.
+-- compaction_event_messages is scoped through ITS OWN user_id column
+-- (denormalised at insert time) rather than through a JOIN to
+-- compaction_events/messages -- the same choice as the reason given in
+-- Trade-offs for this junction table: a USING clause through a JOIN subquery
+-- isn't sargable and is slower on large tables.
 ALTER TABLE compaction_event_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compaction_event_messages FORCE ROW LEVEL SECURITY;
 CREATE POLICY compaction_event_messages_scope ON compaction_event_messages
     USING (user_id = current_setting('app.current_user_id', true)::uuid)
     WITH CHECK (user_id = current_setting('app.current_user_id', true)::uuid);
 
--- Pola yang sama berlaku ke artifacts/artifact_versions/
--- message_artifact_refs (lihat artifacts-and-canvas.md) -- tiap tabel
--- discope lewat kolom user_id miliknya sendiri, bukan lewat JOIN ke
--- conversations. `current_setting(..., true)` (argumen kedua) supaya
--- policy fail-closed ke "tidak ada baris" kalau variabel sesi lupa
--- di-set, bukan error keras di tengah request.
+-- The same pattern applies to artifacts/artifact_versions/
+-- message_artifact_refs (see artifacts-and-canvas.md) -- each table scoped
+-- through its own user_id column rather than through a JOIN to
+-- conversations. `current_setting(..., true)` (the second argument) makes
+-- the policy fail closed to "no rows" if the session variable was never
+-- set, rather than raising mid-request.
 ```
 
-### Yang sengaja TIDAK di-DDL-kan di sini: checkpointer
+### Deliberately NOT given DDL here: the checkpointer
 
-Tabel `checkpoints`/`writes` milik library checkpointer (mis.
-`langgraph-checkpoint-postgres`) sengaja tidak didefinisikan ulang di sini.
-Skemanya `[docs]`:
+The `checkpoints`/`writes` tables belonging to the checkpointer library (e.g.
+`langgraph-checkpoint-postgres`) are deliberately not redefined here. Their
+schema `[docs]`:
 
 ```sql
 CREATE TABLE checkpoints (
@@ -263,99 +269,101 @@ CREATE TABLE checkpoints (
 );
 ```
 
-Alasan tidak dijadikan bagian skema aplikasi ini: tabel itu dimigrasi dan
-dimiliki oleh library checkpointer sendiri, bukan oleh migration aplikasi —
-mengubah bentuknya (mis. menambah kolom `user_id`) berisiko putus saat
-library update. `thread_id` di tabel itu **disamakan secara konvensi**
-dengan `conversations.id` (bukan FK — beda subsistem, beda migration), dan
-scoping-nya ditegakkan di level aplikasi (thread hanya diminta untuk
-`conversation_id` yang lolos RLS `conversations`), bukan RLS Postgres native
-di tabel checkpoint itu sendiri. Ini gap yang jujur dilaporkan, bukan
-disembunyikan — lihat `session-state.md` untuk kenapa checkpointer bukan
-database produk.
+Why they aren't part of this application schema: those tables are migrated
+and owned by the checkpointer library itself, not by the application's
+migrations — changing their shape (e.g. adding a `user_id` column) risks
+breaking on a library update. The `thread_id` in that table is **equated by
+convention** with `conversations.id` (not an FK — different subsystem,
+different migration), and its scoping is enforced at the application level (a
+thread is only requested for a `conversation_id` that passed the
+`conversations` RLS), not by native Postgres RLS on the checkpoint tables
+themselves. This is an honestly reported gap rather than a hidden one — see
+`session-state.md` for why a checkpointer isn't the product's database.
 
-## Trade-off
+## Trade-offs
 
-- **Pointer `active_leaf_id` yang dipersist vs algoritma resolusi
-  rekursif** — alternatif yang tidak dipilih: simpan tree apa adanya dan
-  hitung path aktif tiap kali dibutuhkan lewat aturan eksplisit per node
-  (mis. "di tiap titik cabang, anak dengan `created_at` terbesar menang,
-  rekursif dari root"). Itu menghindari kolom tambahan + kewajiban app
-  menjaganya tetap sinkron, tapi rekursif per-render lebih mahal untuk tree
-  dalam, dan "anak terbaru menang di tiap titik cabang" tetap bisa salah
-  kalau user mengedit dua cabang berbeda lalu balik ke yang pertama — aturan
-  itu butuh dilengkapi state "cabang mana yang terakhir dipilih" di tiap
-  titik, yang pada akhirnya adalah pointer per-node juga, hanya lebih rumit
-  dari satu pointer per-conversation. Kita pilih pointer tunggal
-  (`active_leaf_id`) karena resolusinya jadi trivial (satu kolom, satu
-  UPDATE per fork/switch) dan tidak ambigu.
-- **Junction table (`compaction_event_messages`) ikut punya `user_id`
-  sendiri** meski bisa didapat lewat JOIN ke `messages`/`compaction_events`.
-  `[ours]` — vanilla-nya: RLS lewat subquery (`message_id IN (SELECT id
-  FROM messages WHERE user_id = ...)`), yang tidak sargable dan lebih
-  lambat di tabel besar. Kita pilih kolom scope langsung + trade-off
-  redundansi (harus ditulis konsisten dalam transaksi yang sama saat
-  insert) demi policy RLS yang murah dan seragam di semua tabel.
-- **`version INT` vs timestamp sebagai versi** — dibahas di
-  `artifacts-and-canvas.md`, relevan juga di sini karena pola yang sama bisa
-  dipakai untuk `memory_entries` kalau butuh riwayat perubahan fakta memory
-  (skema di atas sengaja tidak menambah versioning ke memory — YAGNI sampai
-  ada kebutuhan nyata "riwayat memory berubah").
-- **Soft-delete vs hard-delete di lapis ini** — skema di atas pakai
-  `ON DELETE CASCADE` (hard) dari `conversations` turun; kalau retensi legal
-  butuh tombstone, ganti jadi `deleted_at TIMESTAMPTZ` + filter di RLS
-  policy. Trade-off lengkap di `retention-and-deletion.md`.
-- **`checkpoints`/`writes` tidak ikut RLS Postgres** (lihat di atas) adalah
-  trade-off sadar: konsistensi skema checkpointer dengan upstream library vs
-  penegakan scope seragam. Kalau isolasi multi-tenant yang lebih ketat
-  dibutuhkan di lapis ini, alternatifnya adalah checkpointer kustom yang
-  menambah kolom scope sendiri — belum dilakukan di sini karena deepagents
-  meneruskan checkpointer apa adanya (lihat `Di deepagents` di bawah), jadi
-  mengubahnya berarti keluar dari kontrak yang disuntikkan aplikasi.
+- **A persisted `active_leaf_id` pointer vs a recursive resolution
+  algorithm** — the alternative not chosen: store the tree as-is and compute
+  the active path whenever needed through an explicit per-node rule (e.g.
+  "at each branch point, the child with the largest `created_at` wins,
+  recursively from the root"). That avoids an extra column plus the app's
+  obligation to keep it in sync, but recursion per render is more expensive
+  for deep trees, and "the newest child wins at each branch point" can still
+  be wrong when a user edits two different branches then returns to the
+  first — that rule needs supplementing with "which branch was last chosen"
+  state at every point, which ends up being a per-node pointer anyway, only
+  more complex than one pointer per conversation. We chose a single pointer
+  (`active_leaf_id`) because its resolution is trivial (one column, one
+  UPDATE per fork/switch) and unambiguous.
+- **The junction table (`compaction_event_messages`) carrying its own
+  `user_id`** even though it could be reached through a JOIN to
+  `messages`/`compaction_events`. `[ours]` — vanilla: RLS through a subquery
+  (`message_id IN (SELECT id FROM messages WHERE user_id = ...)`), which
+  isn't sargable and is slower on large tables. We chose a direct scope
+  column plus the redundancy trade-off (it must be written consistently in
+  the same transaction as the insert) for the sake of a cheap RLS policy
+  uniform across every table.
+- **`version INT` vs a timestamp as the version** — discussed in
+  `artifacts-and-canvas.md`, relevant here too because the same pattern
+  could apply to `memory_entries` if a change history of memory facts is
+  needed (the schema above deliberately adds no versioning to memory —
+  YAGNI until there is a real need for "the history of how this memory
+  changed").
+- **Soft delete vs hard delete at this layer** — the schema above uses
+  `ON DELETE CASCADE` (hard) down from `conversations`; if legal retention
+  needs tombstones, change it to `deleted_at TIMESTAMPTZ` plus a filter in
+  the RLS policy. The full trade-off is in `retention-and-deletion.md`.
+- **`checkpoints`/`writes` not being covered by Postgres RLS** (see above)
+  is a deliberate trade-off: keeping the checkpointer schema consistent with
+  the upstream library vs uniform scope enforcement. If stricter
+  multi-tenant isolation is needed at this layer, the alternative is a
+  custom checkpointer adding its own scope column — not done here because
+  deepagents passes the checkpointer through unchanged (see `In deepagents`
+  below), so changing it means stepping outside the contract the application
+  injected.
 
-## Di deepagents
+## In deepagents
 
-`checkpointer` dan `store` yang dipakai untuk mengisi tabel di atas (secara
-tidak langsung — lewat konvensi `thread_id = conversation_id`, bukan FK)
-diteruskan **apa adanya** oleh `deepagents` ke
-`langchain.agents.create_agent`; `deepagents` tidak pernah membangun
-checkpointer/store sendiri. `[code]` — lihat
-[`../systems/deepagents.md`](../systems/deepagents.md) §5 (`deepagents/graph.py`
-baris 546-553, 922-931). Artinya skema `messages`/`tool_calls`/
-`compaction_events` di atas murni tanggung jawab aplikasi yang memanggil
-`create_deep_agent` — tidak ada bagian dari `deepagents` yang menulis ke
-tabel-tabel ini.
+The `checkpointer` and `store` used to fill the tables above (indirectly —
+through the `thread_id = conversation_id` convention, not an FK) are passed
+through **unchanged** by `deepagents` to `langchain.agents.create_agent`;
+`deepagents` never builds a checkpointer/store of its own. `[code]` — see
+[`../systems/deepagents.md`](../systems/deepagents.md) §5
+(`deepagents/graph.py` lines 546-553, 922-931). So the
+`messages`/`tool_calls`/`compaction_events` schema above is purely the
+responsibility of the application calling `create_deep_agent` — no part of
+`deepagents` writes to these tables.
 
-## Sumber
+## Sources
 
 - `[code]` LibreChat `packages/data-schemas/src/schema/toolCall.ts`
-  (`danny-avila/LibreChat`, dibaca lewat
-  `raw.githubusercontent.com/danny-avila/LibreChat/main/...`) — precedent
-  nyata untuk "tool call sebagai koleksi/tabel terpisah" yang mereferensi
-  `messageId`/`conversationId`, dengan `blockIndex`/`partIndex` untuk urutan
-  dalam satu pesan (dipetakan ke kolom `sequence` di `tool_calls` di atas,
-  `[ours]` penyederhanaan nama).
-- `[code]` LibreChat `packages/data-schemas/src/schema/message.ts` — baris
-  `parentMessageId` mengonfirmasi pola tree lewat pointer parent per baris
-  (bukan list), dan kolom `tenantId` terindeks berdampingan dengan skema
-  yang tetap berjalan single-tenant — precedent nyata untuk "scope column
-  hari ini `user_id`, jalur migrasi `tenant_id`" di §8.2. `[ours]` — skema
-  di atas sengaja tidak menyalin kolom `tenant_id` sekarang: §8.2 minta
-  scope object di level aplikasi, bukan kolom DB, jadi menambah kolom
-  yang belum dipakai di mana pun adalah YAGNI sampai multi-tenant
-  sungguh dibangun (migrasinya nanti tinggal `ALTER TABLE ... ADD COLUMN
-  tenant_id`, tidak menuntut redesain tabel).
+  (`danny-avila/LibreChat`, read through
+  `raw.githubusercontent.com/danny-avila/LibreChat/main/...`) — real
+  precedent for "tool calls as a separate collection/table" referencing
+  `messageId`/`conversationId`, with `blockIndex`/`partIndex` for ordering
+  within one message (mapped to the `sequence` column in `tool_calls` above,
+  an `[ours]` naming simplification).
+- `[code]` LibreChat `packages/data-schemas/src/schema/message.ts` — its
+  `parentMessageId` line confirms the tree pattern through a per-row parent
+  pointer (not a list), and its indexed `tenantId` column sitting alongside
+  a schema that still runs single-tenant is real precedent for "the scope
+  column is `user_id` today, `tenant_id` is the migration path" in §8.2.
+  `[ours]` — the schema above deliberately doesn't copy the `tenant_id`
+  column now: §8.2 asks for a scope object at the application level, not a
+  DB column, so adding a column used nowhere is YAGNI until multi-tenancy is
+  genuinely built (the later migration is simply `ALTER TABLE ... ADD COLUMN
+  tenant_id`, demanding no table redesign).
 - `[code]` Open WebUI `backend/open_webui/models/chats.py` — `Chat.chat =
-  Column(JSON)`: seluruh tree pesan (`parentId`/`childrenIds`/`currentId`)
-  hidup di **satu kolom JSON per chat**, bukan baris SQL ternormalisasi.
-  Ini kontras langsung dengan pilihan `[ours]` di atas (baris `messages`
-  ternormalisasi dengan `parent_id` FK) — vanilla Open WebUI: satu blob JSON
-  per percakapan. Kita pilih baris ternormalisasi karena butuh tool call
-  first-class per pesan dan RLS per baris, dua hal yang tidak bisa
-  didapat dari isi JSON blob.
-- `[docs]` LangGraph — skema `checkpoints`/`writes` dan kontrak
-  `BaseCheckpointSaver`, dikutip via Context7 dari
+  Column(JSON)`: the entire message tree (`parentId`/`childrenIds`/`currentId`)
+  lives in **one JSON column per chat**, not normalised SQL rows. This
+  contrasts directly with the `[ours]` choice above (normalised `messages`
+  rows with a `parent_id` FK) — Open WebUI's vanilla is one JSON blob per
+  conversation. We chose normalised rows because we need first-class
+  per-message tool calls and per-row RLS, neither of which is obtainable
+  from the contents of a JSON blob.
+- `[docs]` LangGraph — the `checkpoints`/`writes` schema and the
+  `BaseCheckpointSaver` contract, cited via Context7 from
   `docs.langchain.com/oss/python/langgraph/checkpointers`.
-- `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §5 — untuk
-  bagian "Di deepagents" (tier-1 reference, sudah diverifikasi di Task 3,
-  dikutip di sini tanpa membaca ulang source).
+- `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §5 — for
+  the "In deepagents" section (a tier-1 reference already verified in Task
+  3, cited here without re-reading the source).
