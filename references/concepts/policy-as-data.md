@@ -1,73 +1,71 @@
 # Policy as data
 
-## Masalah
+## Problem
 
-`guardrails.md` §Kebijakan tidak boleh hanya di prompt sudah menutup argumen
-**enforcement**: aturan di system prompt itu advisory, model bisa dibujuk
-mengabaikannya (paling sering lewat teks di hasil tool yang menyamar sebagai
-instruksi), jadi penegakan nyata harus hidup di kode yang berjalan di luar
-kendali model. File ini tidak mengulang argumen itu — ia menambahkan argumen
-yang berbeda dan berdiri sendiri, yang tetap berlaku **bahkan kalau model
-selalu patuh 100%**: cara aturan **direpresentasikan** menentukan apakah
-aturan itu bisa dikelola sama sekali, terlepas dari apakah model
-mematuhinya.
+`guardrails.md` §Policy must not live only in the prompt already settles the
+**enforcement** argument: a rule in a system prompt is advisory, the model
+can be persuaded to ignore it (most often through text in a tool result
+posing as an instruction), so real enforcement has to live in code running
+outside the model's control. This file doesn't repeat that argument — it
+adds a different, standalone one that holds **even if the model complies
+100% of the time**: how a rule is **represented** determines whether it can
+be managed at all, regardless of whether the model obeys it.
 
-Bayangkan model yang sempurna patuh — tidak pernah dibujuk, tidak pernah
-salah paham. Prosa-sebagai-aturan tetap punya tiga penyakit struktural yang
-murni soal representasi:
+Imagine a perfectly compliant model — never persuaded, never confused.
+Prose-as-rules still has three structural ailments that are purely about
+representation:
 
-1. **Dilusi** — aturan ke-47 di system prompt melemahkan salience aturan
-   1–46. Bukan karena model "lupa", tapi karena tidak ada mekanisme bahasa
-   alami yang menjamin bobot perhatian merata di antara 47 kalimat imperatif
-   yang bersaing, dan penulis prompt tidak punya cara memeriksa aturan mana
-   yang kalah bersaing sebelum insiden membuktikannya.
-2. **Presedensi implisit** — ketika dua aturan bertentangan ("selalu minta
-   konfirmasi sebelum menghapus" vs "kalau user bilang 'langsung saja',
-   jangan tanya lagi"), yang menang biasanya yang ditulis paling belakangan
-   di prompt, bukan yang paling penting secara sengaja. Tidak ada penulis
-   yang mendesain ini — itu efek samping urutan penulisan, dan berubah
-   diam-diam tiap kali seseorang menambah kalimat baru di tempat yang salah.
-3. **Tidak terlihat saat runtime** — prosa tidak punya identitas. Tidak ada
-   cara menjawab "aturan mana yang aktif di turn ini", "aturan mana yang
-   berubah minggu lalu", atau "tunjukkan semua kasus di mana aturan X
-   seharusnya berlaku" tanpa membaca ulang paragraf demi paragraf secara
-   manual. Aturan yang tidak punya identitas tidak bisa diuji di CI, tidak
-   bisa di-diff di code review, dan tidak bisa dihitung presisi/recall-nya
-   seperti tuntutan `evaluation.md` §Guardrail sebagai objek terukur —
-   karena tidak ada objek untuk diukur, cuma teks.
+1. **Dilution** — the 47th rule in a system prompt weakens the salience of
+   rules 1–46. Not because the model "forgets", but because no natural
+   language mechanism guarantees an even weighting of attention across 47
+   competing imperative sentences, and the prompt's author has no way to
+   check which rule lost that competition before an incident proves it.
+2. **Implicit precedence** — when two rules conflict ("always ask for
+   confirmation before deleting" vs "if the user says 'just do it', stop
+   asking"), the winner is usually whichever was written last in the
+   prompt, not whichever was deliberately most important. No author
+   designed that — it is a side effect of writing order, and it changes
+   silently every time someone adds a new sentence in the wrong place.
+3. **Invisible at runtime** — prose has no identity. There is no way to
+   answer "which rules were active this turn", "which rule changed last
+   week", or "show me every case where rule X should have applied" without
+   manually re-reading paragraph after paragraph. A rule with no identity
+   cannot be tested in CI, cannot be diffed in code review, and cannot have
+   its precision/recall measured as `evaluation.md` §Guardrails as
+   measurable objects demands — because there is no object to measure, only
+   text.
 
-Ketiganya adalah alasan `guardrails.md` mensyaratkan tiap guardrail
-"menyatakan tiga hal: kebijakan, titik penegakan, mode kegagalan" sebagai
-struktur eksplisit, bukan kalimat bebas — file ini menggeneralisasi struktur
-itu jadi aturan tunggal yang berlaku lintas semua kebijakan, bukan cuma
-guardrail: **kalau sebuah aturan bisa diverifikasi kode, aturan itu tidak
-boleh hidup di prompt.** Prompt disisakan murni untuk hal yang butuh
-judgment bahasa alami — nada bicara, cara merangkai jawaban, keputusan yang
-memang tidak punya definisi benar/salah yang bisa dihitung.
+Those three are why `guardrails.md` requires every guardrail to
+"state three things: the policy, the enforcement point, the failure
+mode" as explicit structure rather than free sentences — this file
+generalises that structure into a single rule holding across all
+policies, not just guardrails: **if a rule is code-verifiable, that
+rule must not live in the prompt.** The prompt is reserved purely
+for what needs natural-language judgement — tone, how an answer is
+composed, decisions with no computable right/wrong definition.
 
-## Pola
+## Pattern
 
-### Tes pembeda: bisa diverifikasi kode atau butuh judgment?
+### The distinguishing test: code-verifiable, or needing judgement?
 
-Pertanyaan pembeda bukan "apakah aturan ini penting" (semua aturan yang
-ditulis orang terasa penting) tapi: **kalau diberi input dan output
-konkret, bisakah fungsi deterministik memutuskan pass/fail tanpa memanggil
-model?** Nama tool yang boleh dipanggil peran tertentu — verifiable (set
-keanggotaan). Format sitasi wajib ada di jawaban yang mengklaim fakta —
-verifiable (schema/regex check). "Jawab dengan empatik" — tidak verifiable,
-tidak ada fungsi yang menghitung skor empati tanpa model itu sendiri
-menjadi pemeriksa (dan begitu jadi model-as-judge, itu sudah guardrail
-tingkat 3-4 di `guardrails.md` §Bertingkat, bukan lagi "policy as data").
-Aturan yang verifiable pindah ke data + middleware; aturan yang tidak,
-tetap di prompt — dan diberi label eksplisit sebagai keputusan, bukan
-dibiarkan campur aduk dalam satu blok prosa yang sama.
+The distinguishing question isn't "is this rule important" (every rule
+someone writes feels important) but: **given a concrete input and output,
+can a deterministic function decide pass/fail without calling a model?**
+Which tool names a given role may call — verifiable (set membership). A
+citation format required in any answer claiming facts — verifiable (a
+schema/regex check). "Answer empathetically" — not verifiable; no function
+scores empathy without the model itself becoming the checker (and once it is
+model-as-judge, that is a tier 3-4 guardrail in `guardrails.md` §Tiered, no
+longer "policy as data"). Verifiable rules move into data + middleware;
+rules that aren't stay in the prompt — and are labelled explicitly as that
+decision, rather than left mixed into the same block of prose.
 
-### Bentuk data: satu policy = satu objek dengan identitas
+### The data shape: one policy = one object with an identity
 
-Satu kebijakan verifiable direpresentasikan sebagai satu record, bukan satu
-kalimat di tengah paragraf. Contoh konkret — kebijakan "jawaban yang
-mengandung klaim faktual wajib menyertakan sitasi", salah satu dari daftar
-`policies` yang dirujuk manifest skill di [`skill-composition.md`](skill-composition.md):
+One verifiable policy is represented as one record, not one sentence inside
+a paragraph. A concrete example — the policy "an answer containing factual
+claims must include a citation", one of the `policies` list referenced by
+the skill manifest in [`skill-composition.md`](skill-composition.md):
 
 ```yaml
 id: require_citation
@@ -77,141 +75,143 @@ rule:
   type: schema_check
   condition: "claims_factual == true implies citations.length >= 1"
 enforcement:
-  point: output          # federasi ke titik 4 (`guardrails.md` §Enam titik)
+  point: output          # federated to point 4 (`guardrails.md` §Six points)
   mechanism: RubricMiddleware
-  failure_mode: fail-open-with-flag   # habiskan max_iterations, kirim + flag "belum lolos rubric"
+  failure_mode: fail-open-with-flag   # exhaust max_iterations, send + flag "rubric not met"
 owner: trust-and-safety
 updated_at: 2026-08-20
 ```
 
-Field yang membuat ini beda dari kalimat prosa bukan isinya (isinya bisa
-dikatakan dalam satu kalimat juga) — tapi **strukturnya**: `id` memberi
-identitas yang bisa dirujuk (dari manifest skill, dari golden test, dari
-dashboard eval), `version` + `updated_at` memberi jejak yang bisa di-diff,
-`applies_to`/`enforcement.point` menjawab langsung "di titik mana ini
-ditegakkan" tanpa perlu membaca kode middleware untuk tahu, dan
-`enforcement.failure_mode` memaksa keputusan eksplisit yang menurut
-`guardrails.md` §Masalah kedua sering sengaja dilewatkan sampai default
-kebetulan dari `try/except` yang menentukannya. Tiga field terakhir ini
-langsung membalikkan tiga penyakit di `## Masalah`: `id` melawan invisibility
-(bisa diquery), `version`/`updated_at` melawan presedensi implisit (urutan
-perubahan tercatat, bukan tersirat dari posisi kalimat), dan keberadaan
-sebagai record terpisah (bukan satu di antara 47 kalimat) melawan dilusi —
-policy engine memproses tiap record independen, tidak ada "kalimat ke-47"
-yang melemahkan kalimat lain karena tidak ada urutan baca linear yang
-dilalui model untuk sampai ke situ.
+What makes this different from a prose sentence isn't its content
+(the content could be stated in one sentence too) — it is the
+**structure**: `id` gives a referenceable identity (from a skill
+manifest, from a golden test, from an eval dashboard), `version` +
+`updated_at` give a diffable trail, `applies_to`/`enforcement.point`
+answer "where is this enforced" directly without reading middleware
+code, and `enforcement.failure_mode` forces the explicit decision
+that `guardrails.md` §Second problem shows is often skipped until an
+accidental `try/except` default decides it. Those last three fields
+directly invert the three ailments in `## Problem`: `id` counters
+invisibility (it can be queried), `version`/`updated_at` counter
+implicit precedence (the order of change is recorded, not implied by
+sentence position), and existing as a separate record (rather than
+one of 47 sentences) counters dilution — the policy engine processes
+each record independently; there is no "47th sentence" weakening the
+others because there is no linear reading order the model traverses
+to reach it.
 
-### Titik penegakan: middleware membaca data, bukan menghafalnya
+### The enforcement point: middleware reads the data, it doesn't memorise it
 
-Policy sebagai data tidak berguna kalau middleware yang menegakkannya
-mengulang logikanya sebagai kode hardcoded terpisah untuk tiap `id` — itu
-cuma memindahkan dilusi dari prompt ke source code (47 `if` block yang
-saling melemahkan alih-alih 47 kalimat). Pola yang benar: middleware generik
-membaca record policy sebagai konfigurasi, bukan meng-hardcode isinya.
-Untuk `require_citation` di atas, `enforcement.mechanism: RubricMiddleware`
-berarti record ini **adalah** parameter yang disuntikkan ke rubric yang
-dievaluasi `RubricMiddleware` — mengubah kebijakan berarti mengubah baris
-YAML dan redeploy config, bukan mengubah kode middleware. Untuk kebijakan
-yang lebih sederhana secara struktural — "tool `delete_file` hanya boleh
-dipanggil peran `admin`" — bentuk datanya adalah baris di tabel
-allowlist-per-peran, dan penegakannya adalah `excluded_tools`
-(`HarnessProfile`) yang dibaca `_ToolExclusionMiddleware`
-(`../systems/deepagents.md` §7, dikutip lagi di `guardrails.md` titik 3)
-— middleware yang sama, tanpa perubahan kode, menegakkan set tool yang
-berbeda untuk peran berbeda karena datanya yang berbeda, bukan cabang kode
-yang berbeda per peran.
+Policy-as-data is useless if the middleware enforcing it repeats the
+logic as separate hardcoded code per `id` — that merely moves
+dilution from the prompt into the source (47 `if` blocks weakening
+each other instead of 47 sentences). The correct pattern: a generic
+middleware reads the policy record as configuration rather than
+hardcoding its content. For `require_citation` above,
+`enforcement.mechanism: RubricMiddleware` means that record **is**
+the parameter injected into the rubric that `RubricMiddleware`
+evaluates — changing the policy means changing a YAML line and
+redeploying config, not changing middleware code. For a structurally
+simpler policy — "the `delete_file` tool may only be called by the
+`admin` role" — the data shape is a row in a per-role allowlist
+table, and enforcement is `excluded_tools` (`HarnessProfile`) read
+by `_ToolExclusionMiddleware` (`../systems/deepagents.md` §7, re-
+cited in `guardrails.md` point 3) — the same middleware, with no
+code change, enforces a different tool set for a different role
+because the data differs, not because a different code branch does.
 
-## Trade-off
+## Trade-offs
 
-- **Policy engine generik (baca data, satu middleware banyak policy) vs
-  kode hardcoded per aturan** — engine generik memberi identitas/versi/query
-  gratis untuk tiap policy baru (tinggal tambah record), tapi butuh
-  investasi awal menulis engine + schema yang cukup ekspresif untuk kelas
-  aturan yang akan datang; kalau cuma ada dua-tiga aturan verifiable yang
-  tidak akan bertambah, `if` block langsung di middleware kustom lebih
-  murah dan tidak butuh lapisan abstraksi tambahan. Titik baliknya bukan
-  jumlah aturan hari ini, tapi laju pertambahannya — kalau policy baru
-  ditambah tiap minggu, biaya engine terbayar cepat; kalau statis, tidak.
-- **Granularitas policy (banyak record sempit vs sedikit record luas)** —
-  policy sempit (`require_citation`, `pii_redact` terpisah) gampang
-  dikomposisi ulang per skill (manifest `skill-composition.md` bisa
-  menyalakan/mematikan satu-satu), tapi jumlah record membengkak dan tiap
-  interaksi antar-policy (dua policy sama-sama menyentuh field output yang
-  sama) harus dipikirkan eksplisit di layer resolusi. Policy luas
-  ("kebijakan output komprehensif" satu record berisi banyak sub-aturan)
-  lebih sedikit untuk dikelola tapi menghidupkan kembali dilusi di dalam
-  satu record — masalah yang coba dihindari file ini pindah ke dalam field
-  `rule` yang jadi paragraf lagi.
-- **Data statis (YAML di repo, versioned bareng kode) vs data di
-  database yang bisa diubah tanpa deploy** — YAML di repo memberi
-  code-review dan rollback gratis lewat git (selaras `guardrails.md`
-  §Prompt & policy versioning di checklist gerbang §12 spec), tapi
-  perubahan kebijakan (mis. menaikkan threshold moderasi) butuh siklus
-  deploy penuh. Policy di DB memungkinkan perubahan cepat tanpa deploy
-  (penting untuk insiden yang butuh mitigasi dalam menit), tapi kehilangan
-  jejak review/rollback git kecuali dibangun ulang secara terpisah
-  (tabel audit sendiri, approval flow sendiri) — investasi yang persis
-  argumen sirkular yang coba dihindari: kalau tidak dibangun eksplisit,
-  perubahan policy di DB **juga** bisa jadi tidak terlihat saat runtime.
+- **A generic policy engine (reading data, one middleware for many
+  policies) vs hardcoded code per rule** — a generic engine gives
+  identity/versioning/queryability free for each new policy (just add a
+  record), but needs an up-front investment in an engine plus a schema
+  expressive enough for the rule classes to come; with only two or three
+  verifiable rules that won't grow, an `if` block directly in custom
+  middleware is cheaper and needs no extra abstraction layer. The
+  turning point isn't today's rule count but the rate of growth — if new
+  policies arrive weekly, the engine pays for itself quickly; if it's
+  static, it doesn't.
+- **Policy granularity (many narrow records vs few broad ones)** — narrow
+  policies (`require_citation`, `pii_redact` kept separate) recompose easily
+  per skill (the `skill-composition.md` manifest can switch them on and off
+  individually), but the record count grows and every interaction between
+  policies (two policies touching the same output field) has to be thought
+  through explicitly in the resolution layer. Broad policies (one
+  "comprehensive output policy" record holding many sub-rules) are fewer to
+  manage but revive dilution inside a single record — the problem this file
+  avoids simply moves into a `rule` field that has become a paragraph again.
+- **Static data (YAML in the repo, versioned with the code) vs data in a
+  database changeable without a deploy** — YAML in the repo gives code
+  review and rollback free through git (aligned with `guardrails.md`
+  §Prompt & policy versioning in the spec's §12 gate checklist), but a
+  policy change (e.g. raising a moderation threshold) needs a full
+  deploy cycle. Policy in a DB allows fast changes without deploying
+  (essential for an incident needing mitigation in minutes), but loses
+  git's review/rollback trail unless rebuilt separately (its own audit
+  table, its own approval flow) — an investment that is exactly the
+  circular argument being avoided: if it isn't built explicitly, DB
+  policy changes **also** become invisible at runtime.
 
-## Di deepagents
+## In deepagents
 
-Tidak ada policy engine generik bawaan `deepagents` yang membaca skema YAML
-seperti contoh di atas — ini `[ours]`. Vanilla-nya: `deepagents`/`langchain`
-menyediakan middleware siap pakai yang parameternya **sudah** berbentuk data
-terstruktur (bukan prosa) tapi tiap middleware membaca bentuk data miliknya
-sendiri, bukan satu skema policy universal. Kita menyimpang dengan
-mengusulkan satu skema (`id`/`applies_to`/`rule`/`enforcement`) yang
-memetakan ke middleware yang beda-beda, karena tanpa lapisan itu tim yang
-menambah policy baru harus tahu detail konstruksi tiap middleware satu
-per satu alih-alih menulis satu record dan merujuk `enforcement.mechanism`
-yang sudah ada.
+There is no built-in generic `deepagents` policy engine reading a YAML
+schema like the example above — that is `[ours]`. Vanilla:
+`deepagents`/`langchain` provide ready-made middleware whose parameters
+are **already** structured data (not prose), but each middleware reads
+its own data shape rather than one universal policy schema. We diverge
+by proposing one schema (`id`/`applies_to`/`rule`/`enforcement`) mapping
+onto different middlewares, because without that layer a team adding a
+new policy must know each middleware's construction detail individually
+instead of writing one record and referencing an existing
+`enforcement.mechanism`.
 
-Yang **bukan** `[ours]` — sudah data-shaped secara native di `deepagents`/
-`langchain`, siap jadi target `enforcement.mechanism`:
+What is **not** `[ours]` — already natively data-shaped in
+`deepagents`/`langchain`, ready to be an `enforcement.mechanism` target:
 
-| Kelas policy verifiable | Bentuk data native | Middleware pembaca |
+| Verifiable policy class | Native data shape | Reading middleware |
 |---|---|---|
-| Tool mana boleh dipakai peran mana | `excluded_tools` (list nama tool) di `HarnessProfile` | `_ToolExclusionMiddleware` `[code]` dikutip `../systems/deepagents.md` §7 |
-| Path/operasi filesystem mana yang diizinkan/dilarang/butuh approval | `FilesystemPermission(operations=[...], paths=[...], mode=...)`, list aturan urut, match pertama menang | `FilesystemMiddleware` `[code]` dikutip `../systems/deepagents.md` §6 |
-| Tipe PII mana yang di-block/redact/mask/hash, di sisi mana (input/output/tool result) | Parameter `PIIMiddleware(pii_type=, strategy=, apply_to_*=)` | `PIIMiddleware` `[code]` `langchain/agents/middleware/pii.py`, dikutip `guardrails.md` |
-| Batas jumlah tool-call/model-call per thread/run | `thread_limit=`/`run_limit=`/`exit_behavior=` | `ToolCallLimitMiddleware`/`ModelCallLimitMiddleware` `[code]` dikutip `guardrails.md` |
+| Which tools a given role may use | `excluded_tools` (a list of tool names) in `HarnessProfile` | `_ToolExclusionMiddleware` `[code]` cited from `../systems/deepagents.md` §7 |
+| Which filesystem paths/operations are allowed/denied/need approval | `FilesystemPermission(operations=[...], paths=[...], mode=...)`, an ordered rule list, first match wins | `FilesystemMiddleware` `[code]` cited from `../systems/deepagents.md` §6 |
+| Which PII types are blocked/redacted/masked/hashed, and on which side (input/output/tool result) | The `PIIMiddleware(pii_type=, strategy=, apply_to_*=)` parameters | `PIIMiddleware` `[code]` `langchain/agents/middleware/pii.py`, cited from `guardrails.md` |
+| Tool-call/model-call limits per thread/run | `thread_limit=`/`run_limit=`/`exit_behavior=` | `ToolCallLimitMiddleware`/`ModelCallLimitMiddleware` `[code]` cited from `guardrails.md` |
 
-Baris-baris ini **sudah** policy-as-data dalam pengertian file ini —
-parameter konstruksi middleware itu sendiri adalah data, bukan prosa di
-system prompt. Yang ditambahkan skema `[ours]` di atas hanyalah lapisan
-identitas/versi/lookup-by-id yang menyatukan baris-baris berbeda ini di
-bawah satu cara merujuknya dari manifest skill (`skill-composition.md`),
-karena tanpa itu tiap policy tetap harus dirujuk lewat nama parameter
-middleware yang berbeda-beda, bukan satu `id` yang konsisten.
+These rows **already are** policy-as-data in this file's sense — those
+middleware construction parameters are themselves data, not prose in a
+system prompt. All the `[ours]` schema above adds is an
+identity/version/lookup-by-id layer unifying these different rows under one
+way of referencing them from a skill manifest (`skill-composition.md`),
+because without it each policy still has to be referenced through a
+different middleware parameter name rather than one consistent `id`.
 
-Untuk policy yang **tidak** punya middleware siap pakai (mis.
-`require_citation` di atas, yang butuh evaluasi terhadap rubric, bukan
-sekadar cek keanggotaan/regex) — `RubricMiddleware` (`../systems/deepagents.md`
-§Middleware bawaan, tidak default) adalah target `enforcement.mechanism`
-paling dekat: ia menerima rubric sebagai state yang disuntikkan aplikasi
-(data), mengiterasi jawaban terhadapnya sampai lolos atau `max_iterations`.
-`[code]` dikutip `../systems/deepagents.md` §Middleware bawaan
+For a policy with **no** ready-made middleware (e.g. `require_citation`
+above, which needs evaluation against a rubric rather than a mere
+membership/regex check) — `RubricMiddleware` (`../systems/deepagents.md`
+§Built-in middleware, not a default) is the closest `enforcement.mechanism`
+target: it accepts a rubric as application-injected state (data) and
+iterates the answer against it until it passes or `max_iterations` is
+reached. `[code]` cited from `../systems/deepagents.md` §Built-in middleware
 (`deepagents/middleware/rubric.py`).
 
-## Sumber
+## Sources
 
-- `[code]` [`guardrails.md`](guardrails.md) §Kebijakan tidak boleh hanya di
-  prompt, §Masalah kedua (mode kegagalan yang tidak diputuskan), Enam titik
-  penegakan — dasar argumen enforcement yang **tidak** diulang di file ini,
-  hanya dirujuk dan digeneralisasi lewat field `enforcement`/`applies_to`.
-- `[code]` [`evaluation.md`](evaluation.md) §Guardrail sebagai objek terukur
-  — dasar klaim "tanpa identitas, tidak bisa diukur presisi/recall" di
-  penyakit ketiga (§Masalah).
-- `[code]` [`skill-composition.md`](skill-composition.md) — konsumen skema
-  `id` policy lewat field `policies: [+require_citation, +pii_redact]` di
-  manifest §8.5; ditulis dalam task yang sama, tidak diusulkan ulang di
-  sini.
+- `[code]` [`guardrails.md`](guardrails.md) §Policy must not live only in
+  the prompt, §Second problem (the failure mode nobody decided), the six
+  enforcement points — the enforcement argument this file deliberately does
+  **not** repeat, only references and generalises through the
+  `enforcement`/`applies_to` fields.
+- `[code]` [`evaluation.md`](evaluation.md) §Guardrails as measurable
+  objects — the basis for the "without an identity, precision/recall cannot
+  be measured" claim in the third ailment (§Problem).
+- `[code]` [`skill-composition.md`](skill-composition.md) — the consumer of
+  the policy `id` schema through the `policies: [+require_citation,
+  +pii_redact]` manifest field in §8.5; written in the same task, not
+  re-proposed here.
 - `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §6, §7,
-  §Middleware bawaan — `FilesystemPermission`, `HarnessProfile.excluded_tools`,
-  `_ToolExclusionMiddleware`, `RubricMiddleware` — tier-1 reference
-  terverifikasi Task 3, dikutip tanpa membaca ulang source `deepagents` di
-  task ini.
+  §Built-in middleware — `FilesystemPermission`,
+  `HarnessProfile.excluded_tools`, `_ToolExclusionMiddleware`,
+  `RubricMiddleware` — a tier-1 reference verified in Task 3, cited without
+  re-reading the `deepagents` source in this task.
 - `[code]` `langchain/agents/middleware/pii.py`, `tool_call_limit.py`,
-  `model_call_limit.py` (langchain 1.3.16) — dikutip via `guardrails.md`,
-  tidak dibaca ulang di task ini.
+  `model_call_limit.py` (langchain 1.3.16) — cited via `guardrails.md`, not
+  re-read in this task.

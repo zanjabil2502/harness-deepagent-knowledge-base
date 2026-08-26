@@ -560,7 +560,7 @@ longer appear in the `grep`, so numbers 1 and 17 are deliberately empty.
 | 31-37 | `concepts/skill-composition.md:34,96,167,190,199,210,218` | A skill manifest resolution layer **before** `deepagents`; intent/expression separation | alongside `SkillsMiddleware`, not replacing it |
 | 38-40 | `concepts/multilingual.md:58,160,223` | Language-locked points in the intent/expression pipeline | outside `deepagents` |
 | 41-45 | `concepts/persistence-schema.md:37,294,337,342,351` | A local `users` table; RLS without subqueries; naming; the `user_id`→`tenant_id` migration path | outside `deepagents` |
-| 46-48 | `concepts/policy-as-data.md:160,170,182` | A policy-as-data schema on top of what is already data-shaped in `deepagents` | explicitly states which part is **not** `[ours]` — the correct writing model |
+| 46-48 | `concepts/policy-as-data.md:159,169,181` | A policy-as-data schema on top of what is already data-shaped in `deepagents` | explicitly states which part is **not** `[ours]` — the correct writing model |
 | 49 | `concepts/queueing-and-backpressure.md:68` | The queue schema | outside `deepagents` |
 | 50 | `concepts/resource-profiling.md:95` | Phase colocation vs splitting per bound | outside `deepagents` |
 | 51 | `concepts/sandboxing.md:140` | Sandbox policy is not forced by the Daytona SDK | related to D-17 |
