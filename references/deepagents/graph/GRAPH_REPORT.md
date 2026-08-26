@@ -1,7 +1,7 @@
-> **Provenance**: diturunkan dari source `deepagents 0.7.8` — versi yang sama
-> yang didokumentasikan `references/systems/deepagents.md` dan di-pin
-> `references/recipes/uv.lock`. Ekstraksi murni AST (nol token LLM).
-> Regenerate saat versi naik; lihat README §Graph source deepagents.
+> **Provenance**: derived from the `deepagents 0.7.8` source — the same
+> version documented in `references/systems/deepagents.md` and pinned in
+> `references/recipes/uv.lock`. Pure AST extraction (zero LLM tokens).
+> Regenerate when the version bumps; see README §The deepagents source graph.
 
 # Graph Report - deepagents-src  (2026-08-23)
 
