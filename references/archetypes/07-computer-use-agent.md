@@ -1,126 +1,127 @@
 # 7. Computer-Use Agent
 
-## Definisi
+## Definition
 
-Agent yang mengoperasikan antarmuka yang **tidak dirancang untuk agent** —
-browser, desktop, aplikasi pihak ketiga — lewat loop lihat (screenshot/DOM)
-→ putuskan aksi → klik/ketik → verifikasi hasil. Tool surface-nya sempit
-(klik, ketik, scroll, screenshot) tapi dalam, karena satu tool generik
-harus menangani UI yang berubah-ubah tanpa kontrak API. Ini arketipe yang
-paling rapuh: tidak ada jaminan struktural bahwa elemen yang diklik hari
-ini ada di posisi yang sama besok.
+An agent that drives interfaces **not designed for agents** — browsers,
+desktops, third-party applications — through a loop of look
+(screenshot/DOM) → decide → click/type → verify. Its tool surface is
+narrow (click, type, scroll, screenshot) but deep, because one generic
+tool must handle constantly changing UIs with no API contract. This is the
+most brittle archetype: nothing structurally guarantees that the element
+clicked today sits in the same place tomorrow.
 
-Batas terhadap tetangga: beda dari **In-App Copilot** (05) karena
-bertindak lewat UI, bukan API resmi produk — tidak ada kontrak yang
-dijaga vendor; beda dari **Generative Builder** (02) karena tidak
-men-generate artefak sendiri, ia mengoperasikan artefak/aplikasi yang
-sudah ada milik pihak lain.
+Boundaries against neighbours: differs from **In-App Copilot** (05)
+because it acts through the UI rather than the product's official API —
+there is no contract the vendor maintains; differs from **Generative
+Builder** (02) because it does not generate its own artifact, it operates
+someone else's existing artifact/application.
 
-## Posisi di 6 sumbu
+## Position on the 6 axes
 
-| Sumbu | Nilai |
+| Axis | Value |
 |---|---|
-| Blast radius | Dunia luar — aplikasi/situs pihak ketiga di luar kendali sistem |
-| Artefak | Aksi di sistem lain, dieksekusi lewat UI (bukan API) |
-| Horizon | Satu sesi tugas (urutan klik sampai tugas selesai) |
-| Kendali manusia | Approve untuk aksi berisiko (submit, bayar); verifikasi visual tiap langkah |
-| Permukaan domain | General (bisa situs apa pun) |
-| Antarmuka | Computer-use — screenshot/DOM sebagai input, klik/ketik sebagai output |
+| Blast radius | The outside world — third-party apps/sites beyond the system's control |
+| Artifact | Actions in other systems, executed through the UI (not an API) |
+| Horizon | One task session (a sequence of clicks until the task is done) |
+| Human control | Approval for risky actions (submit, pay); visual verification each step |
+| Domain surface | General (any site) |
+| Interface | Computer-use — screenshot/DOM as input, click/type as output |
 
-## Konsekuensi harness
+## Harness consequences
 
-1. **Loop shape: lihat → putuskan → aksi → verifikasi**, dengan verifikasi
-   sebagai step wajib terpisah — tanpa verifikasi eksplisit setelah tiap
-   aksi, agent tidak tahu apakah klik tadi benar-benar mengubah state UI
-   seperti yang diharapkan atau diam-diam gagal.
-2. **Tool surface sempit tapi dalam** (klik-by-coordinate atau
-   klik-by-selector, type, scroll, screenshot) — generalisasi ke UI
-   arbitrer memaksa tool-nya sesedikit mungkin primitif, beda dari
-   Workspace Agent yang punya tool bash luas untuk domain yang lebih
-   terprediksi (filesystem, shell).
-3. **Safety gate untuk aksi ireversibel** (submit form, bayar, kirim) —
-   karena tidak ada kontrak API yang bisa di-dry-run, aksi berisiko harus
-   dijeda untuk approval manusia sebelum benar-benar diklik.
-4. **Retry/self-correction di level persepsi**, bukan cuma di level
-   aksi — UI yang gagal dimuat, popup tak terduga, atau elemen yang
-   bergeser posisi butuh agent mengenali "yang saya lihat tidak sesuai
-   ekspektasi" dan mengulang observasi, bukan langsung mengulang aksi
-   buta ke koordinat yang sama.
+1. **Loop shape: look → decide → act → verify**, with verification as a
+   mandatory separate step — without explicit verification after each
+   action, the agent has no idea whether the click actually changed UI
+   state as expected or silently failed.
+2. **A narrow but deep tool surface** (click-by-coordinate or
+   click-by-selector, type, scroll, screenshot) — generalising to arbitrary
+   UIs forces the tool set down to as few primitives as possible, unlike a
+   Workspace Agent whose broad bash tool serves a more predictable domain
+   (filesystem, shell).
+3. **A safety gate for irreversible actions** (submit a form, pay, send) —
+   because there is no API contract that can be dry-run, risky actions
+   must pause for human approval before they are actually clicked.
+4. **Retry/self-correction at the perception level**, not just the action
+   level — a UI that failed to load, an unexpected popup, or an element
+   that shifted position requires the agent to recognise "what I see
+   doesn't match expectation" and re-observe, rather than blindly
+   repeating the action at the same coordinates.
 
-## Sistem contoh
+## Example systems
 
-- **browser-use** `[code]` — `Agent.run()` menjalankan loop step dengan
-  `max_steps` (default 500) dan pelacakan `consecutive_failures` terhadap
-  batas `max_failures` (default 5); saat batas kegagalan beruntun
-  tercapai, agent dipaksa memanggil tool `done` sebagai satu-satunya tool
-  yang tersedia, dan saat step budget hampir habis, sebuah pesan
-  "BUDGET WARNING" disuntikkan ke context sebelum step terakhir. Ini
-  mekanisme retry/self-correction di level loop yang nyata, bukan
-  deskripsi produk. Sumber: `browser_use/agent/service.py`
+- **browser-use** `[code]` — `Agent.run()` drives a step loop bounded by
+  `max_steps` (default 500) and tracks `consecutive_failures` against
+  `max_failures` (default 5); when the consecutive-failure limit is
+  reached the agent is forced to call the `done` tool as the only tool
+  available, and when the step budget is nearly exhausted a "BUDGET
+  WARNING" message is injected into context before the final step. These
+  are real loop-level retry/self-correction mechanisms, not product
+  description. Source: `browser_use/agent/service.py`
   (github.com/browser-use/browser-use).
-- **OpenAI Operator** `[inferred]` — dari perilaku produk: loop
-  screenshot-then-click di browser terisolasi, meminta konfirmasi
-  eksplisit sebelum aksi berisiko seperti submit pembayaran.
-- **Claude computer use** `[inferred]` — dari perilaku produk: menerima
-  screenshot sebagai input, mengeluarkan koordinat klik/ketik sebagai
-  aksi, dijalankan di dalam sandbox virtual display.
+- **OpenAI Operator** `[inferred]` — from product behaviour: a
+  screenshot-then-click loop in an isolated browser, asking for explicit
+  confirmation before risky actions such as submitting a payment.
+- **Claude computer use** `[inferred]` — from product behaviour: accepts
+  screenshots as input, emits click/type coordinates as actions, and runs
+  inside a sandboxed virtual display.
 
-## Jebakan khas
+## Common pitfalls
 
-1. **Verifikasi dilewati demi kecepatan** — agent lanjut ke langkah
-   berikutnya begitu aksi "terkirim" tanpa cek hasilnya benar-benar
-   tampil di layar, sehingga error menumpuk dan baru terlihat beberapa
-   langkah kemudian saat sudah sulit ditelusuri penyebabnya.
-2. **UI berubah di antara observasi dan aksi** (race condition visual) —
-   koordinat/selector yang valid saat screenshot diambil sudah tidak
-   valid saat klik dieksekusi, karena halaman re-render atau popup
-   muncul di antara dua langkah itu.
-3. **CAPTCHA/anti-bot menghentikan loop tanpa sinyal jelas** — agent
-   tidak tahu harus minta bantuan manusia vs terus mencoba, dan tanpa
-   penanganan eksplisit, ia bisa retry buta berkali-kali ke halaman yang
-   sama.
-4. **Aksi ireversibel tereksekusi tanpa approval** — safety gate untuk
-   submit/bayar terlewat karena disamakan dengan aksi biasa (klik tombol
-   navigasi), padahal blast radius keduanya sangat berbeda.
+1. **Verification skipped for speed** — the agent moves to the next step as
+   soon as an action is "sent" without checking that its result actually
+   appears on screen, so errors accumulate and only surface several steps
+   later when the cause is hard to trace.
+2. **The UI changes between observation and action** (a visual race
+   condition) — coordinates/selectors valid when the screenshot was taken
+   are already invalid when the click executes, because the page
+   re-rendered or a popup appeared in between.
+3. **CAPTCHA/anti-bot stops the loop with no clear signal** — the agent
+   doesn't know whether to ask a human for help or keep trying, and
+   without explicit handling it can blindly retry the same page many
+   times.
+4. **An irreversible action executes without approval** — the safety gate
+   for submit/pay is missed because it was treated like an ordinary action
+   (clicking a navigation button), even though their blast radii are
+   wildly different.
 
-## Bangun ini pakai deepagents
+## Building this with deepagents
 
-- **Tool surface**: `tools=[click_tool, type_tool, screenshot_tool, ...]`
-  custom yang dipetakan ke backend automasi browser eksternal (mis.
-  Playwright/CDP) — deepagents sendiri tidak menyediakan tool
-  computer-use bawaan; tool-tool ini diberikan lewat parameter `tools` di
-  `create_deep_agent` seperti tool kustom lainnya. `[code]` — sumber:
-  signature `create_deep_agent` (`tools`), `graph.py`.
-- **Safety gate**: `interrupt_on={"submit_form": True, "click": {"allowed_decisions":
-  ["approve", "reject"]}}` — pola konfigurasi per-tool dengan
-  `allowed_decisions` yang sama seperti dipakai di test suite deepagents
-  untuk membatasi keputusan approval yang tersedia per tool. `[code]` —
-  sumber: `test_hitl.py`.
-- **Loop verifikasi**: `[ours]` deepagents tidak punya konsep bawaan
-  "verify setelah aksi" — kami menambahkan tool `verify_state` yang wajib
-  dipanggil setelah tiap tool aksi UI, ditegakkan murni lewat konvensi
-  instruksi system prompt (bukan lewat middleware apa pun — deepagents
-  tidak punya middleware yang menegakkan urutan pemanggilan tool).
-  Vanilla `create_deep_agent` mengasumsikan tool call itu sendiri sudah
-  membawa hasilnya (ToolMessage) tanpa fase verifikasi terpisah; kami
-  menyimpang karena computer-use tidak punya jaminan bahwa hasil aksi =
-  hasil yang terlihat. `PatchToolCallsMiddleware` (dipakai di atas untuk
-  hal lain) tidak relevan di sini — perannya hanya menambal
-  `ToolMessage` sintetis untuk tool call yang dangling/dibatalkan/rusak
-  di riwayat pesan, bukan menegakkan urutan eksekusi tool. `[code]` —
-  sumber: `libs/deepagents/deepagents/middleware/patch_tool_calls.py`.
-- **Sandbox**: backend eksekusi browser idealnya berada di sandbox
-  terisolasi yang sama levelnya dengan Generative Builder (02) — mis.
-  di belakang backend keluarga sandbox (`DaytonaSandbox` atau setara) —
-  supaya sesi browser yang crash/di-abuse tidak menyentuh compute lain.
-  `[code]` — sumber: `libs/partners/daytona/README.md`.
+- **Tool surface**: custom `tools=[click_tool, type_tool, screenshot_tool,
+  ...]` mapped onto an external browser automation backend (e.g.
+  Playwright/CDP) — deepagents itself provides no built-in computer-use
+  tools; these are supplied through `create_deep_agent`'s `tools`
+  parameter like any other custom tool. `[code]` — source: the
+  `create_deep_agent` signature (`tools`), `graph.py`.
+- **Safety gate**: `interrupt_on={"submit_form": True, "click":
+  {"allowed_decisions": ["approve", "reject"]}}` — the same per-tool
+  configuration pattern with `allowed_decisions` used in the deepagents
+  test suite to restrict which approval decisions are available per tool.
+  `[code]` — source: `test_hitl.py`.
+- **Verification loop**: `[ours]` deepagents has no built-in notion of
+  "verify after acting" — we add a `verify_state` tool that must be called
+  after every UI action tool, enforced purely through system-prompt
+  convention (not through any middleware — deepagents has no middleware
+  that enforces tool call ordering). Vanilla `create_deep_agent` assumes a
+  tool call already carries its own result (a ToolMessage) with no
+  separate verification phase; we diverge because computer-use has no
+  guarantee that the action's result equals the visible result.
+  `PatchToolCallsMiddleware` (used above for something else) is irrelevant
+  here — its role is only to patch synthetic `ToolMessage`s for dangling/
+  cancelled/malformed tool calls in message history, not to enforce
+  execution order. `[code]` — source:
+  `libs/deepagents/deepagents/middleware/patch_tool_calls.py`.
+- **Sandbox**: the browser execution backend should ideally sit in an
+  isolated sandbox at the same level as Generative Builder (02) — e.g.
+  behind a sandbox-family backend (`DaytonaSandbox` or equivalent) — so a
+  crashed or abused browser session cannot touch other compute. `[code]` —
+  source: `libs/partners/daytona/README.md`.
 
-## Sumber
+## Sources
 
 - browser-use `browser_use/agent/service.py` — `[code]` —
   https://github.com/browser-use/browser-use
 - deepagents `graph.py`, `test_hitl.py`, `libs/partners/daytona/README.md`,
   `middleware/patch_tool_calls.py` — `[code]` — Context7
   `/langchain-ai/deepagents`, https://github.com/langchain-ai/deepagents
-- OpenAI Operator, Claude computer use — `[inferred]` — perilaku produk
-  closed-source.
+- OpenAI Operator, Claude computer use — `[inferred]` — closed-source
+  product behaviour.

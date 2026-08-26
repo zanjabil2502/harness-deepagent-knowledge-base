@@ -484,7 +484,7 @@ kelimanya diperbaiki di fix wave berikutnya (2026-08-23, lihat kolom Status):
 | `archetypes/06-workflow-agent.md` | Klaim "vanilla selalu loop interaktif dipicu manusia" terlalu kuat (D-06) | Diganti: `async-subagent-server/server.py` baris 174 (`ainvoke`), 169 (`_execute_run`), 287 (dispatch), 234 (endpoint) dan `ralph_mode` disebut sebagai preseden non-interaktif; `[ours]` dipersempit ke pembagian tanggung jawab trigger/antrian, yang memang tetap milik kami | **selesai** |
 | `archetypes/01-workspace-agent.md` | Daftar tool `FilesystemMiddleware` menyertakan `delete` — **benar**; daftar di `systems/deepagents.md` justru yang kurang lengkap (tanpa `delete`) | Tambahkan `delete` ke daftar tool di `systems/deepagents.md` | **selesai** |
 | `recipes/03_subagents.py` docstring | "mengembalikan `messages` akhirnya sebagai `ToolMessage` ringkas" — longgar dengan cara yang sama seperti koreksi di `systems/deepagents.md` | Ganti dengan "teks `AIMessage` non-kosong terakhir, atau `structured_response` ter-JSON" | **selesai** |
-| `archetypes/03-general-task-agent.md:95` | Menyebut `recursion_limit` sebagai satu-satunya batas vanilla; `ModelCallLimitMiddleware` dan `ToolCallLimitMiddleware` tidak disebut | Tambahkan keduanya (D-03 tetap berdiri, alasannya justru menguat) | **selesai** |
+| `archetypes/03-general-task-agent.md:99` | Menyebut `recursion_limit` sebagai satu-satunya batas vanilla; `ModelCallLimitMiddleware` dan `ToolCallLimitMiddleware` tidak disebut | Tambahkan keduanya (D-03 tetap berdiri, alasannya justru menguat) | **selesai** |
 
 Kelima baris di atas sudah dikerjakan (fix wave lanjutan, 2026-08-23) —
 semuanya bersifat akurasi, bukan struktur. Tidak ada pola KB yang perlu
@@ -520,15 +520,15 @@ tidak muncul di `grep`, sehingga nomor 1 dan 17 sengaja kosong.
 | # | Lokasi | Inti klaim | Divergensi |
 |---|---|---|---|
 | — | `archetypes/01-workspace-agent.md` | Arketipe 01 tanpa subagent | D-01 — **dicabut**, premis salah; kini `[code]` |
-| 2 | `archetypes/02-generative-builder.md:94` | Gate hanya di publish/deploy | D-02 |
-| 3 | `archetypes/03-general-task-agent.md:95` | Guard pengulangan tool-call | D-03 |
+| 2 | `archetypes/02-generative-builder.md:98` | Gate hanya di publish/deploy | D-02 |
+| 3 | `archetypes/03-general-task-agent.md:99` | Guard pengulangan tool-call | D-03 |
 | 4 | `archetypes/04-research-agent.md:95` | Validasi provenance sitasi | D-04 |
-| 5 | `archetypes/05-in-app-copilot.md:94` | Tool `undo_*` alih-alih `interrupt_on` | D-05 |
+| 5 | `archetypes/05-in-app-copilot.md:95` | Tool `undo_*` alih-alih `interrupt_on` | D-05 |
 | 6 | `archetypes/06-workflow-agent.md:82` | Pembagian tanggung jawab trigger/antrian di luar `deepagents` | D-06 (dipersempit; klaim "selalu interaktif" dicabut) |
-| 7 | `archetypes/06-workflow-agent.md:104` | `thread_id` dari idempotency key | D-06b |
-| 8 | `archetypes/06-workflow-agent.md:116` | Kill switch di luar library | D-06c |
-| 9 | `archetypes/07-computer-use-agent.md:99` | Verifikasi lewat konvensi prompt | D-07 |
-| 10 | `archetypes/README.md:53` | Deployment dipisah dari taksonomi arketipe | taksonomi, bukan `deepagents` |
+| 7 | `archetypes/06-workflow-agent.md:102` | `thread_id` dari idempotency key | D-06b |
+| 8 | `archetypes/06-workflow-agent.md:114` | Kill switch di luar library | D-06c |
+| 9 | `archetypes/07-computer-use-agent.md:100` | Verifikasi lewat konvensi prompt | D-07 |
+| 10 | `archetypes/README.md:54` | Deployment dipisah dari taksonomi arketipe | taksonomi, bukan `deepagents` |
 | 11 | `systems/INDEX.md:93` | Meta: kenapa label `[ours]` ada | meta |
 | 12-16 | `scaffolds/_base.md:56,77,160,450,493` | Protocol `Orchestrator`; `namespace` dari `Scope` aplikasi bukan `rt.server_info.user.identity`; `AsyncConnectionPool`; eksekusi turn inline di generator SSE | **:160 → D-08 (risiko tertinggi)**; sisanya arsitektur aplikasi, di luar `deepagents` |
 | — | `scaffolds/deltas/01-workspace-agent.md` | Turunan D-01 | **dicabut**, kini `[code]` |

@@ -1,108 +1,108 @@
 # 4. Research/Analyst
 
-## Definisi
+## Definition
 
-Agent yang menjalankan loop search → read → synthesize untuk menghasilkan
-jawaban tertulis yang **wajib bersitasi**, dengan budget token/waktu
-eksplisit karena satu topik riset bisa memicu puluhan pencarian. Delegasi
-lazim dipakai untuk paralelisasi sub-topik, tapi tujuannya tetap satu
-dokumen sintesis di akhir, bukan aksi di sistem lain.
+An agent that runs a search → read → synthesize loop to produce a written
+answer that **must carry citations**, with an explicit token/time budget
+because a single research topic can trigger dozens of searches. Delegation
+is commonly used to parallelise sub-topics, but the goal remains one
+synthesised document at the end, not actions in other systems.
 
-Batas terhadap tetangga: beda dari **General Task Agent** (03) karena
-artefak keluarannya selalu jawaban/laporan tertulis dengan provenance,
-bukan campuran file/aksi bebas; beda dari **In-App Copilot** (05) karena
-tidak terikat ke satu produk/API tertentu — sumbernya web/dokumen terbuka;
-beda dari **Workflow Agent** (06) karena horizon-nya satu sesi riset, bukan
-proses berulang tanpa akhir.
+Boundaries against neighbours: differs from **General Task Agent** (03)
+because its output artifact is always a written answer/report with
+provenance rather than a free mix of files and actions; differs from
+**In-App Copilot** (05) because it isn't bound to one product/API — its
+sources are the open web and documents; differs from **Workflow Agent**
+(06) because its horizon is a single research session, not an endlessly
+repeating process.
 
-## Posisi di 6 sumbu
+## Position on the 6 axes
 
-| Sumbu | Nilai |
+| Axis | Value |
 |---|---|
-| Blast radius | Dunia luar (web search, retrieval dokumen), read-only |
-| Artefak | Jawaban/laporan tertulis dengan sitasi |
-| Horizon | Satu sesi riset (bisa panjang, tapi berakhir di satu laporan) |
-| Kendali manusia | Review hasil akhir; jarang approve tiap pencarian |
-| Permukaan domain | General atau vertikal (legal, finansial, akademik) |
-| Antarmuka | Chat, dengan panel sumber/sitasi |
+| Blast radius | The outside world (web search, document retrieval), read-only |
+| Artifact | A written answer/report with citations |
+| Horizon | One research session (can be long, but ends in one report) |
+| Human control | Review the final result; rarely approve each search |
+| Domain surface | General or vertical (legal, financial, academic) |
+| Interface | Chat, with a sources/citations panel |
 
-## Konsekuensi harness
+## Harness consequences
 
-1. **Loop shape: search → read → synthesize eksplisit**, bukan ReAct bebas
-   — tiap iterasi harus jelas fase mana yang sedang berjalan supaya budget
-   bisa dialokasikan per fase, bukan dihabiskan di satu fase saja.
-2. **Budget token/iterasi keras dibatasi per sub-riset** — tanpa batas,
-   satu sub-topik bisa menyedot seluruh anggaran sebelum topik lain
-   sempat diproses; batas eksplisit memaksa breadth-first coverage.
-3. **Provenance wajib melekat di tiap klaim**, bukan ditambahkan belakangan
-   — kalau sitasi dipasang setelah sintesis selesai, klaim dan sumbernya
-   gampang tidak lagi berkorespondensi 1:1.
-4. **Delegation untuk paralelisasi sub-topik**, dengan hasil subagent
-   berupa ringkasan + daftar sumber (bukan transkrip pencarian mentah)
-   supaya context penyintesis utama tidak tenggelam di detail pencarian.
+1. **Loop shape: an explicit search → read → synthesize**, not free-form
+   ReAct — each iteration must make clear which phase is running so the
+   budget can be allocated per phase rather than consumed entirely by one.
+2. **A hard token/iteration budget per sub-research** — without a limit one
+   sub-topic can drain the whole allowance before other topics are
+   processed; an explicit cap forces breadth-first coverage.
+3. **Provenance attached to every claim** rather than added afterwards — if
+   citations are bolted on after synthesis is complete, claims and their
+   sources easily stop corresponding 1:1.
+4. **Delegation for parallelising sub-topics**, with subagent results as a
+   summary plus a source list (not raw search transcripts) so the main
+   synthesiser's context doesn't drown in search detail.
 
-## Sistem contoh
+## Example systems
 
-- **deep_research (deepagents)** `[code]` — contoh resmi yang mendefinisikan
-  `research_sub_agent` dengan tool `tavily_search` + `think_tool`, dan
-  membatasi lingkup lewat `max_concurrent_research_units = 3` serta
-  `max_researcher_iterations = 3` di level orchestrator. Ini adalah
-  implementasi terbaca dari arketipe ini, bukan sekadar deskripsi
-  perilaku. Sumber: `examples/deep_research/research_agent.ipynb`
+- **deep_research (deepagents)** `[code]` — the official example defines a
+  `research_sub_agent` with the `tavily_search` and `think_tool` tools, and
+  bounds the scope through `max_concurrent_research_units = 3` and
+  `max_researcher_iterations = 3` at the orchestrator level. This is a
+  readable implementation of the archetype, not merely a description of
+  behaviour. Source: `examples/deep_research/research_agent.ipynb`
   (langchain-ai/deepagents).
-- **Perplexity** `[inferred]` — dari perilaku produk: jawaban selalu
-  disertai daftar sumber bernomor yang bisa ditelusuri balik ke hasil
-  pencarian.
-- **OpenAI Deep Research** `[inferred]` — dari perilaku produk: sesi riset
-  panjang (menit-jam) yang mengeluarkan satu laporan terstruktur dengan
-  sitasi di akhir, bukan jawaban instan.
-- **Elicit** `[inferred]` — dari perilaku produk: berfokus pada literatur
-  akademik, jawaban ditautkan ke paper spesifik per klaim.
+- **Perplexity** `[inferred]` — from product behaviour: answers always come
+  with a numbered source list that can be traced back to search results.
+- **OpenAI Deep Research** `[inferred]` — from product behaviour: long
+  research sessions (minutes to hours) that emit one structured report
+  with citations at the end, not an instant answer.
+- **Elicit** `[inferred]` — from product behaviour: focused on academic
+  literature, with answers linked to specific papers per claim.
 
-## Jebakan khas
+## Common pitfalls
 
-1. **Sitasi halusinasi** — model menyebut sumber yang tidak pernah benar-benar
-   diambil di langkah retrieval, karena tidak ada penegakan bahwa setiap
-   sitasi harus menunjuk ke hasil tool call nyata dalam transkrip.
-2. **Budget habis di satu sub-topik yang "menarik"** — tanpa batas iterasi
-   per subagent, riset melebar tak terkendali ke satu cabang dan topik
-   lain di brief awal tidak pernah tersentuh.
-3. **Sumber berkualitas rendah tidak difilter** — loop search→read yang
-   naif memperlakukan semua hasil pencarian setara, sehingga blog
-   spekulatif dan dokumentasi resmi mendapat bobot sitasi yang sama.
-4. **Sintesis akhir kehilangan jejak ke pencarian asal** — kalau ringkasan
-   subagent tidak membawa metadata sumber, penyintesis utama harus
-   menebak/mengarang ulang sitasi saat menyusun laporan akhir.
+1. **Hallucinated citations** — the model names a source that was never
+   actually fetched in the retrieval step, because nothing enforces that
+   every citation must point at a real tool call result in the transcript.
+2. **The budget is consumed by one "interesting" sub-topic** — without a
+   per-subagent iteration cap, research widens uncontrollably into one
+   branch and other topics from the original brief are never touched.
+3. **Low-quality sources aren't filtered** — a naive search→read loop
+   treats every search result as equal, so a speculative blog post and
+   official documentation carry the same citation weight.
+4. **Final synthesis loses the trail back to the originating search** — if
+   subagent summaries don't carry source metadata, the main synthesiser
+   has to guess or invent citations while assembling the final report.
 
-## Bangun ini pakai deepagents
+## Building this with deepagents
 
-- **Delegation**: subagent riset didefinisikan sebagai dict
+- **Delegation**: the research subagent is defined as a dict
   `{"name": "research-agent", "description": "...", "system_prompt": ...,
-  "tools": [web_search_tool, think_tool]}`, dipanggil lewat tool `task`
-  bawaan `SubAgentMiddleware`. `[code]` — sumber:
+  "tools": [web_search_tool, think_tool]}` and invoked through the `task`
+  tool that `SubAgentMiddleware` provides. `[code]` — source:
   `examples/deep_research/research_agent.ipynb`.
-- **Budget/loop limit**: batas eksplisit di level orchestrator seperti
-  `max_concurrent_research_units` dan `max_researcher_iterations` —
-  dikontrol di kode pemanggil subagent, bukan parameter bawaan
-  `create_deep_agent`. `[code]` — sumber sama.
-- **Tool surface**: tool pencarian sempit (`web_search`) + `think_tool`
-  untuk memaksa langkah refleksi sebelum lanjut mencari — bukan tool
-  bash luas seperti Workspace Agent, karena blast radius arketipe ini
-  read-only terhadap dunia luar. `[code]`.
-- **Provenance/output**: `response_format` di `create_deep_agent` untuk
-  memaksa skema keluaran terstruktur (mis. daftar klaim + sitasi), bukan
-  teks bebas — parameter ini ada di signature `create_deep_agent`.
-  `[code]` — sumber: `graph.py`. `[ours]` Kami menambahkan validasi
-  post-hoc yang mencocokkan tiap sitasi di `response_format` terhadap
-  hasil tool call `web_search` di transkrip; vanilla `response_format`
-  hanya memvalidasi bentuk skema, bukan bahwa isinya benar-benar berasal
-  dari tool call nyata — celah itu yang membuat sitasi halusinasi
-  (Jebakan #1) mungkin lolos kalau tidak ditambal.
+- **Budget/loop limit**: explicit orchestrator-level caps such as
+  `max_concurrent_research_units` and `max_researcher_iterations` —
+  controlled in the code that calls the subagents, not a built-in
+  `create_deep_agent` parameter. `[code]` — same source.
+- **Tool surface**: narrow search tools (`web_search`) plus a `think_tool`
+  that forces a reflection step before searching again — not a broad bash
+  tool like a Workspace Agent, because this archetype's blast radius is
+  read-only against the outside world. `[code]`.
+- **Provenance/output**: `response_format` on `create_deep_agent` to force
+  a structured output schema (e.g. a list of claims plus citations) rather
+  than free text — the parameter exists in `create_deep_agent`'s
+  signature. `[code]` — source: `graph.py`. `[ours]` We add a post-hoc
+  validation that matches every citation in `response_format` against
+  `web_search` tool-call results in the transcript; vanilla
+  `response_format` only validates the schema's shape, not that its
+  contents actually came from a real tool call — and that gap is exactly
+  what lets hallucinated citations (pitfall #1) through unless patched.
 
-## Sumber
+## Sources
 
 - deepagents `examples/deep_research/research_agent.ipynb`, `graph.py` —
   `[code]` — Context7 `/langchain-ai/deepagents`,
   https://github.com/langchain-ai/deepagents
-- Perplexity, OpenAI Deep Research, Elicit — `[inferred]` — perilaku
-  produk closed-source.
+- Perplexity, OpenAI Deep Research, Elicit — `[inferred]` — closed-source
+  product behaviour.

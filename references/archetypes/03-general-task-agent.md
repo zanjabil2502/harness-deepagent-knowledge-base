@@ -1,118 +1,122 @@
 # 3. General Task Agent
 
-## Definisi
+## Definition
 
-Agent yang menerima misi luas dan open-ended ("riset lalu bangun laporan
-lalu kirim email"), menyusun plan eksplisit sebelum eksekusi, mendelegasikan
-subtugas ke subagent dengan context terisolasi, dan hidup lintas
-sesi/hari — filesystem dipakai sebagai memory persisten, bukan cuma
-context window.
+An agent that accepts a broad, open-ended mission ("research, then build a
+report, then send an email"), writes an explicit plan before executing,
+delegates subtasks to subagents with isolated context, and lives across
+sessions/days — using the filesystem as persistent memory rather than only
+the context window.
 
-Batas terhadap tetangga: beda dari **Workspace Agent** (01) karena tidak
-terikat ke satu repo/tool bash — tujuannya "selesaikan misi", bukan "edit
-kode ini"; beda dari **Research/Analyst** (04) karena artefak keluarannya
-bisa campuran (file, aksi, jawaban), bukan cuma jawaban tertulis
-bersitasi; beda dari **Computer-Use Agent** (07) karena inti harness-nya
-adalah planning eksplisit + delegasi, bukan loop lihat-klik-verifikasi
-(meski keduanya sering muncul bersamaan sebagai hibrida, lihat
-`README.md`).
+Boundaries against neighbours: differs from **Workspace Agent** (01)
+because it isn't bound to one repo/bash tool — its goal is "complete the
+mission", not "edit this code"; differs from **Research/Analyst** (04)
+because its output artifact can be mixed (files, actions, answers) rather
+than only a written, cited answer; differs from **Computer-Use Agent**
+(07) because the core of its harness is explicit planning plus delegation,
+not a see-click-verify loop (though the two often appear together as a
+hybrid — see `README.md`).
 
-## Posisi di 6 sumbu
+## Position on the 6 axes
 
-| Sumbu | Nilai |
+| Axis | Value |
 |---|---|
-| Blast radius | Sandbox lebar, kadang menyentuh dunia luar (browsing, tool eksternal) |
-| Artefak | Campuran — jawaban, file, atau aksi, ditentukan misi |
-| Horizon | Hidup di background, lintas sesi/hari |
-| Kendali manusia | Review di checkpoint/akhir, jarang approve tiap langkah |
-| Permukaan domain | General |
-| Antarmuka | Chat + tab "activity"/proses |
+| Blast radius | Wide sandbox, sometimes touching the outside world (browsing, external tools) |
+| Artifact | Mixed — answers, files, or actions, determined by the mission |
+| Horizon | Lives in the background, across sessions/days |
+| Human control | Review at checkpoints/at the end, rarely per-step approval |
+| Domain surface | General |
+| Interface | Chat plus an "activity"/process tab |
 
-## Konsekuensi harness
+## Harness consequences
 
-1. **Planning eksplisit sebagai step tersendiri** sebelum eksekusi — misi
-   luas tanpa rencana tertulis membuat agent oscillate atau kehilangan
-   scope di tengah jalan; plan jadi kontrak yang bisa dicek ulang.
-2. **Delegation lewat subagent untuk isolasi context** — tanpa itu,
-   context window utama penuh oleh detail subtugas yang tidak relevan
-   untuk keputusan berikutnya; subagent membiarkan detail itu mati di
-   context-nya sendiri dan hanya laporan ringkas yang naik ke pemanggil.
-3. **State: filesystem-as-memory**, bukan cuma pesan di context window —
-   horizon lintas sesi butuh state yang bertahan lewat restart
-   proses/browser tab, bukan sesuatu yang lenyap begitu context dipangkas.
-4. **Loop shape: budget step/waktu besar tapi wajib kill switch dan
-   deteksi no-progress** — durasi lama berarti risiko runaway loop atau
-   biaya tak terkontrol tanpa mekanisme yang mendeteksi agent berputar di
-   tempat.
+1. **Explicit planning as its own step** before execution — a broad mission
+   without a written plan makes the agent oscillate or lose scope midway;
+   the plan becomes a contract that can be re-checked.
+2. **Delegation through subagents for context isolation** — without it the
+   main context window fills with subtask detail irrelevant to the next
+   decision; subagents let that detail die in their own context and send
+   only a compact report back up.
+3. **State: filesystem-as-memory**, not just messages in the context
+   window — a cross-session horizon needs state that survives process or
+   browser-tab restarts, not something that vanishes the moment context is
+   trimmed.
+4. **Loop shape: a large step/time budget, but a kill switch and
+   no-progress detection are mandatory** — long duration means runaway
+   loops or uncontrolled cost unless something detects an agent spinning
+   in place.
 
-## Sistem contoh
+## Example systems
 
-- **CrewAI** `[code]` — pada `Process.hierarchical`, `Crew` memaksa
-  `check_manager_llm()` (menolak jalan tanpa `manager_llm`/`manager_agent`
-  terset) lalu `_create_manager_agent()` men-set `allow_delegation = True`
-  pada manager dan **melarangnya punya tools sendiri** (`crew.py` melempar
-  exception kalau manager diberi tools) — delegasi dipaksa terjadi lewat
-  agent lain, bukan lewat manager mengerjakan sendiri. Sumber:
+- **CrewAI** `[code]` — under `Process.hierarchical`, `Crew` enforces
+  `check_manager_llm()` (refusing to run without `manager_llm`/
+  `manager_agent` set), then `_create_manager_agent()` sets
+  `allow_delegation = True` on the manager and **forbids it from having
+  tools of its own** (`crew.py` raises if the manager is given tools) —
+  delegation is forced to happen through other agents rather than the
+  manager doing the work itself. Source:
   `lib/crewai/src/crewai/crew.py` (github.com/crewAIInc/crewAI).
-- **Manus** `[inferred]` — hibrida dengan Computer-Use Agent (07), lihat
-  `README.md` matriks hibrida.
-- **Abacus DeepAgent** `[inferred]` — dari perilaku produk: menerima misi
-  teks bebas, menampilkan plan/todo eksplisit, dan proses berjalan di
-  latar melewati satu sesi chat.
+- **Manus** `[inferred]` — a hybrid with Computer-Use Agent (07); see the
+  hybrid matrix in `README.md`.
+- **Abacus DeepAgent** `[inferred]` — from product behaviour: accepts
+  free-text missions, shows an explicit plan/todo, and runs in the
+  background beyond a single chat session.
 
-## Jebakan khas
+## Common pitfalls
 
-1. **Plan ditulis sekali di awal lalu tidak pernah direvisi** — begitu
-   temuan di tengah eksekusi mengubah premis awal, agent tetap mengejar
-   plan basi karena tidak ada langkah replanning eksplisit.
-2. **Subagent tanpa kontrak hasil yang jelas** — laporan balik dari
-   subagent berupa transkrip panjang alih-alih ringkasan terstruktur,
-   sehingga context pemanggil ikut membengkak — kehilangan seluruh
-   manfaat isolasi context.
-3. **Tidak ada deteksi oscillation/no-progress** — agent mengulang
-   sekuens tool call yang sama tanpa maju, dan karena horizon-nya memang
-   panjang, ini bisa berjalan lama (dan mahal) sebelum manusia sadar.
-4. **Filesystem-as-memory dipakai tanpa skema** — file scratch menumpuk
-   tak terstruktur lintas sesi, sehingga sesi berikutnya kesulitan
-   menemukan state relevan dan agent membaca ulang segalanya dari awal.
+1. **The plan is written once at the start and never revised** — once a
+   mid-execution finding changes the original premise, the agent keeps
+   chasing a stale plan because there is no explicit replanning step.
+2. **Subagents without a clear result contract** — the report coming back
+   is a long transcript instead of a structured summary, so the caller's
+   context balloons anyway — losing the entire benefit of context
+   isolation.
+3. **No oscillation/no-progress detection** — the agent repeats the same
+   sequence of tool calls without advancing, and because the horizon is
+   long by design this can run for a while (and cost a lot) before a human
+   notices.
+4. **Filesystem-as-memory used without a schema** — scratch files pile up
+   unstructured across sessions, so the next session struggles to find
+   relevant state and the agent re-reads everything from the start.
 
-## Bangun ini pakai deepagents
+## Building this with deepagents
 
-- **Planning**: `TodoListMiddleware` — berbeda dari middleware lain,
-  middleware ini **tidak** ada di stack default `create_deep_agent()` dan
-  harus ditambahkan eksplisit lewat parameter `middleware=[TodoListMiddleware()]`.
-  `[code]` — sumber: `graph.py` (langchain-ai/deepagents).
+- **Planning**: `TodoListMiddleware` — unlike the other middleware, this
+  one is **not** in `create_deep_agent()`'s default stack and must be added
+  explicitly through `middleware=[TodoListMiddleware()]`. `[code]` —
+  source: `graph.py` (langchain-ai/deepagents).
 - **Delegation**: `subagents=[{"name": ..., "description": ..., "model":
-  ..., "system_prompt": ..., "tools": [...]}, ...]` diteruskan ke
-  `create_deep_agent(subagents=...)`, yang membangun `SubAgentMiddleware`
-  dan tool `task` untuk memanggilnya. `[code]` — sumber:
-  `middleware/subagents.py`, contoh `examples/content-builder-agent/README.md`.
-- **State & memory**: `backend` bertipe `store` (`StoreBackend`, durable
-  lintas thread) untuk file yang harus hidup lintas sesi, dikombinasikan
-  dengan `memory=["./AGENTS.md"]` untuk konteks persisten yang dimuat ke
-  system prompt tiap sesi. `[code]` — sumber: `ARCHITECTURE.md`,
+  ..., "system_prompt": ..., "tools": [...]}, ...]` passed to
+  `create_deep_agent(subagents=...)`, which builds `SubAgentMiddleware`
+  and the `task` tool that invokes them. `[code]` — source:
+  `middleware/subagents.py`, example
   `examples/content-builder-agent/README.md`.
-- **Loop budget & kill switch**: `[ours]` deepagents tidak memberi
-  "no-progress detector" bawaan — yang tersedia adalah `recursion_limit`
-  generik dari LangGraph, `interrupt_on` per tool, dan (dari
-  `langchain.agents.middleware`, bukan milik `deepagents`)
-  `ModelCallLimitMiddleware`/`ToolCallLimitMiddleware` untuk batas
-  *hitungan* panggilan model/tool per thread atau per run. `[code]` —
+- **State & memory**: a `store`-type `backend` (`StoreBackend`, durable
+  across threads) for files that must live across sessions, combined with
+  `memory=["./AGENTS.md"]` for persistent context loaded into the system
+  prompt each session. `[code]` — source: `ARCHITECTURE.md`,
+  `examples/content-builder-agent/README.md`.
+- **Loop budget & kill switch**: `[ours]` deepagents ships no built-in
+  "no-progress detector" — what exists is LangGraph's generic
+  `recursion_limit`, per-tool `interrupt_on`, and (from
+  `langchain.agents.middleware`, not `deepagents` itself)
+  `ModelCallLimitMiddleware`/`ToolCallLimitMiddleware` for *counting*
+  model/tool calls per thread or per run. `[code]` —
   `langchain/agents/middleware/model_call_limit.py`,
-  `tool_call_limit.py`; lihat juga
-  [`../concepts/guardrails.md`](../concepts/guardrails.md) titik 5. Kami
-  tetap menyimpang dengan menambah middleware kustom (deteksi tool-call
-  berulang identik N kali berturut-turut → paksa berhenti) karena tidak
-  satu pun dari ketiganya mendeteksi *pengulangan* — `recursion_limit` dan
-  kedua middleware limit itu hanya menghitung, mencegah loop tak berhenti
-  secara sintaksis, tapi tidak mendeteksi agent yang secara semantik
-  berputar di tempat sebelum budgetnya habis.
+  `tool_call_limit.py`; see also
+  [`../concepts/guardrails.md`](../concepts/guardrails.md) point 5. We
+  still diverge by adding custom middleware (detecting the same tool call
+  repeated N times in a row → force a stop) because none of the three
+  detects *repetition* — `recursion_limit` and both limit middlewares only
+  count, preventing a syntactically endless loop, but not detecting an
+  agent that is semantically spinning in place well before its budget runs
+  out.
 
-## Sumber
+## Sources
 
 - CrewAI `lib/crewai/src/crewai/crew.py` — `[code]` —
   https://github.com/crewAIInc/crewAI
 - deepagents `graph.py`, `middleware/subagents.py`, `ARCHITECTURE.md`,
   `examples/content-builder-agent/README.md` — `[code]` — Context7
   `/langchain-ai/deepagents`, https://github.com/langchain-ai/deepagents
-- Manus, Abacus DeepAgent — `[inferred]` — perilaku produk closed-source.
+- Manus, Abacus DeepAgent — `[inferred]` — closed-source product behaviour.

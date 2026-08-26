@@ -1,109 +1,113 @@
 # 2. Generative Builder
 
-## Definisi
+## Definition
 
-Agent yang membangun sebuah artefak **baru** (app, website, deck) dari nol
-di dalam sandbox yang dimilikinya sendiri, dengan preview langsung sebagai
-loop utama iterasi. State-nya adalah satu artefak versi-berseri, bukan
-filesystem umum, dan persistence sandbox itu sendiri pendek — begitu sesi
-selesai, artefak harus dipublish/di-export atau hilang.
+An agent that builds a **new** artifact (app, website, deck) from scratch
+inside a sandbox it owns, with live preview as the primary iteration loop.
+Its state is a single versioned artifact rather than a general filesystem,
+and the sandbox's own persistence is short — once the session ends, the
+artifact must be published/exported or it is lost.
 
-Batas terhadap tetangga: beda dari **Workspace Agent** (01) karena tidak
-pernah menyentuh repo/mesin user yang sudah ada — selalu mulai dari kosong
-di sandbox miliknya sendiri; beda dari **Computer-Use Agent** (07) karena
-ia men-generate kode/asetnya sendiri, bukan mengoperasikan UI pihak ketiga
-lewat lihat-klik-verifikasi.
+Boundaries against neighbours: differs from **Workspace Agent** (01)
+because it never touches the user's existing repo/machine — it always
+starts from nothing in its own sandbox; differs from **Computer-Use
+Agent** (07) because it generates its own code/assets rather than driving
+a third-party UI through see-click-verify.
 
-## Posisi di 6 sumbu
+## Position on the 6 axes
 
-| Sumbu | Nilai |
+| Axis | Value |
 |---|---|
-| Blast radius | Sandbox milik sendiri (container/webcontainer, bukan mesin user) |
-| Artefak | Bikin baru (app/web/deck dari nol) |
-| Horizon | Satu sesi, satu artefak |
-| Kendali manusia | Review di akhir/lewat preview interaktif, minim approval per-langkah |
-| Permukaan domain | General, tapi sering dibungkus vertikal ("app builder") |
-| Antarmuka | Kanvas/preview pane |
+| Blast radius | Its own sandbox (container/webcontainer, not the user's machine) |
+| Artifact | Something new (app/site/deck from scratch) |
+| Horizon | One session, one artifact |
+| Human control | Review at the end / through interactive preview, little per-step approval |
+| Domain surface | General, but often wrapped as a vertical ("app builder") |
+| Interface | Canvas/preview pane |
 
-## Konsekuensi harness
+## Harness consequences
 
-1. **Sandbox wajib, bukan opsional** — kode yang dihasilkan langsung
-   dieksekusi (`npm install`, dev server), dan itu tidak boleh menyentuh
-   mesin atau data produksi user; blast radius harus terkurung di
-   compute milik sistem sendiri.
-2. **State = satu artefak versi-berseri**, bukan filesystem umum — model
-   mentalnya "project" tunggal per sesi, sehingga context, undo, dan
-   publish semuanya berputar di sekitar satu objek, bukan grafik file
-   bebas seperti Workspace Agent.
-3. **Loop shape: rewrite-penuh vs patch granular** dipilih eksplisit per
-   turn — rewrite-penuh murah untuk perubahan struktural besar tapi boros
-   token untuk perubahan kecil; keduanya perlu jalur tool yang berbeda.
-4. **Persistence pendek by design** — sandbox ephemeral dan bisa expire;
-   artefak baru jadi milik BE lewat langkah publish/export eksplisit,
-   bukan hidup selamanya di compute sandbox.
+1. **A sandbox is mandatory, not optional** — generated code is executed
+   immediately (`npm install`, dev server), and that must not touch the
+   user's machine or production data; the blast radius has to stay
+   confined to compute the system owns.
+2. **State = a single versioned artifact**, not a general filesystem — the
+   mental model is one "project" per session, so context, undo, and
+   publish all revolve around a single object rather than a free-form file
+   graph like a Workspace Agent.
+3. **Loop shape: full rewrite vs granular patch** is chosen explicitly per
+   turn — full rewrite is cheap for large structural changes but wasteful
+   for small ones; the two need different tool paths.
+4. **Short persistence by design** — sandboxes are ephemeral and can
+   expire; the artifact becomes the backend's property through an explicit
+   publish/export step rather than living forever in sandbox compute.
 
-## Sistem contoh
+## Example systems
 
-- **bolt.diy** `[code]` — satu instance `WebContainer` di-boot per sesi
+- **bolt.diy** `[code]` — one `WebContainer` instance is booted per session
   (`WebContainer.boot({coep: 'credentialless', workdirName, forwardPreviewErrors: true})`),
-  dan listener `webcontainer.on('preview-message', ...)` menangkap
-  uncaught exception/unhandled rejection dari iframe preview lalu
-  meneruskannya sebagai `actionAlert` ke UI — sandbox dan sinyal error
-  preview memang dikonfigurasi eksplisit di kode, bukan cuma diklaim di
-  marketing. Sumber: `app/lib/webcontainer/index.ts`
-  (github.com/stackblitz-labs/bolt.diy) — fork open-source dari bolt.new.
-- **v0 (Vercel)** `[inferred]` — dari perilaku produk: preview React/Next.js
-  langsung per iterasi, artefak tunggal per percakapan.
-- **Lovable** `[inferred]` — dari perilaku produk: scaffold app penuh dari
-  prompt, iterasi lewat chat dengan preview live.
-- **Figma Make** `[inferred]` — dari perilaku produk: artefak = satu prototipe
-  interaktif per sesi, preview instan.
+  and a `webcontainer.on('preview-message', ...)` listener captures
+  uncaught exceptions/unhandled rejections from the preview iframe and
+  forwards them as an `actionAlert` to the UI — the sandbox and its
+  preview error signal are configured explicitly in code, not merely
+  claimed in marketing. Source: `app/lib/webcontainer/index.ts`
+  (github.com/stackblitz-labs/bolt.diy) — the open-source fork of
+  bolt.new.
+- **v0 (Vercel)** `[inferred]` — from product behaviour: live React/Next.js
+  preview per iteration, one artifact per conversation.
+- **Lovable** `[inferred]` — from product behaviour: scaffolds a full app
+  from a prompt, iterating through chat with a live preview.
+- **Figma Make** `[inferred]` — from product behaviour: the artifact is one
+  interactive prototype per session, with instant preview.
 
-## Jebakan khas
+## Common pitfalls
 
-1. **Sandbox expire sebelum user sempat export** — kerja hilang karena
-   tidak ada langkah publish/save-to-storage yang eksplisit dan terpisah
-   dari siklus hidup sandbox.
-2. **Rewrite-penuh untuk perubahan kecil** — boros token dan me-reset
-   state UI runtime (scroll position, isi form) di tiap iterasi karena
-   seluruh artefak ditulis ulang alih-alih dipatch.
-3. **Preview lag atau build gagal secara diam-diam** — user tidak tahu
-   iterasi terakhir rusak sampai me-refresh, karena tidak ada sinyal
-   eksplisit "build gagal" yang dikembalikan ke loop percakapan.
-4. **Sandbox jadi vektor abuse** (crypto miner, network egress liar) kalau
-   resource dan kebijakan jaringan sandbox tidak dibatasi — blast radius
-   "sandbox sendiri" tetap punya biaya nyata kalau tidak diisolasi.
+1. **The sandbox expires before the user exports** — work is lost because
+   there is no explicit publish/save-to-storage step separate from the
+   sandbox lifecycle.
+2. **Full rewrite for a small change** — wasteful in tokens, and it resets
+   runtime UI state (scroll position, form contents) on every iteration
+   because the whole artifact is rewritten instead of patched.
+3. **Preview lag or a silently failing build** — the user doesn't know the
+   last iteration is broken until they refresh, because no explicit "build
+   failed" signal is returned into the conversation loop.
+4. **The sandbox becomes an abuse vector** (crypto miner, unrestricted
+   network egress) when sandbox resources and network policy aren't
+   bounded — a blast radius of "our own sandbox" still carries real cost
+   if it isn't isolated.
 
-## Bangun ini pakai deepagents
+## Building this with deepagents
 
-- **Backend**: backend keluarga sandbox — mis. `DaytonaSandbox` dari paket
-  partner `langchain_daytona` (`backend = DaytonaSandbox(sandbox=..., timeout=300)`),
-  atau lewat CLI deepagents dengan `agent.json`:
+- **Backend**: a sandbox-family backend — e.g. `DaytonaSandbox` from the
+  partner package `langchain_daytona`
+  (`backend = DaytonaSandbox(sandbox=..., timeout=300)`), or through the
+  deepagents CLI with `agent.json`:
   `{"backend": {"type": "sandbox", "sandbox_config": {"scope": "thread",
-  "policy_ids": [...]}}}`. `[code]` — sumber: `libs/partners/daytona/README.md`
-  dan `libs/cli/README.md` (langchain-ai/deepagents).
-- **Middleware**: `FilesystemMiddleware` default (tool `write_file`,
-  `edit_file`, `execute`) berjalan di atas backend sandbox tersebut, bukan
-  disk lokal — semua operasi filesystem otomatis terkurung ke sandbox.
-  `[code]` — sumber: `middleware/filesystem.py`.
-- **Persistence**: tanpa `checkpointer`/`store` untuk sesi pendek yang
-  sengaja dibuang; kalau artefak perlu bertahan lintas thread (mis. user
-  kembali besok untuk lanjut project yang sama), tambahkan `StoreBackend`
-  sebagai rute durable — pilihan eksplisit, bukan default. `[code]` —
-  sumber: `ARCHITECTURE.md`.
-- **Safety gate**: `[ours]` interrupt minimal atau tanpa `interrupt_on`
-  sama sekali untuk loop build/iterate, gate hanya dipasang di tool
-  publish/deploy. Vanilla deepagents tidak memaksa HITL — default
-  `interrupt_on=None` — jadi ini bukan penyimpangan dari library, tapi
-  pilihan produk yang disengaja: kendali manusia arketipe ini adalah
-  "review di akhir lewat preview", bukan approve tiap langkah seperti
-  Workspace Agent (01).
+  "policy_ids": [...]}}}`. `[code]` — source:
+  `libs/partners/daytona/README.md` and `libs/cli/README.md`
+  (langchain-ai/deepagents).
+- **Middleware**: the default `FilesystemMiddleware` (`write_file`,
+  `edit_file`, `execute` tools) runs on top of that sandbox backend rather
+  than local disk — every filesystem operation is automatically confined
+  to the sandbox. `[code]` — source: `middleware/filesystem.py`.
+- **Persistence**: no `checkpointer`/`store` for short sessions that are
+  meant to be discarded; if the artifact must survive across threads (e.g.
+  the user returns tomorrow to continue the same project), add a
+  `StoreBackend` as a durable route — an explicit choice, not a default.
+  `[code]` — source: `ARCHITECTURE.md`.
+- **Safety gate**: `[ours]` minimal interrupts, or no `interrupt_on` at
+  all for the build/iterate loop, with the gate installed only on the
+  publish/deploy tool. Vanilla deepagents does not force HITL — the
+  default is `interrupt_on=None` — so this is not a divergence from the
+  library but a deliberate product choice: this archetype's human control
+  is "review at the end through the preview", not approving every step the
+  way a Workspace Agent (01) does.
 
-## Sumber
+## Sources
 
 - bolt.diy `app/lib/webcontainer/index.ts` — `[code]` —
   https://github.com/stackblitz-labs/bolt.diy
 - deepagents `libs/partners/daytona/README.md`, `libs/cli/README.md`,
   `middleware/filesystem.py`, `ARCHITECTURE.md` — `[code]` — Context7
   `/langchain-ai/deepagents`, https://github.com/langchain-ai/deepagents
-- v0, Lovable, Figma Make — `[inferred]` — perilaku produk closed-source.
+- v0, Lovable, Figma Make — `[inferred]` — closed-source product behaviour.

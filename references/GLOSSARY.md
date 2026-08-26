@@ -14,7 +14,7 @@ python3 tools/build_glossary.py
 
 | Istilah | Arti | Dibahas di |
 |---|---|---|
-| **arketipe** | Satu dari 7 jenis AI assistant, hasil potongan 6 sumbu pembeda; menentukan batasan harness yang dipaksakan sejak awal. | [`archetypes/README.md`](archetypes/README.md) |
+| **archetype** | One of 7 kinds of AI assistant, produced by cutting the 6 discriminating axes; it fixes the harness constraints from the outset. | [`archetypes/README.md`](archetypes/README.md) |
 | **blast radius** | Seberapa jauh aksi agent bisa menyentuh dunia: mesin user, sandbox, data SaaS, atau sistem luar. Salah satu dari 6 sumbu, dan setengah dari kriteria layak-dihentikan. | [`concepts/human-in-the-loop.md`](concepts/human-in-the-loop.md) |
 | **blueprint** | Keluaran utama mode membangun: enam keputusan harness yang dinyatakan eksplisit sebelum satu baris kode ditulis. | [`blueprint-template.md`](blueprint-template.md) |
 | **by-reference** | Aturan bahwa transkrip menyimpan `artifact_id` + versi, bukan isi artefaknya; byte-nya hidup di storage. | [`concepts/artifacts-and-canvas.md`](concepts/artifacts-and-canvas.md) |

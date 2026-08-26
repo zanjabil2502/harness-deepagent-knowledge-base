@@ -12,9 +12,9 @@ REF = ROOT / "references"
 
 FRAMES = {
     "archetypes": [
-        "## Definisi", "## Posisi di 6 sumbu", "## Konsekuensi harness",
-        "## Sistem contoh", "## Jebakan khas",
-        "## Bangun ini pakai deepagents", "## Sumber",
+        "## Definition", "## Position on the 6 axes", "## Harness consequences",
+        "## Example systems", "## Common pitfalls",
+        "## Building this with deepagents", "## Sources",
     ],
     "concepts": [
         "## Masalah", "## Pola", "## Trade-off", "## Di deepagents", "## Sumber",
