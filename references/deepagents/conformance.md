@@ -541,7 +541,7 @@ tidak muncul di `grep`, sehingga nomor 1 dan 17 sengaja kosong.
 | 27 | `concepts/artifacts-and-canvas.md:88` | Versi artefak pakai integer monoton, bukan timestamp | di luar `deepagents` |
 | 28-29 | `concepts/evaluation.md:37,66` | Eval terhadap trajektori penuh; "golden transcript" | di luar `deepagents` |
 | 30 | `concepts/guardrails.md:31` | Kerangka enam titik guardrail dari spec proyek | di luar `deepagents` |
-| 31-37 | `concepts/skill-composition.md:34,96,167,190,199,210,217` | Lapisan resolusi manifest skill **sebelum** `deepagents`; pemisahan intent/ekspresi | berdampingan dengan `SkillsMiddleware`, tidak menggantikannya |
+| 31-37 | `concepts/skill-composition.md:34,96,167,190,199,210,218` | Lapisan resolusi manifest skill **sebelum** `deepagents`; pemisahan intent/ekspresi | berdampingan dengan `SkillsMiddleware`, tidak menggantikannya |
 | 38-40 | `concepts/multilingual.md:58,160,223` | Titik terkunci bahasa di pipeline intent/ekspresi | di luar `deepagents` |
 | 41-45 | `concepts/persistence-schema.md:37,294,337,342,351` | Tabel `users` lokal; RLS tanpa subquery; penamaan; jalur migrasi `user_id`→`tenant_id` | di luar `deepagents` |
 | 46-48 | `concepts/policy-as-data.md:160,170,182` | Skema policy-as-data di atas yang sudah data-shaped di `deepagents` | eksplisit menyatakan bagian mana yang **bukan** `[ours]` — model penulisan yang benar |

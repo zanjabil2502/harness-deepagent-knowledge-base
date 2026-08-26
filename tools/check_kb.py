@@ -2,6 +2,7 @@
 """Validator struktur KB. Jalankan: python3 tools/check_kb.py"""
 import hashlib
 import json
+import subprocess
 import re
 import sys
 from pathlib import Path
@@ -86,7 +87,25 @@ def check_frames(errs):
                 errs.append(f"{rel}: tidak ada label sumber [code]/[docs]/[inferred]")
 
 
+def tracked_files():
+    """Berkas yang benar-benar ikut saat repo di-clone.
+
+    check_links memeriksa filesystem, jadi tautan ke berkas yang sengaja
+    tidak di-track tetap terlihat hidup di mesin penulisnya dan mati bagi
+    semua orang lain — kegagalan yang tak terlihat sampai ada yang clone.
+    """
+    try:
+        out = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT,
+                             capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return set(out.stdout.split("\0")) - {""}
+
+
 def check_links(errs):
+    tracked = tracked_files()
     files = [ROOT / "SKILL.md", ROOT / "README.md"]
     if REF.is_dir():
         files += [f for f in sorted(REF.rglob("*.md")) if authored(f)]
@@ -97,6 +116,16 @@ def check_links(errs):
             target = (f.parent / m.group(1).strip()).resolve()
             if not target.exists():
                 errs.append(f"{f.relative_to(ROOT)}: link mati -> {m.group(1)}")
+            elif tracked is not None and target.is_file():
+                try:
+                    rel = target.relative_to(ROOT).as_posix()
+                except ValueError:
+                    continue
+                if rel not in tracked:
+                    errs.append(
+                        f"{f.relative_to(ROOT)}: link ke berkas tak ter-track "
+                        f"-> {m.group(1)} (hidup di sini, mati bagi yang clone)"
+                    )
 
 
 def check_skill_size(errs):

@@ -207,7 +207,8 @@ seberapa lengkap `description` ditulis di tiap bahasa — persis masalah yang
 
 ## Sumber
 
-- `[ours]` Spec §8.5 proyek ini (`docs/superpowers/specs/2026-08-23-agent-harness-kb-design.md`)
+- `[ours]` Spec desain internal proyek ini §8.5 — dokumen kerja yang
+  **tidak ikut di-repo**, jadi ini catatan provenance, bukan tautan
   — manifest normatif (`id`/`extends`/`intents`/`locales`/`tools`/`policies`/
   `precedence`), dikutip verbatim di `## Pola`. Vanilla-nya: tidak ada
   standar industri untuk skema manifest skill dasar→turunan yang kami

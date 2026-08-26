@@ -2,7 +2,7 @@
 
 Spesifikasi + snippet terverifikasi untuk struktur project production-grade
 yang **arketipe-agnostik** — bukan template repo untuk `cp -r`
-([desain §3](../../docs/superpowers/specs/2026-08-23-agent-harness-kb-design.md)).
+(desain §3 spec internal proyek, tidak ikut di-repo).
 Ketujuh file di `deltas/` masing-masing **hanya** menuliskan selisihnya
 terhadap file ini — baca `_base.md` dulu, delta tidak mengulang isinya.
 

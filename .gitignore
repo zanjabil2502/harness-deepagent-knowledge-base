@@ -9,3 +9,6 @@ references/deepagents/graph/.graphify_root
 references/deepagents/graph/graph.html
 references/deepagents/graph/cache/
 references/deepagents/graph/cost.json
+
+# dokumen kerja internal (plan & spec sesi), bukan bagian skill
+docs/
