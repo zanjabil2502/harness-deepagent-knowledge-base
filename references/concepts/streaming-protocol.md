@@ -1,68 +1,69 @@
 # Streaming protocol
 
-## Masalah
+## Problem
 
-Dua kesalahan berbeda muncul dari sumber yang sama: memperlakukan streaming
-sebagai pemanis UX (token muncul progresif alih-alih menunggu jawaban utuh)
-alih-alih sebagai **kontrak** untuk sebuah proses yang berjalan lama dan
-banyak-langkah.
+Two different mistakes come from the same source: treating streaming as a UX
+garnish (tokens appearing progressively rather than waiting for a whole
+answer) instead of as a **contract** for a long-running, multi-step process.
 
-Pertama, pemilihan SSE vs WebSocket sering diputuskan dari familiaritas tim
-atau tren, bukan dari kebutuhan arah komunikasi yang sebenarnya — berakhir
-memasang WebSocket (kompleksitas infra: upgrade handshake, sticky session di
-load balancer, reconnect manual) untuk pola yang sebenarnya cuma butuh
-server mendorong output satu arah.
+First, the SSE vs WebSocket choice is often decided by team familiarity or
+fashion rather than the communication direction actually needed — ending up
+with WebSockets (infrastructure complexity: an upgrade handshake, sticky
+sessions at the load balancer, manual reconnect) for a pattern that only
+needs the server pushing output one way.
 
-Kedua, dan lebih mahal: stream diperlakukan sebagai **satu-satunya** tempat
-event agent hidup — begitu koneksi client putus (jaringan mobile drop, tab
-ditutup dan dibuka lagi, server di belakang load balancer di-restart saat
-deploy), event yang lewat selama terputus **hilang permanen** kalau tidak
-ada yang lain menyimpannya. Untuk turn agent biasa ini cuma UX buruk (user
-lihat jawaban terpotong, refresh, dapat versi lengkap). Untuk turn yang
-sedang menunggu approval HITL (lihat
-[`human-in-the-loop.md`](human-in-the-loop.md)), ini serius: client yang
-reconnect tanpa tahu ada gerbang approval yang sedang menunggu berarti turn
-itu diam-diam macet sampai seseorang kebetulan menyadarinya.
+Second, and more expensive: the stream is treated as the **only** place
+agent events live — so as soon as the client's connection drops (a mobile
+network dropping, a tab closed and reopened, a server behind a load balancer
+restarted during a deploy), the events that passed during the disconnect are
+**permanently lost** unless something else stored them. For an ordinary
+agent turn that is merely bad UX (the user sees a truncated answer,
+refreshes, gets the full version). For a turn waiting on HITL approval (see
+[`human-in-the-loop.md`](human-in-the-loop.md)) it is serious: a client that
+reconnects without knowing an approval gate is waiting means that turn is
+silently stuck until somebody happens to notice.
 
-## Pola
+## Pattern
 
-### SSE vs WebSocket — kapan masing-masing
+### SSE vs WebSocket — when each
 
-| Dimensi | SSE (Server-Sent Events) | WebSocket |
+| Dimension | SSE (Server-Sent Events) | WebSocket |
 |---|---|---|
-| Arah | Server → client saja; client kirim pesan lewat request HTTP biasa (POST) di luar stream | Dupleks penuh, dua arah di koneksi yang sama |
-| Protokol | HTTP biasa — lewat proxy/load balancer HTTP standar tanpa konfigurasi tambahan | Butuh upgrade handshake (`Upgrade: websocket`); sebagian infra proxy/LB butuh konfigurasi eksplisit (sticky session, timeout berbeda) |
-| Reconnect | Bawaan browser (`EventSource`) — otomatis reconnect + kirim header `Last-Event-ID` berisi id event terakhir yang diterima, tanpa kode tambahan di client `[docs]` | Tidak ada mekanisme reconnect bawaan protokol; harus ditulis manual di client (deteksi `onclose`, buka koneksi baru, kirim ulang state) |
-| Framing pesan | Baris teks `event:`/`data:`/`id:`/`retry:` sederhana, satu arah | Frame biner/teks bebas, aplikasi mendefinisikan sendiri |
+| Direction | Server → client only; the client sends messages through ordinary HTTP requests (POST) outside the stream | Full duplex, both directions on the same connection |
+| Protocol | Plain HTTP — passes through standard HTTP proxies/load balancers with no extra configuration | Needs an upgrade handshake (`Upgrade: websocket`); some proxies/LBs need explicit configuration (sticky sessions, different timeouts) |
+| Reconnect | Built into the browser (`EventSource`) — automatic reconnect plus a `Last-Event-ID` header carrying the last event id received, with no extra client code `[docs]` | No protocol-level reconnect; it must be written manually in the client (detect `onclose`, open a new connection, resend state) |
+| Message framing | Simple `event:`/`data:`/`id:`/`retry:` text lines, one direction | Free binary/text frames, the application defines its own |
 
-**Kapan SSE**: pola interaksi berbasis-turn — satu permintaan user memicu
-satu aliran output (token, event tool call, hasil), dan permintaan
-berikutnya (termasuk keputusan approval HITL) tetap lewat endpoint
-request/response biasa, bukan lewat stream itu sendiri. Ini pola default
-loop agent (`agent-loop.md`): user mengirim, server merespons dengan aliran,
-selesai. Reconnect otomatis `EventSource` + `Last-Event-ID` juga selaras
-langsung dengan kebutuhan reattach di bawah — protokolnya sudah menyediakan
-setengah dari mekanisme yang dibutuhkan tanpa kode tambahan di client.
+**When SSE**: a turn-based interaction pattern — one user request triggers
+one output stream (tokens, tool call events, results), with subsequent
+requests (including HITL approval decisions) going through ordinary
+request/response endpoints rather than the stream itself. This is the
+default agent loop pattern (`agent-loop.md`): the user sends, the server
+responds with a stream, done. `EventSource`'s automatic reconnect plus
+`Last-Event-ID` also aligns directly with the reattach requirement below —
+the protocol already provides half of the needed mechanism with no extra
+client code.
 
-**Kapan WebSocket**: kebutuhan push dua arah **di luar** batas satu turn —
-banyak stream event independen dimultipleks di satu koneksi, event yang
-diinisiasi server tanpa dipicu request client tertentu (presence user lain,
-notifikasi job background selesai, edit kolaboratif di kanvas — lihat
-[`artifacts-and-canvas.md`](artifacts-and-canvas.md)), atau client perlu
-mengirim data di tengah stream tanpa membuka request HTTP baru (audio/voice
-duplex, live cursor). Default `_base` untuk antarmuka turn chat/agent adalah
-**SSE** — kebutuhannya cocok dengan pola turn-based di atas; WebSocket
-ditambahkan hanya kalau fitur konkret (kolaborasi real-time, voice) benar-
-benar butuh dupleks.
+**When WebSocket**: a need for bidirectional push **outside** a single
+turn's boundary — many independent event streams multiplexed on one
+connection, server-initiated events not triggered by a particular client
+request (other users' presence, a background job completion notification,
+collaborative canvas editing — see
+[`artifacts-and-canvas.md`](artifacts-and-canvas.md)), or a client needing to
+send data mid-stream without opening a new HTTP request (audio/voice duplex,
+live cursors). The `_base` default for a chat/agent turn interface is
+**SSE** — its needs match the turn-based pattern above; WebSockets are added
+only when a concrete feature (real-time collaboration, voice) genuinely
+needs duplex.
 
-### Skema event
+### The event schema
 
-Satu amplop event per baris `data:` SSE (atau satu frame WebSocket), field
-minimal:
+One event envelope per SSE `data:` line (or one WebSocket frame), with these
+minimum fields:
 
 ```json
 {
-  "event_id": "01J...",      // ULID/sequence monoton PER TURN, dipakai untuk Last-Event-ID & reattach
+  "event_id": "01J...",      // a monotonic ULID/sequence PER TURN, used for Last-Event-ID & reattach
   "turn_id": "uuid",
   "type": "message.delta",
   "data": { "...": "..." },
@@ -70,205 +71,201 @@ minimal:
 }
 ```
 
-Tipe event minimal yang dibutuhkan satu turn agent:
+The minimum event types one agent turn needs:
 
-| `type` | Kapan dikirim | Isi `data` |
+| `type` | When it is sent | `data` contents |
 |---|---|---|
-| `turn.started` | Turn mulai diproses | `{ "message_id": ... }` |
-| `message.delta` | Tiap potongan token teks jawaban | `{ "text_delta": "..." }` |
-| `tool_call.delta` | Tiap potongan argumen tool call yang sedang dibentuk model | `{ "index": 0, "name": "...", "args_delta": "..." }` — lihat §Rendering tool call parsial |
-| `tool_call.result` | Tool call selesai dieksekusi | `{ "tool_call_id": ..., "status": "success"/"error", "result": ... }` |
-| `interrupt` | Gerbang HITL diangkat, turn berhenti menunggu | `{ "action_requests": [...], "review_configs": [...] }` — bentuk persis dari `human-in-the-loop.md` |
-| `turn.completed` | Turn selesai normal | `{ "message_id": ... }` |
-| `turn.error` | Turn berhenti karena error (bukan interrupt) | `{ "message": "..." }` |
-| `heartbeat` | Berkala (mis. tiap 15-30 detik) selama tidak ada event lain | `{}` — semata menjaga proxy/LB tidak menutup koneksi SSE idle |
+| `turn.started` | The turn begins processing | `{ "message_id": ... }` |
+| `message.delta` | Each chunk of the answer's text tokens | `{ "text_delta": "..." }` |
+| `tool_call.delta` | Each chunk of a tool call's arguments as the model forms them | `{ "index": 0, "name": "...", "args_delta": "..." }` — see §Rendering partial tool calls |
+| `tool_call.result` | A tool call finished executing | `{ "tool_call_id": ..., "status": "success"/"error", "result": ... }` |
+| `interrupt` | A HITL gate was raised, the turn is waiting | `{ "action_requests": [...], "review_configs": [...] }` — the exact shape from `human-in-the-loop.md` |
+| `turn.completed` | The turn finished normally | `{ "message_id": ... }` |
+| `turn.error` | The turn stopped on an error (not an interrupt) | `{ "message": "..." }` |
+| `heartbeat` | Periodically (e.g. every 15-30 seconds) while no other event occurs | `{}` — purely to stop proxies/LBs closing an idle SSE connection |
 
-### Rendering tool call parsial
+### Rendering partial tool calls
 
-Argumen tool call yang di-*stream* datang sebagai potongan JSON string yang
-**belum valid** sampai lengkap. Ground konkretnya di `langchain`:
-`AIMessageChunk.tool_call_chunks: list[ToolCallChunk]`, tiap `ToolCallChunk`
-punya `name` (opsional, biasanya cuma di chunk pertama), `args` (potongan
-string JSON), `id`, dan `index` — chunk-chunk dengan `index` sama digabung
-dengan **konkatenasi string** (`left.args + right.args`), bukan merge objek.
-`[code]` — `langchain_core/messages/tool.py` kelas `ToolCallChunk`,
-`langchain_core/messages/ai.py` kelas `AIMessageChunk` field
-`tool_call_chunks`.
+Streamed tool call arguments arrive as chunks of a JSON string that is **not
+valid** until complete. The concrete grounding in `langchain`:
+`AIMessageChunk.tool_call_chunks: list[ToolCallChunk]`, where each
+`ToolCallChunk` has `name` (optional, usually only on the first chunk),
+`args` (a JSON string fragment), `id`, and `index` — chunks sharing an
+`index` are combined by **string concatenation** (`left.args + right.args`),
+not object merging. `[code]` — `langchain_core/messages/tool.py`'s
+`ToolCallChunk` class, `langchain_core/messages/ai.py`'s `AIMessageChunk`
+class and its `tool_call_chunks` field.
 
-Aturan render di client, turunan langsung dari mekanisme itu:
+The client rendering rules follow directly from that mechanism:
 
-1. Buffer `args_delta` per `index` (satu tool call yang sedang dibentuk =
-   satu buffer), jangan coba `JSON.parse` tiap potongan.
-2. Tampilkan progres sebagai teks argumen yang terus tumbuh (mis. area teks
-   read-only yang membesar), **jangan** coba render field terstruktur dari
-   JSON yang belum lengkap — parser JSON toleran-parsial boleh dipakai untuk
-   preview UI, tapi hasilnya tidak pernah dipakai untuk keputusan apa pun.
-3. Tool call baru **boleh dieksekusi atau ditampilkan sebagai keputusan
-   nyata** (termasuk masuk ke gerbang HITL) hanya dari `tool_call.result`
-   atau saat `message.delta`/`tool_call.delta` berhenti dan chunk final
-   sudah digabung jadi JSON valid — never dari buffer parsial yang masih
-   tumbuh.
+1. Buffer `args_delta` per `index` (one tool call being formed = one
+   buffer); don't try to `JSON.parse` each fragment.
+2. Show progress as continuously growing argument text (e.g. a read-only
+   text area that expands), **don't** try to render structured fields from
+   incomplete JSON — a partial-tolerant JSON parser may be used for UI
+   preview, but its output is never used for any decision.
+3. A new tool call may **be executed or displayed as a real decision**
+   (including entering a HITL gate) only from `tool_call.result`, or once
+   `message.delta`/`tool_call.delta` stop and the final chunks have combined
+   into valid JSON — never from a partial buffer still growing.
 
-### Reattach setelah client disconnect
+### Reattach after a client disconnect
 
-Ini syarat yang memaksa **event log durable per turn**, bukan stream
-ephemeral broadcast-saja. Alurnya:
+This is the requirement that forces a **durable per-turn event log** rather
+than an ephemeral broadcast-only stream. The flow:
 
-1. Client menyimpan `turn_id` + `event_id` terakhir yang diterima (untuk
-   SSE, `EventSource` melakukan ini otomatis lewat `Last-Event-ID`; untuk
-   WebSocket, aplikasi harus menyimpannya sendiri di client).
-2. Saat reconnect, client mengirim `(turn_id, last_event_id)` — untuk SSE
-   ini datang otomatis sebagai header `Last-Event-ID` di request GET baru
-   `[docs]` (WHATWG HTML spec, algoritma `EventSource`: *"If the
+1. The client stores the `turn_id` plus the last `event_id` received (for
+   SSE, `EventSource` does this automatically through `Last-Event-ID`; for
+   WebSockets, the application must store it client-side itself).
+2. On reconnect, the client sends `(turn_id, last_event_id)` — for SSE this
+   arrives automatically as a `Last-Event-ID` header on the new GET request
+   `[docs]` (the WHATWG HTML spec's `EventSource` algorithm: *"If the
    EventSource object's last event ID string is not the empty string... Set
    ('Last-Event-ID', lastEventIDValue) in request's header list"*).
-3. Server mengecek status turn itu. **Durable log-nya bukan tabel event
-   baru** — ia proyeksi dari transkrip yang sudah wajib ada di
-   [`persistence-schema.md`](persistence-schema.md): kolom
-   `messages.status` (`'complete'`/`'streaming'`/`'error'`) memberitahu
-   apakah masih ada yang perlu di-resume sama sekali, dan tabel `tool_calls`
-   (`status` `'pending'`/`'success'`/`'error'`, satu row per tool call)
-   memberitahu **granularitas** apa yang sudah pasti selesai.
-   - Kalau `messages.status = 'complete'` — kirim balik konten final utuh,
-     tidak perlu resume stream sama sekali.
-   - Kalau `'streaming'` — kirim semua `tool_calls` yang sudah
-     `'success'`/`'error'` sebagai event `tool_call.result` yang "diputar
-     ulang" (replay), lalu sambung ke live tail dari titik itu.
-   - Kalau turn sedang berhenti di gerbang HITL — event `interrupt` yang
-     sama dikirim ulang (state-nya memang masih ada, lihat `## Di
-     deepagents`), supaya client yang reconnect langsung tahu ada approval
-     yang menunggu alih-alih diam-diam kehilangan sinyal itu.
+3. The server checks that turn's status. **The durable log isn't a new event
+   table** — it is a projection of the transcript already required by
+   [`persistence-schema.md`](persistence-schema.md): the `messages.status`
+   column (`'complete'`/`'streaming'`/`'error'`) says whether anything needs
+   resuming at all, and the `tool_calls` table (`status`
+   `'pending'`/`'success'`/`'error'`, one row per tool call) gives the
+   **granularity** of what is definitively finished.
+   - If `messages.status = 'complete'` — send back the full final content;
+     no stream resume is needed at all.
+   - If `'streaming'` — send every `tool_calls` row already
+     `'success'`/`'error'` as replayed `tool_call.result` events, then
+     splice into the live tail from that point.
+   - If the turn is stopped at a HITL gate — the same `interrupt` event is
+     resent (its state does still exist, see `## In deepagents`), so a
+     reconnecting client immediately learns an approval is waiting rather
+     than silently losing that signal.
 
-**Granularitas yang dipilih `[ours]`: per unit (pesan/tool call), bukan per
-token.** Delta token individual (`message.delta`/`tool_call.delta`) **tidak
-pernah dipersist satu-per-satu** — itu men-generate satu row per token untuk
-manfaat yang nol setelah unit-nya selesai (begitu satu pesan/tool call
-`'complete'`, isinya sudah ada utuh di kolom `content`/`result`, delta
-individualnya tidak berguna lagi). Yang dipersist inkremental adalah row
-`messages`/`tool_calls` itu sendiri, dimutakhirkan tiap unit selesai. Live
-tail token-per-token tetap jalan lewat jalur pub/sub ephemeral (mis. Redis
-Pub/Sub atau broadcast in-process) yang **layer di atas** transkrip durable,
-bukan store paralel — kalau koneksi live putus di tengah satu unit yang
-sedang dibentuk, celah reattach maksimalnya adalah "kehilangan delta token
-dari SATU unit yang sedang berjalan", bukan seluruh riwayat turn, dan client
-bisa langsung minta ulang konten unit itu (kalau harness men-checkpoint
-progres parsialnya secara berkala) atau cukup menunggu unit itu selesai.
-Vanilla yang ditolak: mempersist tiap token delta sebagai row sendiri
-(reattach sempurna sampai ke token, tapi ledakan jumlah row untuk data yang
-tidak pernah dibaca lagi begitu unit-nya selesai) — lihat `## Trade-off`.
+**The chosen granularity `[ours]`: per unit (message/tool call), not per
+token.** Individual token deltas (`message.delta`/`tool_call.delta`) are
+**never persisted one by one** — that would generate one row per token for
+zero benefit once the unit finishes (once a message/tool call is
+`'complete'`, its content already exists in full in the `content`/`result`
+column and the individual deltas are useless). What is persisted
+incrementally are the `messages`/`tool_calls` rows themselves, updated as
+each unit completes. The token-by-token live tail still runs through an
+ephemeral pub/sub path (e.g. Redis Pub/Sub or an in-process broadcast) that
+is a **layer above** the durable transcript rather than a parallel store — if
+the live connection drops mid-unit, the maximum reattach gap is "losing the
+token deltas of ONE in-progress unit", not the whole turn history, and the
+client can immediately re-request that unit's content (if the harness
+checkpoints its partial progress periodically) or simply wait for it to
+finish. The rejected vanilla: persisting every token delta as its own row
+(perfect reattach down to the token, but a row explosion for data never read
+again once its unit completes) — see `## Trade-offs`.
 
-Ini **memakai** model transkrip `persistence-schema.md`/`session-state.md`
-apa adanya, tidak membangun store paralel — file itu memiliki skema
-tabelnya; file ini memiliki kontrak event/reattach yang dibangun di
-atasnya.
+This **uses** the transcript model of
+`persistence-schema.md`/`session-state.md` as-is rather than building a
+parallel store — those files own the table schemas; this file owns the
+event/reattach contract built on top of them.
 
-## Trade-off
+## Trade-offs
 
-- **SSE vs WebSocket** — sudah dibahas di §Pola; ringkas: SSE lebih
-  sederhana infra dan dapat reconnect otomatis gratis untuk pola satu-arah
-  (mayoritas kasus turn agent), WebSocket perlu untuk dupleks nyata dengan
-  biaya kompleksitas infra + reconnect manual.
-- **Durabilitas per token vs per unit vs tanpa durabilitas** — per token
-  memberi reattach paling presisi (tidak kehilangan satu karakter pun) tapi
-  membengkakkan storage untuk data yang tidak berguna lagi setelah unitnya
-  selesai; per unit (pilihan proyek ini) menyisakan celah kecil (delta dari
-  satu unit yang belum selesai saat disconnect) dengan storage yang sama
-  dengan yang sudah wajib ada untuk transkrip; tanpa durabilitas sama sekali
-  (stream ephemeral murni, restart total tiap disconnect) paling murah tapi
-  tidak bisa diterima untuk sistem dengan gerbang HITL — approval yang
-  sedang menunggu bisa hilang dari pandangan client sepenuhnya.
-- **Pub/sub terkelola (Redis Streams/Pub-Sub) vs polling DB untuk fan-out
-  live tail ke banyak pod gateway** — pub/sub terkelola menambah satu
-  komponen infra tapi latensi rendah dan tidak membebani Postgres dengan
-  polling frekuensi tinggi; polling DB tidak perlu komponen baru tapi
-  menambah beban baca berulang dan latensi lebih tinggi. Ini keputusan
-  komponen Gateway/SSE yang skalanya dimiliki
-  [`serving-topology.md`](serving-topology.md) (sinyal HPA: koneksi aktif)
-  — file ini cuma menandai bahwa kontrak event/reattach di atas tidak
-  mengasumsikan salah satu, keduanya bisa memenuhi kontraknya.
+- **SSE vs WebSocket** — discussed in §Pattern; in brief: SSE is
+  infrastructurally simpler and gets automatic reconnect free for a one-way
+  pattern (most agent turn cases), while WebSockets are needed for genuine
+  duplex at the cost of infrastructure complexity plus manual reconnect.
+- **Durability per token vs per unit vs none** — per token gives the most
+  precise reattach (not one character lost) but bloats storage with data
+  that is useless once its unit finishes; per unit (this project's choice)
+  leaves a small gap (the deltas of one unfinished unit at disconnect time)
+  with the same storage already required for the transcript; no durability
+  at all (a purely ephemeral stream, a full restart on every disconnect) is
+  cheapest but unacceptable for a system with HITL gates — a waiting
+  approval can vanish from the client's view entirely.
+- **Managed pub/sub (Redis Streams/Pub-Sub) vs DB polling for fanning the
+  live tail out to many gateway pods** — managed pub/sub adds an
+  infrastructure component but has low latency and doesn't burden Postgres
+  with high-frequency polling; DB polling needs no new component but adds
+  repeated read load and higher latency. This is a Gateway/SSE component
+  decision whose scaling is owned by
+  [`serving-topology.md`](serving-topology.md) (HPA signal: active
+  connections) — this file only notes that the event/reattach contract above
+  assumes neither; both can satisfy it.
 
-## Di deepagents
+## In deepagents
 
-`langgraph` (fondasi `deepagents`) punya mekanisme streaming native yang
-jadi bahan baku langsung untuk skema event di atas, tapi **tidak**
-menyelesaikan sendiri masalah reattach lintas-koneksi:
+`langgraph` (the foundation of `deepagents`) has native streaming mechanisms
+that feed directly into the event schema above, but does **not** solve
+cross-connection reattach on its own:
 
-- **`stream_mode`** pada `.stream()`/`.astream()` LangGraph: `"values"`
-  (state penuh tiap step), `"updates"` (delta per node/task),
-  `"messages"` (token LLM streaming per-token, sebagai tuple `(chunk,
-  metadata)` — sumber langsung `message.delta`/`tool_call.delta` di atas
-  lewat `AIMessageChunk.tool_call_chunks`), `"custom"` (data bebas lewat
-  `StreamWriter`), `"checkpoints"` (event tiap checkpoint dibuat),
-  `"tasks"` (event mulai/selesai tiap task, termasuk error). Bisa
-  dikombinasikan sebagai list untuk menerima beberapa mode sekaligus.
-  `[code]` — `langgraph/types.py` (`StreamMode = Literal["values",
-  "updates", "checkpoints", "tasks", "debug", "messages", "custom"]`),
-  `langgraph/pregel/main.py` docstring parameter `stream_mode` pada
+- **`stream_mode`** on LangGraph's `.stream()`/`.astream()`: `"values"`
+  (full state per step), `"updates"` (a delta per node/task), `"messages"`
+  (per-token LLM streaming as `(chunk, metadata)` tuples — the direct source
+  of `message.delta`/`tool_call.delta` above through
+  `AIMessageChunk.tool_call_chunks`), `"custom"` (free data through
+  `StreamWriter`), `"checkpoints"` (an event per checkpoint created),
+  `"tasks"` (start/finish events per task, including errors). These can be
+  combined as a list to receive several modes at once. `[code]` —
+  `langgraph/types.py` (`StreamMode = Literal["values", "updates",
+  "checkpoints", "tasks", "debug", "messages", "custom"]`),
+  `langgraph/pregel/main.py`'s `stream_mode` parameter docstring on
   `.stream()`.
-- **`durability`** (`"sync"`/`"async"`/`"exit"`) mengatur **kapan**
-  checkpoint dipersist relatif terhadap eksekusi step — parameter ini
-  langsung menentukan seberapa jauh reattach bisa dipercaya:
-  `"sync"` mempersist sebelum step berikutnya mulai (paling aman untuk
-  reattach — checkpoint selalu mencerminkan step yang benar-benar selesai,
-  dengan biaya latensi tambahan tiap step); `"async"` (default) mempersist
-  bersamaan dengan step berikutnya berjalan (throughput lebih baik, ada
-  jendela kecil di mana crash bisa kehilangan checkpoint step terakhir);
-  `"exit"` cuma mempersist saat graph selesai total (termurah, tapi paling
-  buruk untuk reattach di tengah run panjang — nyaris tidak ada checkpoint
-  untuk resume kalau proses mati di tengah). `[code]` —
-  `langgraph/pregel/main.py` docstring parameter `durability` pada
+- **`durability`** (`"sync"`/`"async"`/`"exit"`) governs **when** a
+  checkpoint is persisted relative to step execution — this parameter
+  directly determines how far reattach can be trusted: `"sync"` persists
+  before the next step begins (safest for reattach — the checkpoint always
+  reflects a genuinely completed step, at the cost of extra latency per
+  step); `"async"` (the default) persists while the next step runs (better
+  throughput, with a small window where a crash can lose the last step's
+  checkpoint); `"exit"` persists only when the graph finishes entirely
+  (cheapest, but worst for mid-run reattach — there is almost no checkpoint
+  to resume from if the process dies mid-way). `[code]` —
+  `langgraph/pregel/main.py`'s `durability` parameter docstring on
   `.stream()`.
-- **Interrupt HITL sudah otomatis jadi bagian checkpoint** — `interrupt()`
-  (dipakai `HumanInTheLoopMiddleware`, lihat
-  [`human-in-the-loop.md`](human-in-the-loop.md)) menghentikan graph di
-  titik itu dan state-nya persisten lewat `checkpointer` yang sama dengan
-  yang menjaga Run state (`../systems/deepagents.md` §5). Artinya separuh
-  dari reattach untuk turn yang sedang HITL — "state approval yang
-  menunggu tidak hilang" — sudah didapat gratis dari mekanisme resume
-  `langgraph` yang ada, tidak perlu dibangun ulang. `[code]` — dikutip
-  `../systems/deepagents.md` §6.
-- **Yang TIDAK diselesaikan `langgraph`**: `.stream()`/`.astream()` adalah
-  generator Python yang terikat ke proses dan koneksi pemanggilnya saat
-  itu. Kalau koneksi client A putus lalu proses gateway yang sama (atau
-  proses lain) melanjutkan run yang sudah di-`interrupt`/checkpoint,
-  `langgraph` memberi **state ter-checkpoint untuk dilanjutkan
-  eksekusinya** (`Command(resume=...)`), bukan **replay delta token yang
-  sudah pernah di-broadcast ke koneksi lama**. Dua hal itu beda: yang
-  pertama "lanjutkan mengeksekusi graph yang berhenti", yang kedua "putar
-  ulang apa yang sudah client A lihat sebelum putus". `langgraph` cuma
-  menyediakan yang pertama. `[inferred]` — disimpulkan dari kontrak
-  `.stream()` sebagai generator per-invocation (`langgraph/pregel/main.py`)
-  dan tidak ditemukannya mekanisme "resume watching an existing broadcast"
-  di modul yang dibaca — bridging keduanya (event log per turn di
-  §Reattach) tetap tanggung jawab lapisan gateway aplikasi, `deepagents`/
-  `langgraph` tidak menyediakannya.
+- **HITL interrupts are automatically part of the checkpoint** —
+  `interrupt()` (used by `HumanInTheLoopMiddleware`, see
+  [`human-in-the-loop.md`](human-in-the-loop.md)) stops the graph at that
+  point and its state persists through the same `checkpointer` that keeps
+  Run state (`../systems/deepagents.md` §5). So half of reattach for a turn
+  in HITL — "the waiting approval state isn't lost" — comes free from
+  `langgraph`'s existing resume mechanism and needn't be rebuilt. `[code]` —
+  cited from `../systems/deepagents.md` §6.
+- **What `langgraph` does NOT solve**: `.stream()`/`.astream()` is a Python
+  generator bound to the process and connection that invoked it. If client
+  A's connection drops and the same gateway process (or another one)
+  continues a run that was interrupted/checkpointed, `langgraph` gives back
+  **checkpointed state to continue executing** (`Command(resume=...)`), not
+  **a replay of the token deltas already broadcast to the old connection**.
+  Those are two different things: the first is "continue executing a stopped
+  graph", the second is "replay what client A already saw before the drop".
+  `langgraph` provides only the first. `[inferred]` — concluded from
+  `.stream()`'s contract as a per-invocation generator
+  (`langgraph/pregel/main.py`) and the absence of any "resume watching an
+  existing broadcast" mechanism in the modules read — bridging the two (the
+  per-turn event log in §Reattach) remains the application gateway layer's
+  responsibility; `deepagents`/`langgraph` don't provide it.
 
-## Sumber
+## Sources
 
-- `[code]` `langgraph/types.py` — dibaca langsung dari
+- `[code]` `langgraph/types.py` — read directly from
   `references/recipes/.venv/lib/python3.13/site-packages/langgraph/types.py`,
-  definisi `StreamMode`.
-- `[code]` `langgraph/pregel/main.py` — dibaca langsung dari
+  the `StreamMode` definition.
+- `[code]` `langgraph/pregel/main.py` — read directly from
   `references/recipes/.venv/lib/python3.13/site-packages/langgraph/pregel/main.py`,
-  docstring parameter `stream_mode`, `durability`, `subgraphs` pada
+  the `stream_mode`, `durability`, and `subgraphs` parameter docstrings on
   `.stream()`.
 - `[code]` `langchain_core/messages/ai.py`, `langchain_core/messages/tool.py`
-  — dibaca langsung dari
+  — read directly from
   `references/recipes/.venv/lib/python3.13/site-packages/langchain_core/messages/`,
-  kelas `AIMessageChunk` (field `tool_call_chunks`) dan `ToolCallChunk`
-  (`name`/`args`/`id`/`index`, semantik penggabungan per-`index`).
-- `[docs]` WHATWG HTML Standard — §9.2 Server-sent events
-  (`https://html.spec.whatwg.org/multipage/server-sent-events.html`),
-  dikutip via WebFetch untuk algoritma reconnect `EventSource` (header
-  `Last-Event-ID`, field `id:`/`retry:`, delay reconnect default
-  implementation-defined).
+  the `AIMessageChunk` class (the `tool_call_chunks` field) and
+  `ToolCallChunk` (`name`/`args`/`id`/`index`, the per-`index` combination
+  semantics).
+- `[docs]` The WHATWG HTML Standard — §9.2 Server-sent events
+  (`https://html.spec.whatwg.org/multipage/server-sent-events.html`), cited
+  via WebFetch for the `EventSource` reconnect algorithm (the
+  `Last-Event-ID` header, the `id:`/`retry:` fields, the
+  implementation-defined default reconnect delay).
 - `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §5, §6 —
-  tier-1 reference terverifikasi, dikutip untuk checkpointer & interrupt.
-- `[code]` [`persistence-schema.md`](persistence-schema.md) — tabel
-  `messages` (kolom `status`), `tool_calls` (kolom `status`), dikutip
-  sebagai dasar durable log untuk reattach; skema tidak diubah di file ini.
-- `[code]` [`session-state.md`](session-state.md) — heuristik ephemeral vs
-  durable per lapis, dikutip untuk justifikasi "delta token ephemeral,
-  unit pesan/tool call durable".
-- `[code]` [`human-in-the-loop.md`](human-in-the-loop.md) — bentuk payload
-  `interrupt`, dikutip untuk skema event, tidak diulang mekanismenya.
+  a verified tier-1 reference, cited for the checkpointer and interrupts.
+- `[code]` [`persistence-schema.md`](persistence-schema.md) — the `messages`
+  (`status` column) and `tool_calls` (`status` column) tables, cited as the
+  durable log underpinning reattach; the schema is unchanged by this file.
+- `[code]` [`session-state.md`](session-state.md) — the ephemeral vs durable
+  heuristic per layer, cited to justify "token deltas ephemeral, message/tool
+  call units durable".
+- `[code]` [`human-in-the-loop.md`](human-in-the-loop.md) — the `interrupt`
+  payload shape, cited for the event schema; its mechanism isn't repeated.
