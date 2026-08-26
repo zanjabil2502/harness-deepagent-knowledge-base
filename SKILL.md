@@ -1,93 +1,93 @@
 ---
 name: agent-harness-kb
-description: Dipakai saat merancang harness agent atau membangun di atas deepagents — bentuk loop, context engineering, tool & delegasi, guardrail, dan konstruksi deepagents yang idiomatik. Tiga mode: mencari (kamus istilah dan simbol deepagents ke lokasi definisinya), menimbang (brainstorming arah, trade-off, "ini jenis sistem apa"), dan membangun (blueprint lalu scaffold). Fokus pada harness itu sendiri; lapisan serving dan persistensi tersedia tapi bukan jalur utama.
+description: Use when designing an agent harness or building on deepagents — loop shape, context engineering, tools & delegation, guardrails, and idiomatic deepagents construction. Three modes: looking up (a dictionary of terms and deepagents symbols to where they are defined), weighing (brainstorming directions, trade-offs, "what kind of system is this"), and building (a blueprint, then a scaffold). Focused on the harness itself; the serving and persistence layers are available but not the main path.
 ---
 
 # Agent Harness Engineering Knowledge Base
 
-Knowledge base tentang **rekayasa harness agent** dan cara membangun di atas
-**deepagents** secara idiomatik. Ambil deskripsi project apa pun, klasifikasikan
-arketipe-nya, lalu susun keputusan harness-nya: bentuk loop, pengelolaan konteks,
-permukaan tool, delegasi, dan guardrail.
+A knowledge base on **agent harness engineering** and how to build on
+**deepagents** idiomatically. Take any project description, classify its
+archetype, then compose its harness decisions: loop shape, context management,
+tool surface, delegation, and guardrails.
 
-**Batas fokus.** Jalur utama skill ini berhenti di harness dan konstruksi
-deepagents. Lapisan **serving dan persistensi** (skema, RLS, topologi, scaling)
-ada lengkap di `concepts/` bidang Data & Runtime, tapi **bukan jalur utama** —
-buka hanya ketika project sudah sampai ke sana. Mencampurnya di awal membuat
-keputusan harness tenggelam oleh keputusan infrastruktur.
+**Scope boundary.** This skill's main path stops at the harness and deepagents
+construction. The **serving and persistence** layers (schemas, RLS, topology,
+scaling) exist in full under `concepts/`, in the Data & Runtime fields, but are
+**not the main path** — open them only once a project reaches that point. Mixing
+them in early drowns the harness decisions in infrastructure decisions.
 
-## Prosedur diagnostik
+## The diagnostic procedure
 
 ```
-deskripsi project (bentuk apa pun)
-   ↓ isi 6 sumbu pembeda
-Arketipe (bisa hibrida)
-   ↓ archetypes/NN-*.md → batasan harness yang dipaksa arketipe
-   ↓ cek silang concepts/ (Cognition · Interface · Assurance) + systems/INDEX.md
+project description (in any shape)
+   ↓ fill in the 6 discriminating axes
+Archetype (hybrids allowed)
+   ↓ archetypes/NN-*.md → the harness constraints that archetype forces
+   ↓ cross-check concepts/ (Cognition · Interface · Assurance) + systems/INDEX.md
 HARNESS BLUEPRINT                      → blueprint-template.md
-   ├─ loop shape        — siapa yang memutuskan berhenti?
-   ├─ context           — kompaksi vs prompt caching, apa yang masuk konteks
-   ├─ tool surface      — banyak tool sempit vs sedikit tool luas
-   ├─ delegation        — subagent? kontrak hasil balik? batas kedalaman?
-   ├─ capability & policy — manifest deklaratif vs prosa + judgment model
-   └─ guardrail         — 6 titik, tiap satu: kebijakan + titik + mode kegagalan
+   ├─ loop shape        — who decides it stops?
+   ├─ context           — compaction vs prompt caching, what enters the context
+   ├─ tool surface      — many narrow tools vs few broad ones
+   ├─ delegation        — subagents? the result contract back? depth limits?
+   ├─ capability & policy — a declarative manifest vs prose + model judgement
+   └─ guardrails        — 6 points, each: policy + point + failure mode
    ↓
-KONSTRUKSI DEEPAGENTS                  ← ujung jalur utama
-   deepagents/lifecycle.md    — di mana bisa menyisip
-   deepagents/middleware.md   — urutan & interaksi berbahaya
-   deepagents/extension-points.md — jangan tulis custom di lapisan yang sudah punya hook
-   deepagents/per-archetype.md    — konstruksi yang benar per arketipe
-   deepagents/conformance.md      — apakah polanya idiomatik vs praktik maintainer
+DEEPAGENTS CONSTRUCTION                ← the end of the main path
+   deepagents/lifecycle.md    — where you can hook in
+   deepagents/middleware.md   — ordering & dangerous interactions
+   deepagents/extension-points.md — don't write custom code where a hook exists
+   deepagents/per-archetype.md    — the correct construction per archetype
+   deepagents/conformance.md      — is the pattern idiomatic vs maintainer practice
 
-── batas fokus ────────────────────────────────────────────────
-Di bawah ini baru relevan setelah harness diputuskan:
-   serving & persistensi  → concepts/ bidang Data & Runtime
-   scaffold project       → scaffolds/_base.md + deltas/ + serving.md
-   gerbang rilis          → checklist production-readiness
+── scope boundary ─────────────────────────────────────────────
+Below here only matters once the harness is decided:
+   serving & persistence  → concepts/, the Data & Runtime fields
+   project scaffold       → scaffolds/_base.md + deltas/ + serving.md
+   release gate           → the production-readiness checklist
 ```
 
-Setiap tahap di atas mendarat di sini:
+Every stage above lands here:
 
-| Tahap | Rujukan |
+| Stage | Reference |
 |---|---|
-| Klasifikasi arketipe | daftar "7 arketipe" di bawah |
-| Cek silang concepts | daftar "5 bidang `concepts/`" di bawah |
-| Cek silang systems | [systems/INDEX.md](references/systems/INDEX.md) |
-| Blueprint (kontrak, keluaran #1) | [blueprint-template.md](references/blueprint-template.md) |
-| **Lifecycle deepagents — alur satu turn** | [deepagents/lifecycle.md](references/deepagents/lifecycle.md) |
-| **Middleware — urutan & interaksi berbahaya** | [deepagents/middleware.md](references/deepagents/middleware.md) |
-| **Titik ekstensi + anti-pattern** | [deepagents/extension-points.md](references/deepagents/extension-points.md) |
-| **Konstruksi per arketipe** | [deepagents/per-archetype.md](references/deepagents/per-archetype.md) |
-| **Handler & pola error** | [deepagents/handlers.md](references/deepagents/handlers.md) |
-| **Best practice yang dinyatakan dokumentasi resmi** | [deepagents/best-practices.md](references/deepagents/best-practices.md) |
-| Config deepagents — API lengkap | [deepagents/api-reference.md](references/deepagents/api-reference.md) |
-| Config deepagents — kesesuaian vs vanilla | [deepagents/conformance.md](references/deepagents/conformance.md) |
-| Internal deepagents — apa memanggil apa | [deepagents/graph/](references/deepagents/graph/README.md) |
-| Dokumentasi upstream verbatim (bahan `[docs]`) | [upstream/deepagents-docs/](references/upstream/deepagents-docs/README.md) |
-| Scaffold base (keluaran #2, lapis 1) | [scaffolds/_base.md](references/scaffolds/_base.md) |
-| Scaffold delta per arketipe (lapis 2) | [scaffolds/deltas/](references/scaffolds/deltas/) |
-| Skill dasar keluaran bertag (table/chart/diagram/formula) | [scaffolds/skills/](references/scaffolds/skills/README.md) |
-| Scaffold serving/deploy (lapis 3) | [scaffolds/serving.md](references/scaffolds/serving.md) |
-| **Glosarium — istilah & simbol → lokasi** | [GLOSSARY.md](references/GLOSSARY.md) |
-| Ringkasan proyek, label sumber, instalasi | [README.md](README.md) |
+| Archetype classification | the "7 archetypes" list below |
+| Concepts cross-check | the "5 `concepts/` fields" list below |
+| Systems cross-check | [systems/INDEX.md](references/systems/INDEX.md) |
+| Blueprint (the contract, output #1) | [blueprint-template.md](references/blueprint-template.md) |
+| **deepagents lifecycle — one turn's flow** | [deepagents/lifecycle.md](references/deepagents/lifecycle.md) |
+| **Middleware — ordering & dangerous interactions** | [deepagents/middleware.md](references/deepagents/middleware.md) |
+| **Extension points + anti-patterns** | [deepagents/extension-points.md](references/deepagents/extension-points.md) |
+| **Construction per archetype** | [deepagents/per-archetype.md](references/deepagents/per-archetype.md) |
+| **Handlers & error patterns** | [deepagents/handlers.md](references/deepagents/handlers.md) |
+| **Best practices stated by the official documentation** | [deepagents/best-practices.md](references/deepagents/best-practices.md) |
+| deepagents config — the full API | [deepagents/api-reference.md](references/deepagents/api-reference.md) |
+| deepagents config — conformance vs vanilla | [deepagents/conformance.md](references/deepagents/conformance.md) |
+| deepagents internals — what calls what | [deepagents/graph/](references/deepagents/graph/README.md) |
+| Verbatim upstream documentation (the `[docs]` material) | [upstream/deepagents-docs/](references/upstream/deepagents-docs/README.md) |
+| Base scaffold (output #2, layer 1) | [scaffolds/_base.md](references/scaffolds/_base.md) |
+| Per-archetype scaffold deltas (layer 2) | [scaffolds/deltas/](references/scaffolds/deltas/) |
+| Base skills for tagged output (table/chart/diagram/formula) | [scaffolds/skills/](references/scaffolds/skills/README.md) |
+| Serving/deploy scaffold (layer 3) | [scaffolds/serving.md](references/scaffolds/serving.md) |
+| **Glossary — terms & symbols → locations** | [GLOSSARY.md](references/GLOSSARY.md) |
+| Project overview, source labels, installation | [README.md](README.md) |
 
-## 6 sumbu pembeda (klasifikasi cepat)
+## The 6 discriminating axes (quick classification)
 
-| Sumbu | Pertanyaan |
+| Axis | Question |
 |---|---|
-| Blast radius | Menyentuh apa? mesin user / sandbox / data SaaS / dunia luar |
-| Artefak | Output-nya apa? edit yang ada / bikin baru / jawaban / aksi di sistem lain |
-| Horizon | Sekali jalan / satu sesi / hidup di background |
-| Kendali manusia | Approve tiap langkah / review di akhir / tanpa manusia |
-| Permukaan domain | General atau vertikal |
-| Antarmuka | CLI / IDE / kanvas / chat / API tertanam |
+| Blast radius | What does it touch? the user's machine / a sandbox / SaaS data / the outside world |
+| Artifact | What is its output? editing what exists / creating something new / an answer / an action in another system |
+| Horizon | One shot / one session / living in the background |
+| Human control | Approve each step / review at the end / no human |
+| Domain surface | General or vertical |
+| Interface | CLI / IDE / canvas / chat / embedded API |
 
-Potongan utama untuk klasifikasi awal: **artefak × blast radius**.
+The primary cut for an initial classification: **artifact × blast radius**.
 
-## 7 arketipe
+## The 7 archetypes
 
-Hibrida normal dan dicatat eksplisit (mis. Cursor = Workspace Agent + In-App
-Copilot, Manus = General Task Agent + Computer-Use Agent).
+Hybrids are normal and recorded explicitly (e.g. Cursor = Workspace Agent +
+In-App Copilot, Manus = General Task Agent + Computer-Use Agent).
 
 1. [Workspace Agent](references/archetypes/01-workspace-agent.md)
 2. [Generative Builder](references/archetypes/02-generative-builder.md)
@@ -97,49 +97,49 @@ Copilot, Manus = General Task Agent + Computer-Use Agent).
 6. [Workflow Agent](references/archetypes/06-workflow-agent.md)
 7. [Computer-Use Agent](references/archetypes/07-computer-use-agent.md)
 
-## Bidang `concepts/` — inti harness dulu
+## The `concepts/` fields — the harness core first
 
-Cakupan ditentukan bidang, bukan topik yang kebetulan terpikirkan.
+Coverage is determined by field, not by whatever topic came to mind.
 
 - **Cognition** — [agent-loop](references/concepts/agent-loop.md), [planning](references/concepts/planning.md), [delegation](references/concepts/delegation.md), [code-orchestration](references/concepts/code-orchestration.md), [context-engineering](references/concepts/context-engineering.md), [memory](references/concepts/memory.md), [policy-as-data](references/concepts/policy-as-data.md), [skill-composition](references/concepts/skill-composition.md)
 - **Interface** — [tool-design](references/concepts/tool-design.md), [mcp](references/concepts/mcp.md), [agent-protocols](references/concepts/agent-protocols.md), [streaming-protocol](references/concepts/streaming-protocol.md), [human-in-the-loop](references/concepts/human-in-the-loop.md), [structured-output](references/concepts/structured-output.md), [multilingual](references/concepts/multilingual.md)
 - **Assurance** — [guardrails](references/concepts/guardrails.md), [evaluation](references/concepts/evaluation.md), [security](references/concepts/security.md), [observability](references/concepts/observability.md), [cost-control](references/concepts/cost-control.md), [replay-and-forensics](references/concepts/replay-and-forensics.md)
 
-### Lapis kedua — buka saat project sampai ke serving & persistensi
+### The second layer — open when the project reaches serving & persistence
 
-Bukan jalur utama. Keputusan di sini baru relevan setelah bentuk harness-nya
-diputuskan; membukanya lebih awal menenggelamkan keputusan harness.
+Not the main path. Decisions here only matter once the harness's shape is
+settled; opening them earlier drowns the harness decisions.
 
 - **Data** — [session-state](references/concepts/session-state.md), [persistence-schema](references/concepts/persistence-schema.md), [artifacts-and-canvas](references/concepts/artifacts-and-canvas.md), [retention-and-deletion](references/concepts/retention-and-deletion.md)
 - **Runtime** — [serving-topology](references/concepts/serving-topology.md), [resource-profiling](references/concepts/resource-profiling.md), [isolation-and-scoping](references/concepts/isolation-and-scoping.md), [sandboxing](references/concepts/sandboxing.md), [queueing-and-backpressure](references/concepts/queueing-and-backpressure.md), [scaling](references/concepts/scaling.md)
 
-## Tiga mode pemakaian
+## Three usage modes
 
-Bahannya sama; yang berbeda **bagian mana yang dibaca** dan apa yang
-dihasilkan. Frame lima-bagian tiap file memang menyandikan ketiganya.
+The material is the same; what differs is **which parts you read** and what
+comes out. Every file's five-section frame encodes all three deliberately.
 
-| | **Mencari** (kamus) | **Menimbang** (brainstorming) | **Membangun** |
+| | **Looking up** (the dictionary) | **Weighing** (brainstorming) | **Building** |
 |---|---|---|---|
-| Berangkat dari | satu istilah atau nama simbol | pertanyaan, dugaan, ide yang belum berbentuk | deskripsi project yang sudah ada |
-| Bagian yang dibaca | [`GLOSSARY.md`](references/GLOSSARY.md), lalu berkas kanonik yang ditunjuknya | `## Masalah`, `## Trade-off`; di arketipe: `## Sistem contoh`, `## Jebakan khas`; `systems/INDEX.md` | `## Pola`, `## Di deepagents`; di arketipe: `## Konsekuensi harness`, `## Bangun ini pakai deepagents` |
-| Keluaran | arti istilah, atau `file:line` definisi simbol di source | keputusan beserta alasan dan yang ditukar — belum tentu satu blueprint | Harness Blueprint, lalu scaffold |
+| Starts from | one term or symbol name | a question, a hunch, an idea with no shape yet | an existing project description |
+| Sections read | [`GLOSSARY.md`](references/GLOSSARY.md), then the canonical file it points to | `## Problem`, `## Trade-offs`; in archetypes: `## Example systems`, `## Common pitfalls`; `systems/INDEX.md` | `## Pattern`, `## In deepagents`; in archetypes: `## Harness consequences`, `## Building this with deepagents` |
+| Output | a term's meaning, or the `file:line` of a symbol's definition in source | decisions with their reasons and what was traded — not necessarily one blueprint | a Harness Blueprint, then a scaffold |
 
-**Mencari** adalah lookup, bukan alur. Untuk istilah kosakata KB
-(blast radius, fail-deferred, kontrak hasil) glosarium memberi arti satu
-baris plus berkas yang membahasnya tuntas; untuk simbol `deepagents`
-(`CompositeBackend`, `SubAgentMiddleware`) ia memberi lokasi definisinya
-di source — diturunkan dari graf AST, jadi parameter dan signature
-dibaca dari kode aslinya, bukan diingat.
+**Looking up** is a lookup, not a flow. For the KB's own vocabulary (blast
+radius, fail-deferred, result contract) the glossary gives a one-line meaning
+plus the file that covers it in full; for `deepagents` symbols
+(`CompositeBackend`, `SubAgentMiddleware`) it gives their definition's location
+in source — derived from the AST graph, so parameters and signatures are read
+from the actual code rather than remembered.
 
-**Menimbang** dipakai saat pertanyaannya masih "sebenarnya ini jenis
-sistem apa", "apa konsekuensinya kalau loop-nya begini", atau "sudah ada
-yang bikin begini belum". Jalannya bukan prosedur diagnostik di atas —
-mulai dari 6 sumbu sebagai menu pilihan, `systems/INDEX.md` untuk melihat
-yang sudah ada, lalu `## Trade-off` di concept yang relevan. Di mode ini
-penjelasan **adalah** keluarannya, dan berhenti tanpa blueprint itu sah.
+**Weighing** is for when the question is still "what kind of system is this
+really", "what follows if the loop works this way", or "has anyone built this
+already". Its route isn't the diagnostic procedure above — start from the 6
+axes as a menu of choices, `systems/INDEX.md` to see what exists, then the
+`## Trade-offs` of the relevant concept. In this mode the explanation **is**
+the output, and stopping without a blueprint is legitimate.
 
-**Membangun** memakai prosedur diagnostik di atas dan berakhir di
-blueprint lalu scaffold — di mode ini penjelasan bukan keluaran.
+**Building** uses the diagnostic procedure above and ends at a blueprint, then
+a scaffold — in this mode the explanation isn't the output.
 
-Hasil menimbang mengalir masuk ke membangun: keputusan yang sudah punya
-alasan mengisi baris blueprint tanpa perlu ditimbang ulang.
+What comes out of weighing flows into building: a decision that already has a
+reason fills in a blueprint line without being weighed again.
