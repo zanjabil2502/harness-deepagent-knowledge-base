@@ -240,10 +240,15 @@ cp -r references/recipes/.venv/lib/python3.13/site-packages/deepagents /tmp/deep
 graphify /tmp/deepagents-src
 ```
 
-Korpus code-only → ekstraksi murni AST, nol token LLM, nol API key. Keluaran
-di `graphify-out/` (git-ignored: ~3,7 MB, turunan, dan memuat path absolut
-mesin). Regenerate setelah `deepagents` naik versi, lalu diff hasilnya untuk
-melihat apa yang berubah.
+Korpus code-only → ekstraksi murni AST, nol token LLM, nol API key.
+Keluarannya mendarat di `graphify-out/`; pindahkan isinya ke
+[`references/deepagents/graph/`](references/deepagents/graph/README.md),
+tempatnya hidup sebagai rujukan skill. Tiga berkas di-commit
+(`GRAPH_REPORT.md`, `graph.json`, `manifest.json`); turunan yang besar,
+mesin-spesifik, atau memuat path absolut tetap git-ignored. Regenerate
+setelah `deepagents` naik versi, lalu diff hasilnya untuk melihat apa yang
+berubah — `tools/check_kb.py` akan menolak lebih dulu kalau graf tidak lagi
+sinkron dengan source terpasang.
 
 Graph tidak bisa bilang mana yang **benar** — hanya mana yang **ada**.
 Verdict idiomatik tetap dari `references/deepagents/conformance.md`.

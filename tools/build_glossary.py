@@ -9,7 +9,7 @@ Dua bagian, dua sumber kebenaran yang berbeda:
   tangan karena ini kosakata prosa, bukan simbol yang bisa diekstrak.
   Yang dicek mesin: berkas kanoniknya ada, dan benar-benar memuat
   istilahnya. Konsep yang dipindah atau diganti nama menggagalkan build.
-- **Simbol deepagents** diturunkan dari `graphify-out/graph.json`
+- **Simbol deepagents** diturunkan dari `references/deepagents/graph/graph.json`
   ber-irisan dengan token berbacktick di KB. Grafnya yang menentukan apa
   yang dianggap simbol nyata, jadi tidak ada derau dari backtick biasa,
   dan lokasi `file:line`-nya datang dari AST, bukan ingatan.
@@ -22,7 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 REF = ROOT / "references"
-GRAPH = ROOT / "graphify-out" / "graph.json"
+GRAPH = REF / "deepagents" / "graph" / "graph.json"
 OUT = REF / "GLOSSARY.md"
 TOKEN = re.compile(r"`([A-Za-z_][\w.]*)`")
 
@@ -78,8 +78,15 @@ def load_graph():
 
 
 def kb_files():
+    """Berkas KB yang benar-benar kita tulis.
+
+    `upstream/` salinan vendor; `deepagents/graph/` keluaran mesin yang
+    mendaftar simbol tanpa membahasnya — mencantumkannya sebagai "dibahas
+    KB di" menyesatkan, dan menarik masuk simbol yang tak pernah dijelaskan.
+    """
+    skip = {"upstream", "graph"}
     return [f for f in sorted(REF.rglob("*.md"))
-            if "upstream" not in f.parts and f != OUT]
+            if not skip & set(f.parts) and f != OUT]
 
 
 def check_terms() -> list[str]:
@@ -123,7 +130,7 @@ def main() -> int:
         "## Simbol deepagents",
         "",
         f"{len(mentions)} simbol yang disebut KB dan ada di graf AST source. "
-        "Kolom lokasi datang dari `graphify-out/graph.json`, relatif ke akar "
+        "Kolom lokasi datang dari `deepagents/graph/graph.json`, relatif ke akar "
         "paket `deepagents` di `references/recipes/.venv/`; kesinkronannya "
         "dengan source terpasang dijaga `tools/check_kb.py`.",
         "",

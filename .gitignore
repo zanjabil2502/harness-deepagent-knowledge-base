@@ -3,9 +3,9 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
-# graphify: artefak berpengetahuan di-commit; yang mesin-spesifik & turunan tidak
-graphify-out/.graphify_python
-graphify-out/.graphify_root
-graphify-out/graph.html
-graphify-out/cache/
-graphify-out/cost.json
+# graf AST deepagents: artefak berpengetahuan di-commit; yang mesin-spesifik & turunan tidak
+references/deepagents/graph/.graphify_python
+references/deepagents/graph/.graphify_root
+references/deepagents/graph/graph.html
+references/deepagents/graph/cache/
+references/deepagents/graph/cost.json

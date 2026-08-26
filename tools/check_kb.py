@@ -33,12 +33,13 @@ SKILL_MAX_LINES = 150
 # menganjurkan SKILL.md di bawah 500 baris; deepagents melewati berkas di
 # atas 10 MB saat discovery tanpa error. Ketiganya gagal diam-diam kalau
 # dilanggar, jadi dicek di sini. Lihat references/deepagents/best-practices.md §5.
-# graphify-out/ adalah indeks simbol→file:line dari source deepagents. Nilainya
+# references/deepagents/graph/ adalah indeks simbol→file:line dari source
+# deepagents. Nilainya
 # bergantung sepenuhnya pada kesinkronan dengan source yang terpasang: begitu
 # paketnya berubah, sitasi `file.py:NNN` di seluruh KB bisa meleset tanpa satu
 # pun cek gagal. manifest.json menyimpan md5 tiap berkas saat graf dibangun,
 # jadi drift-nya bisa dibuktikan, bukan diasumsikan.
-MANIFEST = ROOT / "graphify-out" / "manifest.json"
+MANIFEST = REF / "deepagents" / "graph" / "manifest.json"
 DA_SRC = next(
     iter(sorted(ROOT.glob("references/recipes/.venv/lib/python*/site-packages/deepagents"))),
     None,
@@ -179,7 +180,7 @@ def check_skill_assets(errs):
 def check_graph_sync(errs):
     """Graf AST harus cocok dengan source deepagents yang terpasang."""
     if not MANIFEST.exists():
-        errs.append("graphify-out/manifest.json: tidak ada")
+        errs.append("references/deepagents/graph/manifest.json: tidak ada")
         return
     if DA_SRC is None or not DA_SRC.is_dir():
         print("LEWAT: venv references/recipes/ belum ada, sinkronisasi graf tidak dicek")
@@ -188,10 +189,10 @@ def check_graph_sync(errs):
     for rel, meta in sorted(manifest.items()):
         f = DA_SRC / rel
         if not f.exists():
-            errs.append(f"graphify-out: {rel} ada di graf tapi tidak di source terpasang")
+            errs.append(f"graf: {rel} ada di graf tapi tidak di source terpasang")
         elif hashlib.md5(f.read_bytes()).hexdigest() != meta.get("ast_hash"):
             errs.append(
-                f"graphify-out: {rel} berubah sejak graf dibangun — "
+                f"graf: {rel} berubah sejak graf dibangun — "
                 "bangun ulang graf dan tinjau sitasi baris yang menunjuk berkas ini"
             )
     for f in sorted(DA_SRC.rglob("*.py")):
@@ -199,7 +200,7 @@ def check_graph_sync(errs):
             continue
         rel = f.relative_to(DA_SRC).as_posix()
         if rel not in manifest:
-            errs.append(f"graphify-out: {rel} ada di source tapi belum masuk graf")
+            errs.append(f"graf: {rel} ada di source tapi belum masuk graf")
 
 
 def check_glossary(errs):

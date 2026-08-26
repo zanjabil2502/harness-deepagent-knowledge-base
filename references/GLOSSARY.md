@@ -37,7 +37,7 @@ python3 tools/build_glossary.py
 
 ## Simbol deepagents
 
-32 simbol yang disebut KB dan ada di graf AST source. Kolom lokasi datang dari `graphify-out/graph.json`, relatif ke akar paket `deepagents` di `references/recipes/.venv/`; kesinkronannya dengan source terpasang dijaga `tools/check_kb.py`.
+32 simbol yang disebut KB dan ada di graf AST source. Kolom lokasi datang dari `deepagents/graph/graph.json`, relatif ke akar paket `deepagents` di `references/recipes/.venv/`; kesinkronannya dengan source terpasang dijaga `tools/check_kb.py`.
 
 | Simbol | Didefinisikan di | Dibahas KB di |
 |---|---|---|
