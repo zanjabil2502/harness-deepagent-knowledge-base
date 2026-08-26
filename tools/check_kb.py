@@ -34,6 +34,15 @@ ROSTER = REF / "deepagents" / "conformance.md"
 # references/deepagents/ menampung pointer (per-archetype.md) dan meta (conformance.md)
 # tentang label itu sendiri; roster hanya mendaftar klaim substantif di luar folder ini.
 ROSTER_EXEMPT_DIR = "deepagents"
+# references/upstream/ = salinan verbatim dokumentasi vendor. Bukan tulisan kita,
+# jadi tidak tunduk pada frame section, label sumber, maupun roster [ours];
+# link internalnya juga memakai path absolut situs vendor, bukan path repo.
+UPSTREAM_DIR = "upstream"
+
+
+def authored(f):
+    """Berkas KB yang kita tulis sendiri (bukan salinan upstream)."""
+    return f.relative_to(REF).parts[0] != UPSTREAM_DIR
 
 
 def check_frames(errs):
@@ -57,7 +66,7 @@ def check_frames(errs):
 def check_links(errs):
     files = [ROOT / "SKILL.md", ROOT / "README.md"]
     if REF.is_dir():
-        files += sorted(REF.rglob("*.md"))
+        files += [f for f in sorted(REF.rglob("*.md")) if authored(f)]
     for f in files:
         if not f.exists() or ".venv" in f.parts:
             continue
@@ -97,6 +106,8 @@ def check_ours_roster(errs):
 
     actual = set()
     for f in sorted(REF.rglob("*.md")):
+        if not authored(f):
+            continue
         rel = f.relative_to(REF).as_posix()
         for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
             if OURS.search(line):
