@@ -1,182 +1,188 @@
 # `deepagents` — API reference
 
-Referensi parameter tiap entrypoint publik `deepagents`, dibaca dari source
-paket terinstal (bukan README). Untuk gambaran arsitektur baca dulu
-[`../systems/deepagents.md`](../systems/deepagents.md); file ini adalah
-lapisan detail di bawahnya.
+A parameter reference for every public `deepagents` entrypoint, read from
+the installed package's source (not the README). For the architectural
+picture read [`../systems/deepagents.md`](../systems/deepagents.md) first;
+this file is the detail layer beneath it.
 
-Konvensi: tipe dan default ditulis **persis** seperti di signature.
-Parameter bertanda ⚠️ adalah yang paling sering salah pakai — alasannya
-ditulis di kolom efek.
+Convention: types and defaults are written **exactly** as they appear in
+the signature. Parameters marked ⚠️ are the most commonly misused — the
+reason is given in the effect column.
 
 ## `create_deep_agent(...)`
 
-`[code]` — `deepagents/graph.py` baris 268-288 (signature), 289-579
-(docstring), 580-944 (implementasi).
+`[code]` — `deepagents/graph.py` lines 268-288 (signature), 289-579
+(docstring), 580-944 (implementation).
 
-Mengembalikan `CompiledStateGraph`, sudah dibungkus
+Returns a `CompiledStateGraph`, already wrapped in
 `.with_config({"recursion_limit": 9_999, "metadata": {...}})`.
 
-| Parameter | Tipe | Default | Efek |
+| Parameter | Type | Default | Effect |
 |---|---|---|---|
-| `model` | `str \| BaseChatModel \| None` | `None` ⚠️ | `None` **deprecated sejak 0.5.3**, dihapus di 1.0.0 — memicu `warn_deprecated` lalu memakai `ChatAnthropic(model_name="claude-sonnet-4-6")`. String `provider:model` diresolusi lewat `resolve_model` (`deepagents/_models.py`). Model yang dipilih juga menentukan `HarnessProfile` aktif lewat `_harness_profile_for_model`. |
-| `tools` | `Sequence[BaseTool \| Callable \| dict] \| None` | `None` | **Aditif** — digabung dengan tool bawaan middleware, tidak pernah menggantinya. Untuk membuang tool bawaan pakai `HarnessProfile.excluded_tools` atau `FilesystemMiddleware(tools=[...])`, bukan parameter ini. Deskripsi tiap tool bisa ditimpa profil lewat `tool_description_overrides`. |
-| `system_prompt` | `str \| SystemMessage \| None` | `None` | Slot `USER` pada rakitan `USER` → `BASE` → `SUFFIX`, dipisah baris kosong. `BASE`/`SUFFIX` datang dari `HarnessProfile.base_system_prompt`/`system_prompt_suffix`. `None` + profil kosong = system prompt authored kosong (sejak 0.7.0 `deepagents` tidak lagi menulis base prompt sendiri; `BASE_AGENT_PROMPT` deprecated). `SystemMessage` mempertahankan marker `cache_control` yang sudah ada. |
-| `middleware` | `Sequence[AgentMiddleware]` | `()` ⚠️ | Disisipkan **setelah** base stack dan **sebelum** tail stack. Entri yang `.name`-nya sama dengan anggota stack yang ada **mengganti di tempat**; yang namanya baru disisipkan setelah anggota core terakhir. Lihat [`middleware.md`](middleware.md) — perilaku "ganti berdasarkan nama" ini adalah sumber bug diam paling umum. |
-| `subagents` | `Sequence[SubAgent \| CompiledSubAgent \| AsyncSubAgent] \| None` | `None` | Routing berdasarkan bentuk dict: ada key `graph_id` → `AsyncSubAgent`; ada key `runnable` → `CompiledSubAgent`; selain itu `SubAgent` deklaratif. Subagent `general-purpose` ditambahkan otomatis kecuali caller sudah menyediakan yang bernama sama atau profil mematikannya. |
-| `skills` | `list[str] \| None` | `None` | Path POSIX relatif terhadap root backend. Memasang `SkillsMiddleware` di posisi **paling depan** stack. Sumber belakangan menimpa sumber sebelumnya untuk nama skill yang sama. |
-| `memory` | `list[str] \| None` | `None` | Path file `AGENTS.md`. Memasang `MemoryMiddleware(add_cache_control=True)` di **tail** stack, setelah middleware prompt-caching — urutan ini disengaja supaya update memory tidak membatalkan prefix cache Anthropic. |
-| `permissions` | `list[FilesystemPermission] \| None` | `None` ⚠️ | Ditegakkan `FilesystemMiddleware` di level **tool**, bukan level backend — pemakaian backend langsung tidak lewat permission. Rule dievaluasi berurutan, match pertama menang; tanpa match = diizinkan. `mode="interrupt"` otomatis membangkitkan entri `interrupt_on` (lihat `handlers.md`). Kombinasi `permissions` + backend `SandboxBackendProtocol` **raise `NotImplementedError`** kecuali semua path ter-scope ke route non-eksekusi. |
-| `backend` | `BackendProtocol \| None` | `None` → `StateBackend()` ⚠️ | Default adalah `StateBackend` (ephemeral, hidup di state LangGraph), **bukan** `LocalShellBackend`. Tool `execute` baru berguna kalau backend mengimplementasi `SandboxBackendProtocol`. Factory (callable) ditolak sejak 0.7 — kirim instance. |
-| `interrupt_on` | `dict[str, bool \| InterruptOnConfig] \| None` | `None` | Digabung dengan entri hasil `permissions` (entri user menang per nama tool). Kalau gabungannya kosong, `HumanInTheLoopMiddleware` tidak dipasang sama sekali. `SubAgent` deklaratif mewarisi ini; `CompiledSubAgent` dan `AsyncSubAgent` **tidak**. |
-| `response_format` | `ResponseFormat[ResponseT] \| type[ResponseT] \| dict \| None` | `None` | Diteruskan ke `create_agent`. Memvalidasi **bentuk** keluaran saja, bukan kebenaran isinya. |
-| `state_schema` | `type[DeepAgentState] \| None` | `None` → `DeepAgentState` ⚠️ | Harus subclass `DeepAgentState` agar reducer `DeltaChannel` pada `messages` tetap ada — **tidak divalidasi runtime** (TypedDict tidak bisa `issubclass`), jadi salah pakai baru terlihat sebagai checkpoint membengkak. Diteruskan ke `SubAgent` deklaratif, **tidak** ke `CompiledSubAgent`/`AsyncSubAgent`. Docstring menyarankan menaruh field tambahan di `state_schema` middleware, bukan di sini. |
-| `context_schema` | `type[ContextT] \| None` | `None` | Context run-scoped immutable, diteruskan apa adanya ke `create_agent`. |
-| `checkpointer` | `Checkpointer \| None` | `None` | Diteruskan apa adanya. `deepagents` tidak pernah membangun checkpointer sendiri. Wajib ada kalau memakai `interrupt_on`. |
-| `store` | `BaseStore \| None` | `None` | Diteruskan apa adanya. `StoreBackend(store=None)` mengambil store dari execution context LangGraph. |
-| `debug` | `bool` | `False` | Diteruskan apa adanya. |
-| `name` | `str \| None` | `None` | Diteruskan apa adanya, dan masuk metadata `lc_agent_name`. |
-| `cache` | `BaseCache \| None` | `None` | Diteruskan apa adanya. |
+| `model` | `str \| BaseChatModel \| None` | `None` ⚠️ | `None` is **deprecated since 0.5.3** and removed in 1.0.0 — it triggers `warn_deprecated` and then uses `ChatAnthropic(model_name="claude-sonnet-4-6")`. A `provider:model` string is resolved through `resolve_model` (`deepagents/_models.py`). The chosen model also determines the active `HarnessProfile` via `_harness_profile_for_model`. |
+| `tools` | `Sequence[BaseTool \| Callable \| dict] \| None` | `None` | **Additive** — merged with the middleware's built-in tools, never replacing them. To remove built-in tools use `HarnessProfile.excluded_tools` or `FilesystemMiddleware(tools=[...])`, not this parameter. Each tool's description can be overridden by a profile through `tool_description_overrides`. |
+| `system_prompt` | `str \| SystemMessage \| None` | `None` | The `USER` slot in the `USER` → `BASE` → `SUFFIX` assembly, separated by blank lines. `BASE`/`SUFFIX` come from `HarnessProfile.base_system_prompt`/`system_prompt_suffix`. `None` plus an empty profile = an empty authored system prompt (since 0.7.0 `deepagents` no longer writes its own base prompt; `BASE_AGENT_PROMPT` is deprecated). A `SystemMessage` preserves any existing `cache_control` markers. |
+| `middleware` | `Sequence[AgentMiddleware]` | `()` ⚠️ | Inserted **after** the base stack and **before** the tail stack. An entry whose `.name` matches an existing stack member **replaces it in place**; a new name is inserted after the last core member. See [`middleware.md`](middleware.md) — this "replace by name" behaviour is the most common source of silent bugs. |
+| `subagents` | `Sequence[SubAgent \| CompiledSubAgent \| AsyncSubAgent] \| None` | `None` | Routed by dict shape: a `graph_id` key → `AsyncSubAgent`; a `runnable` key → `CompiledSubAgent`; otherwise a declarative `SubAgent`. The `general-purpose` subagent is added automatically unless the caller already supplies one with that name or a profile disables it. |
+| `skills` | `list[str] \| None` | `None` | POSIX paths relative to the backend root. Installs `SkillsMiddleware` at the **very front** of the stack. Later sources override earlier ones for the same skill name. |
+| `memory` | `list[str] \| None` | `None` | Paths to `AGENTS.md` files. Installs `MemoryMiddleware(add_cache_control=True)` in the **tail** stack, after the prompt-caching middleware — this ordering is deliberate so that memory updates don't invalidate the Anthropic cache prefix. |
+| `permissions` | `list[FilesystemPermission] \| None` | `None` ⚠️ | Enforced by `FilesystemMiddleware` at the **tool** level, not the backend level — direct backend use bypasses permissions. Rules are evaluated in order, first match wins; no match = allowed. `mode="interrupt"` automatically generates `interrupt_on` entries (see `handlers.md`). Combining `permissions` with a `SandboxBackendProtocol` backend **raises `NotImplementedError`** unless every path is scoped to a non-execution route. |
+| `backend` | `BackendProtocol \| None` | `None` → `StateBackend()` ⚠️ | The default is `StateBackend` (ephemeral, living in LangGraph state), **not** `LocalShellBackend`. The `execute` tool is only useful when the backend implements `SandboxBackendProtocol`. Factories (callables) have been rejected since 0.7 — pass an instance. |
+| `interrupt_on` | `dict[str, bool \| InterruptOnConfig] \| None` | `None` | Merged with entries generated from `permissions` (user entries win per tool name). If the merge is empty, `HumanInTheLoopMiddleware` is not installed at all. Declarative `SubAgent`s inherit this; `CompiledSubAgent` and `AsyncSubAgent` **do not**. |
+| `response_format` | `ResponseFormat[ResponseT] \| type[ResponseT] \| dict \| None` | `None` | Passed to `create_agent`. Validates the output's **shape** only, not the correctness of its contents. |
+| `state_schema` | `type[DeepAgentState] \| None` | `None` → `DeepAgentState` ⚠️ | Must subclass `DeepAgentState` so the `DeltaChannel` reducer on `messages` survives — **not validated at runtime** (a TypedDict cannot be `issubclass`-checked), so getting it wrong only surfaces as bloating checkpoints. Passed to declarative `SubAgent`s, **not** to `CompiledSubAgent`/`AsyncSubAgent`. The docstring recommends putting extra fields in a middleware's `state_schema` rather than here. |
+| `context_schema` | `type[ContextT] \| None` | `None` | Immutable run-scoped context, passed through unchanged to `create_agent`. |
+| `checkpointer` | `Checkpointer \| None` | `None` | Passed through unchanged. `deepagents` never builds a checkpointer of its own. Required when using `interrupt_on`. |
+| `store` | `BaseStore \| None` | `None` | Passed through unchanged. `StoreBackend(store=None)` takes the store from the LangGraph execution context. |
+| `debug` | `bool` | `False` | Passed through unchanged. |
+| `name` | `str \| None` | `None` | Passed through unchanged, and included in the `lc_agent_name` metadata. |
+| `cache` | `BaseCache \| None` | `None` | Passed through unchanged. |
 
-**Yang tidak ada di signature ini** (sering dikira ada): tidak ada
+**What this signature does not have** (frequently assumed to): there is no
 `recursion_limit`, `max_iterations`, `timeout`, `temperature`, `verbose`,
-`memory_store`, `todo`, maupun `planning`. Batas loop diatur lewat
-`.with_config({"recursion_limit": N})` atau `config=` saat `invoke`
-(lihat [`handlers.md`](handlers.md)).
+`memory_store`, `todo`, or `planning`. Loop bounds are set through
+`.with_config({"recursion_limit": N})` or `config=` at `invoke` time (see
+[`handlers.md`](handlers.md)).
 
 ## `DeepAgentState`
 
-`[code]` — `deepagents/graph.py` baris 70-73.
+`[code]` — `deepagents/graph.py` lines 70-73.
 
-`AgentState` dengan satu perbedaan: field `messages` di-annotate
-`DeltaChannel(_messages_delta_reducer, snapshot_frequency=50)` sehingga
-pertumbuhan checkpoint turun dari O(N²) ke O(N). Turunkan dari kelas ini,
-jangan dari `AgentState`, kalau memakai `state_schema=`.
+`AgentState` with one difference: the `messages` field is annotated
+`DeltaChannel(_messages_delta_reducer, snapshot_frequency=50)`, dropping
+checkpoint growth from O(N²) to O(N). Subclass this rather than
+`AgentState` when using `state_schema=`.
 
-## Spec subagent
+## Subagent specs
 
-`[code]` — `deepagents/middleware/subagents.py` baris 36-243;
-`deepagents/middleware/async_subagents.py` baris 34-79.
+`[code]` — `deepagents/middleware/subagents.py` lines 36-243;
+`deepagents/middleware/async_subagents.py` lines 34-79.
 
-| Key | Bentuk | Wajib | Catatan |
+| Key | Shape | Required | Notes |
 |---|---|---|---|
-| `name` | `str` | ya | Dipakai model sebagai argumen `subagent_type` tool `task`. |
-| `description` | `str` | ya | Ini yang dibaca model untuk memutuskan delegasi — tulis action-oriented. |
-| `system_prompt` | `str` | ya (`SubAgent`) | Profil harness ikut menambahkan `BASE`/`SUFFIX` di atasnya. |
-| `tools` | `Sequence[...]` | tidak | ⚠️ Kalau key `tools` **tidak ada**, subagent mewarisi `tools` agent utama. Kalau ada tapi `[]`, subagent tidak dapat tool caller sama sekali (tool middleware tetap ada). |
-| `model` | `str \| BaseChatModel` | tidak | Diresolusi terpisah, dan memilih `HarnessProfile`-nya sendiri. |
-| `middleware` | `list[AgentMiddleware]` | tidak | Aturan ganti-berdasarkan-nama yang sama berlaku. Ini jalur resmi untuk `FilesystemMiddleware(tools=[...])` per subagent. |
-| `interrupt_on` | `dict[...]` | tidak | Kalau ada, **menggantikan** warisan dari top-level, tidak menambah. |
-| `skills` | `list[str]` | tidak | Memasang `SkillsMiddleware` khusus subagent itu. |
-| `permissions` | `list[FilesystemPermission]` | tidak | Kalau ada, **mengganti total** rule parent, tidak menambah. |
-| `response_format` | `ResponseFormat \| type \| dict` | tidak | Kalau diisi, `structured_response` yang diserialkan JSON menjadi isi `ToolMessage`, menggantikan ekstraksi pesan terakhir. |
-| `runnable` | `Runnable` | ya (`CompiledSubAgent`) | State schema-nya **wajib** punya key `messages`, kalau tidak `_return_command_with_state_update` raise `ValueError`. |
-| `graph_id` | `str` | ya (`AsyncSubAgent`) | Keberadaan key ini yang me-route spec ke `AsyncSubAgentMiddleware`. |
-| `url`, `headers` | `str`, `dict[str, str]` | tidak (`AsyncSubAgent`) | Endpoint Agent Protocol dan header auth. |
+| `name` | `str` | yes | Used by the model as the `task` tool's `subagent_type` argument. |
+| `description` | `str` | yes | This is what the model reads to decide on delegation — write it action-oriented. |
+| `system_prompt` | `str` | yes (`SubAgent`) | The harness profile still prepends/appends `BASE`/`SUFFIX` around it. |
+| `tools` | `Sequence[...]` | no | ⚠️ If the `tools` key is **absent**, the subagent inherits the main agent's `tools`. If present but `[]`, the subagent gets no caller tools at all (middleware tools remain). |
+| `model` | `str \| BaseChatModel` | no | Resolved separately, and selects its own `HarnessProfile`. |
+| `middleware` | `list[AgentMiddleware]` | no | The same replace-by-name rule applies. This is the official path for a per-subagent `FilesystemMiddleware(tools=[...])`. |
+| `interrupt_on` | `dict[...]` | no | When present it **replaces** the top-level inheritance rather than adding to it. |
+| `skills` | `list[str]` | no | Installs a `SkillsMiddleware` specific to that subagent. |
+| `permissions` | `list[FilesystemPermission]` | no | When present it **entirely replaces** the parent's rules rather than adding to them. |
+| `response_format` | `ResponseFormat \| type \| dict` | no | When set, the JSON-serialised `structured_response` becomes the `ToolMessage` content, replacing last-message extraction. |
+| `runnable` | `Runnable` | yes (`CompiledSubAgent`) | Its state schema **must** have a `messages` key, otherwise `_return_command_with_state_update` raises `ValueError`. |
+| `graph_id` | `str` | yes (`AsyncSubAgent`) | The presence of this key is what routes the spec to `AsyncSubAgentMiddleware`. |
+| `url`, `headers` | `str`, `dict[str, str]` | no (`AsyncSubAgent`) | The Agent Protocol endpoint and auth headers. |
 
-## Backend
+## Backends
 
-`[code]` — `deepagents/backends/*.py`, signature `__init__` masing-masing.
+`[code]` — `deepagents/backends/*.py`, each one's `__init__` signature.
 
-| Konstruktor | Signature | Catatan |
+| Constructor | Signature | Notes |
 |---|---|---|
-| `StateBackend()` | tanpa argumen | Default. Ephemeral, isi file hidup di state LangGraph. |
-| `FilesystemBackend(root_dir=None, virtual_mode=True, max_file_size_mb=10)` | positional | `root_dir=None` → cwd. `virtual_mode=True` memblokir `..`, `~`, dan path absolut di luar `root_dir` untuk **operasi file** — bukan sandbox. |
-| `LocalShellBackend(root_dir=None, *, virtual_mode=True, timeout=DEFAULT_EXECUTE_TIMEOUT, max_output_bytes=100_000, env=None, inherit_env=False)` | ⚠️ | Subclass `FilesystemBackend` + `SandboxBackendProtocol`. Docstring-nya sendiri menyatakan `virtual_mode` **tidak memberi keamanan apa pun** begitu shell aktif. |
-| `StoreBackend(*, namespace: NamespaceFactory, store=None)` | keyword-only | `namespace` adalah satu-satunya *hook* scoping resmi. Wildcard `*` ditolak. `store=None` → diambil dari execution context LangGraph. |
-| `CompositeBackend(default, routes, *, artifacts_root="/")` | `default` & `routes` positional | Prefix route harus diawali `/` dan sebaiknya diakhiri `/`. Match prefix terpanjang menang. |
-| `ContextHubBackend(identifier, client=None)` | positional | Persisten di LangSmith Hub agent repo. |
-| `LangSmithSandbox(sandbox)` | positional | Membungkus sandbox terkelola LangSmith. |
-| `DaytonaSandbox(*, sandbox, timeout=30*60, sync_polling_interval=0.1)` | keyword-only | Paket terpisah `langchain-daytona`, bukan bagian `deepagents`. `[code]` — `libs/partners/daytona/langchain_daytona/sandbox.py` baris 30-59 (repo `langchain-ai/deepagents`). |
+| `StateBackend()` | no arguments | The default. Ephemeral; file contents live in LangGraph state. |
+| `FilesystemBackend(root_dir=None, virtual_mode=True, max_file_size_mb=10)` | positional | `root_dir=None` → cwd. `virtual_mode=True` blocks `..`, `~`, and absolute paths outside `root_dir` for **file operations** — it is not a sandbox. |
+| `LocalShellBackend(root_dir=None, *, virtual_mode=True, timeout=DEFAULT_EXECUTE_TIMEOUT, max_output_bytes=100_000, env=None, inherit_env=False)` | ⚠️ | Subclasses `FilesystemBackend` plus `SandboxBackendProtocol`. Its own docstring states that `virtual_mode` provides **no security whatsoever** once the shell is active. |
+| `StoreBackend(*, namespace: NamespaceFactory, store=None)` | keyword-only | `namespace` is the only official scoping *hook*. Wildcard `*` is rejected. `store=None` → taken from the LangGraph execution context. |
+| `CompositeBackend(default, routes, *, artifacts_root="/")` | `default` & `routes` positional | Route prefixes must start with `/` and should end with `/`. Longest prefix match wins. |
+| `ContextHubBackend(identifier, client=None)` | positional | Persistent in a LangSmith Hub agent repo. |
+| `LangSmithSandbox(sandbox)` | positional | Wraps a LangSmith-managed sandbox. |
+| `DaytonaSandbox(*, sandbox, timeout=30*60, sync_polling_interval=0.1)` | keyword-only | A separate package, `langchain-daytona`, not part of `deepagents`. `[code]` — `libs/partners/daytona/langchain_daytona/sandbox.py` lines 30-59 (repo `langchain-ai/deepagents`). |
 
 ## `FilesystemMiddleware(...)`
 
-`[code]` — `deepagents/middleware/filesystem.py` baris 1620-1744.
+`[code]` — `deepagents/middleware/filesystem.py` lines 1620-1744.
 
-Semua keyword-only.
+All keyword-only.
 
-| Parameter | Default | Efek |
+| Parameter | Default | Effect |
 |---|---|---|
-| `backend` | `None` → `StateBackend()` | Kalau dipasang manual lewat `middleware=[...]`, **harus** dikirim backend yang sama dengan yang dipakai agent; kalau tidak agent punya dua filesystem berbeda. |
-| `system_prompt` | `None` | Mengganti fragmen prompt filesystem. |
-| `custom_tool_descriptions` | `None` | Map nama tool → deskripsi. |
-| `tool_token_limit_before_evict` | `20000` | Hasil tool di atas ambang ini ditulis ke backend dan diganti preview. `None` mematikan eviction. |
-| `human_message_token_limit_before_evict` | `50000` | Sama, untuk `HumanMessage` terakhir. |
-| `max_execute_timeout` | `3600` | Batas atas timeout per command yang boleh diminta model. |
-| `grep_max_count` | `1000` | Cap total match; `None` mematikan cap default. |
-| `tools` | `None` → semua ⚠️ | `list[FsToolName]` atau `"all"`. `FsToolName = Literal["ls","read_file","write_file","edit_file","delete","glob","grep","execute"]`. `read_file` **wajib** ada dalam list, kalau tidak `ValueError`. Tool di luar list tidak diregistrasi sama sekali (bukan sekadar disembunyikan). |
-| `_permissions` | `None` | Privat — lewat `create_deep_agent(permissions=...)`, bukan langsung. |
+| `backend` | `None` → `StateBackend()` | If installed manually through `middleware=[...]`, it **must** receive the same backend the agent uses; otherwise the agent has two different filesystems. |
+| `system_prompt` | `None` | Replaces the filesystem prompt fragment. |
+| `custom_tool_descriptions` | `None` | A map of tool name → description. |
+| `tool_token_limit_before_evict` | `20000` | Tool results above this threshold are written to the backend and replaced with a preview. `None` disables eviction. |
+| `human_message_token_limit_before_evict` | `50000` | The same, for the most recent `HumanMessage`. |
+| `max_execute_timeout` | `3600` | The upper bound on the per-command timeout the model may request. |
+| `grep_max_count` | `1000` | Caps total matches; `None` disables the default cap. |
+| `tools` | `None` → all ⚠️ | A `list[FsToolName]` or `"all"`. `FsToolName = Literal["ls","read_file","write_file","edit_file","delete","glob","grep","execute"]`. `read_file` **must** be in the list, otherwise `ValueError`. Tools outside the list are not registered at all (not merely hidden). |
+| `_permissions` | `None` | Private — go through `create_deep_agent(permissions=...)`, not directly. |
 
-Catatan surface: dengan `StateBackend` default, tool node berisi
+A note on surface: with the default `StateBackend`, the tool node contains
 `delete, edit_file, execute, glob, grep, ls, read_file, task, write_file`.
-`execute` **terdaftar** tapi disaring dari view model saat `wrap_model_call`
-karena backend tidak mendukung eksekusi. `[code]` — verifikasi runtime,
+`execute` **is registered** but filtered out of the model's view during
+`wrap_model_call` because the backend does not support execution.
+`[code]` — verified at runtime,
 `FilesystemMiddleware._filter_unsupported_tools_and_apply_prompt`
-(`middleware/filesystem.py` baris 3018-3064, dipanggil dari `wrap_model_call` baris 3094).
+(`middleware/filesystem.py` lines 3018-3064, called from
+`wrap_model_call` line 3094).
 
 ## `FilesystemPermission`
 
-`[code]` — `deepagents/middleware/filesystem.py` baris 384-417.
+`[code]` — `deepagents/middleware/filesystem.py` lines 384-417.
 
-Dataclass dengan `operations: list[FilesystemOperation]`,
+A dataclass with `operations: list[FilesystemOperation]`,
 `paths: list[str]`, `mode: Literal["allow","deny","interrupt"] = "allow"`.
-Path **wajib** diawali `/`, tidak boleh mengandung `..` (`ValueError`)
-maupun `~` (`NotImplementedError`).
+Paths **must** begin with `/` and may contain neither `..` (`ValueError`)
+nor `~` (`NotImplementedError`).
 
-## Profil
+## Profiles
 
 `[code]` — `deepagents/profiles/harness/harness_profiles.py`,
 `deepagents/profiles/provider/provider_profiles.py`.
 
-`register_harness_profile(key, profile)` — `key` adalah `"provider"` atau
-`"provider:model"`. Registrasi bersifat **aditif/merge**, bukan replace.
-Field `HarnessProfile` yang relevan: `base_system_prompt`,
+`register_harness_profile(key, profile)` — `key` is either `"provider"` or
+`"provider:model"`. Registration is **additive/merging**, not replacing.
+The relevant `HarnessProfile` fields: `base_system_prompt`,
 `system_prompt_suffix`, `tool_description_overrides`, `excluded_tools`,
 `excluded_middleware`, `extra_middleware`, `general_purpose_subagent`.
 
-⚠️ `excluded_middleware` **menolak** `FilesystemMiddleware` dan
-`SubAgentMiddleware` (scaffolding wajib) dengan `ValueError` saat konstruksi
-profil; entri yang tidak match apa pun di stack juga `ValueError`. Untuk
-menghilangkan tool `task`, pakai
-`general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)` dan
-jangan kirim subagent sinkron — bukan `excluded_middleware`.
+⚠️ `excluded_middleware` **refuses** `FilesystemMiddleware` and
+`SubAgentMiddleware` (required scaffolding) with a `ValueError` at profile
+construction; an entry matching nothing in the stack is also a
+`ValueError`. To remove the `task` tool, use
+`general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)`
+and pass no synchronous subagents — not `excluded_middleware`.
 
-`HarnessProfileConfig` adalah varian **deklaratif** dari `HarnessProfile`,
-untuk profil yang dimuat dari YAML/JSON. Bedanya satu: `excluded_middleware`
-hanya menerima **string** nama, tidak menerima kelas — karena file konfigurasi
-tidak bisa mengimpor. `register_harness_profile` menerima keduanya dan
-mengonversi `HarnessProfileConfig` ke `HarnessProfile` saat registrasi, jadi
-tidak ada langkah konversi manual. `HarnessProfileConfig.from_harness_profile`
-melakukan arah sebaliknya, memakai `serialized_name` sebuah middleware kalau
-ada supaya round-trip ke file konfigurasi stabil. `[code]` —
-`deepagents/profiles/harness/harness_profiles.py` baris 192-330 (kelas), 439 (`from_harness_profile`).
+`HarnessProfileConfig` is the **declarative** variant of `HarnessProfile`,
+for profiles loaded from YAML/JSON. One difference:
+`excluded_middleware` accepts only **string** names, not classes — because
+a config file cannot import. `register_harness_profile` accepts both and
+converts `HarnessProfileConfig` to `HarnessProfile` at registration time,
+so there is no manual conversion step.
+`HarnessProfileConfig.from_harness_profile` goes the other way, using a
+middleware's `serialized_name` when available so the round-trip to a
+config file stays stable. `[code]` —
+`deepagents/profiles/harness/harness_profiles.py` lines 192-330 (the
+class), 439 (`from_harness_profile`).
 
-`register_provider_profile(key, profile)` mengatur fase **konstruksi model**,
-ortogonal terhadap `HarnessProfile` yang mengatur perilaku runtime setelah
-model jadi.
+`register_provider_profile(key, profile)` governs the **model
+construction** phase, orthogonal to `HarnessProfile`, which governs
+runtime behaviour once the model exists.
 
-Cakupan file ini terhadap `deepagents.__all__` (19 nama): **18 tercakup**.
-Yang tidak: `__version__`, sebuah konstanta string versi tanpa parameter —
-di luar lingkup referensi parameter.
+This file's coverage of `deepagents.__all__` (19 names): **18 covered**.
+The exception: `__version__`, a version string constant with no
+parameters — outside the scope of a parameter reference.
 
-## Sumber
+## Sources
 
-**Versi yang dibaca**: `deepagents==0.7.8`, dari
-`references/recipes/.venv/lib/python3.13/site-packages/`, bersama
-`langchain==1.3.16` dan `langchain-anthropic==1.6.1`.
+**Versions read**: `deepagents==0.7.8`, from
+`references/recipes/.venv/lib/python3.13/site-packages/`, alongside
+`langchain==1.3.16` and `langchain-anthropic==1.6.1`.
 
-File `[code]` yang dibaca untuk file ini:
+`[code]` files read for this document:
 
-- `deepagents/__init__.py`, `deepagents/graph.py` (utuh)
+- `deepagents/__init__.py`, `deepagents/graph.py` (in full)
 - `deepagents/middleware/filesystem.py` (`FilesystemPermission`, `FsToolName`, `FilesystemMiddleware.__init__`, `wrap_model_call`, `wrap_tool_call`)
-- `deepagents/middleware/subagents.py`, `async_subagents.py` (TypedDict spec, `_return_command_with_state_update`)
-- `deepagents/middleware/patch_tool_calls.py`, `_prompt_caching.py`, `_state.py`, `_tool_exclusion.py`, `_fs_interrupt.py` (utuh)
+- `deepagents/middleware/subagents.py`, `async_subagents.py` (the TypedDict specs, `_return_command_with_state_update`)
+- `deepagents/middleware/patch_tool_calls.py`, `_prompt_caching.py`, `_state.py`, `_tool_exclusion.py`, `_fs_interrupt.py` (in full)
 - `deepagents/middleware/summarization.py` (`create_summarization_middleware`, `compute_summarization_defaults`)
-- `deepagents/backends/__init__.py`, `state.py`, `store.py`, `filesystem.py`, `local_shell.py`, `composite.py` (signature `__init__` + docstring kelas)
-- `deepagents/profiles/harness/harness_profiles.py` (field `HarnessProfile`, `register_harness_profile`)
+- `deepagents/backends/__init__.py`, `state.py`, `store.py`, `filesystem.py`, `local_shell.py`, `composite.py` (`__init__` signatures plus class docstrings)
+- `deepagents/profiles/harness/harness_profiles.py` (the `HarnessProfile` fields, `register_harness_profile`)
 - `langchain/agents/factory.py`, `langchain/agents/middleware/types.py`
 
-Sumber `[code]` di luar paket terinstal, dibaca dari `git clone --depth 1`
-repo `langchain-ai/deepagents` (commit `23b83ad`, 2026-08-21):
+`[code]` sources outside the installed package, read from a
+`git clone --depth 1` of `langchain-ai/deepagents` (commit `23b83ad`,
+2026-08-21):
 
-- `libs/partners/daytona/langchain_daytona/sandbox.py` — signature `DaytonaSandbox.__init__`
+- `libs/partners/daytona/langchain_daytona/sandbox.py` — the
+  `DaytonaSandbox.__init__` signature
