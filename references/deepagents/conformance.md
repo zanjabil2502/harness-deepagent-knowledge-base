@@ -240,7 +240,7 @@ labels already present in `references/archetypes/`.
   durable per-user-scoped files. **Two different compositions are used in
   this KB, and their artifact behaviour is not the same** - see
   [`middleware.md`](middleware.md) §`artifacts_root`:
-  - `scaffolds/_base.md:162-172` and archetypes 03/06 use a **plain**
+  - `scaffolds/_base.md:187-197` and archetypes 03/06 use a **plain**
     `StoreBackend`. `artifacts_root` falls to the `"/"` branch
     (`middleware/summarization.py:598`), so `/conversation_history/`, its
     media, and `/large_tool_results/` **all** land inside the user's
@@ -288,7 +288,7 @@ labels already present in `references/archetypes/`.
   **But the protection is also larger.** Because all five go through the
   same protocol, one correct `namespace` locks all five at once - and
   because that parameter is mandatory and the agent is assembled per turn
-  (`scaffolds/_base.md:188-192`), there is no path where one is scoped
+  (`scaffolds/_base.md:214-218`), there is no path where one is scoped
   and another isn't. This is a design strength that wasn't captured when
   this entry was first written.
 - **Cost if wrong** - and here it matters to separate real risk from
@@ -300,7 +300,7 @@ labels already present in `references/archetypes/`.
   `_NAMESPACE_COMPONENT_RE` so oddly-shaped values are rejected. The
   remaining exposure is twofold, both beyond the library's reach:
   (a) **the correctness of the application's own `scope.user_id`** -
-  `scaffolds/_base.md:166` deliberately uses `user_id` from the `Scope`
+  `scaffolds/_base.md:191` deliberately uses `user_id` from the `Scope`
   produced by `ScopeMiddleware` rather than
   `rt.server_info.user.identity` as the documentation example does; if
   `Scope` is filled wrongly (e.g. an unvalidated header), `namespace`
@@ -546,7 +546,7 @@ longer appear in the `grep`, so numbers 1 and 17 are deliberately empty.
 | 9 | `archetypes/07-computer-use-agent.md:100` | Verification through prompt convention | D-07 |
 | 10 | `archetypes/README.md:54` | Deployment separated from the archetype taxonomy | taxonomy, not `deepagents` |
 | 11 | `systems/INDEX.md:92` | Meta: why the `[ours]` label exists | meta |
-| 12-16 | `scaffolds/_base.md:58,80,166,456,499` | The `Orchestrator` protocol; `namespace` from the application `Scope` rather than `rt.server_info.user.identity`; `AsyncConnectionPool`; inline turn execution in the SSE generator | **:160 → D-08 (highest risk)**; the rest is application architecture, outside `deepagents` |
+| 12-16 | `scaffolds/_base.md:67,89,191,500,543` | The `Orchestrator` protocol; `namespace` from the application `Scope` rather than `rt.server_info.user.identity`; `AsyncConnectionPool`; inline turn execution in the SSE generator | **:160 → D-08 (highest risk)**; the rest is application architecture, outside `deepagents` |
 | - | `scaffolds/deltas/01-workspace-agent.md` | Derived from D-01 | **withdrawn**, now `[code]` |
 | 18-19 | `scaffolds/deltas/02-generative-builder.md:25,37` | Derived from #2 | D-02 |
 | 20 | `scaffolds/deltas/03-general-task-agent.md:24` | Derived from #3 | D-03 |

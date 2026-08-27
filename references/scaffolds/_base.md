@@ -15,7 +15,7 @@ FastAPI; Postgres.
 ```
 app/
 ├── main.py                         # The app factory + lifespan (startup/shutdown)
-├── config.py                       # Env configuration (see §Config & secrets)
+├── config.py                       # Typed settings, pydantic-settings (see §Config & secrets)
 ├── api/
 │   ├── deps.py                     # build_orchestrator()/get_orchestrator() -- the single binding point
 │   ├── middleware/
@@ -30,7 +30,8 @@ app/
 │   ├── session.py                  # The app-data pool + SET LOCAL app.current_user_id (RLS)
 │   └── checkpointer.py             # The external checkpointer factory (Postgres)
 ├── observability/
-│   └── otel.py                     # The tracer + the enduser.id label
+│   ├── logging.py                  # loguru + a bridge for stdlib loggers
+│   └── tracing.py                  # OTel tracer + the Langfuse callback handler
 └── lifecycle/
     └── drain.py                    # The in-flight turn gauge + graceful drain
 Dockerfile
@@ -40,6 +41,14 @@ k8s/
 pyproject.toml
 uv.lock
 ```
+
+Beyond `deepagents` and its LangChain stack, the runtime dependencies are
+deliberately few: `fastapi` and `uvicorn` for the transport, `pydantic` and
+`pydantic-settings` for boundaries and config, `psycopg[pool]` plus
+`langgraph-checkpoint-postgres` for state, `loguru` for logs, and `langfuse`
+plus the OTel SDK for traces. Each one earns its place at a boundary the
+stdlib does not cover; see [`../python-practice.md`](../python-practice.md)
+§Stdlib first before adding a seventh.
 
 There are no separate `executor/`/`retrieval/` folders - the reason is in the
 next section: two of the three seams are already provided by `deepagents`
@@ -86,26 +95,42 @@ monolith with the seams cut" (serving-topology.md §8.3).
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 from typing import Any, Protocol
 
+from pydantic import BaseModel, ConfigDict
 
-@dataclass(frozen=True)
-class Scope:
-    """The literal scope object from isolation-and-scoping.md -- (user_id,)
+
+class Scope(BaseModel):
+    """The literal scope object from isolation-and-scoping.md: (user_id,)
     today, (tenant_id, user_id) after the multi-tenant migration. Every
     cross-interface call in this file carries Scope explicitly as a parameter
-    rather than as ambient state (a thread-local/process global) -- condition
-    4 of the modular monolith."""
+    rather than as ambient state (a thread-local or process global), which is
+    condition 4 of the modular monolith.
+
+    frozen=True keeps the value immutable and hashable, the same guarantee the
+    previous frozen dataclass gave.
+    """
+
+    model_config = ConfigDict(frozen=True)
 
     user_id: str
 
 
-@dataclass(frozen=True)
-class TurnEvent:
-    """The event envelope, exactly the streaming-protocol.md schema -- a plain
-    dataclass, JSON-serializable with no transformation (condition 2 of the
-    modular monolith)."""
+class TurnEvent(BaseModel):
+    """The event envelope, exactly the streaming-protocol.md schema. A
+    BaseModel rather than a dataclass so the shape is validated once and
+    model_dump_json() is the serialisation path, with no hand-written
+    transformation (condition 2 of the modular monolith).
+
+    COST, stated rather than hidden: one TurnEvent is constructed per streamed
+    chunk, so validation runs hundreds of times per turn over data this process
+    just built itself (python-practice.md ranks that as rank-4 work). It is
+    accepted here for one schema across the API boundary. If a profile shows it
+    mattering on the hot path, TurnEvent.model_construct(**fields) skips
+    validation while keeping the same type and the same model_dump_json().
+    """
+
+    model_config = ConfigDict(frozen=True)
 
     event_id: str
     turn_id: str
@@ -178,9 +203,10 @@ class DeepAgentsOrchestrator:
     adds/replaces create_deep_agent(...) parameters here rather than rewriting
     this class."""
 
-    def __init__(self, model, checkpointer) -> None:
+    def __init__(self, model, checkpointer, callbacks=()) -> None:
         self._model = model
         self._checkpointer = checkpointer  # external, injected -- see db/checkpointer.py
+        self._callbacks = list(callbacks)  # Langfuse handler, or empty
 
     async def run_turn(
         self, scope: Scope, turn_id: str, thread_id: str, user_input: str
@@ -190,7 +216,17 @@ class DeepAgentsOrchestrator:
             backend=_build_backend(scope),
             checkpointer=self._checkpointer,
         )
-        config = {"configurable": {"thread_id": thread_id}}
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "callbacks": self._callbacks,
+            # Langfuse reads these three keys off run metadata; there is no
+            # constructor argument for them (tracing.py cites the source line).
+            "metadata": {
+                "langfuse_user_id": scope.user_id,
+                "langfuse_session_id": thread_id,
+                "langfuse_tags": ["turn"],
+            },
+        }
         seq = 0
         async for chunk, _metadata in agent.astream(
             {"messages": [{"role": "user", "content": user_input}]},
@@ -237,12 +273,12 @@ from app.orchestrator.deepagents_orchestrator import DeepAgentsOrchestrator
 from app.orchestrator.interface import Orchestrator
 
 
-def build_orchestrator(model, checkpointer) -> Orchestrator:
-    """Called once from main.py's lifespan. To migrate to a separate service
-    -- change this function's body to return RemoteOrchestratorClient(...)
+def build_orchestrator(model, checkpointer, callbacks=()) -> Orchestrator:
+    """Called once from main.py's lifespan. To migrate to a separate service,
+    change this function's body to return RemoteOrchestratorClient(...)
     (see serving.md §Migrating); its caller in main.py doesn't change.
     """
-    return DeepAgentsOrchestrator(model=model, checkpointer=checkpointer)
+    return DeepAgentsOrchestrator(model=model, checkpointer=checkpointer, callbacks=callbacks)
 
 
 def get_orchestrator(request: Request) -> Orchestrator:
@@ -279,43 +315,51 @@ terminationGracePeriodSeconds) for the K8s half of the same mechanism.
 """
 from __future__ import annotations
 
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from langchain_anthropic import ChatAnthropic
+from loguru import logger
 
 from app.api.deps import build_orchestrator
 from app.api.middleware.scope import ScopeMiddleware
 from app.api.routes import health, turns
+from app.config import get_settings
 from app.db.checkpointer import build_checkpointer
 from app.db.session import close_pool, init_pool
 from app.lifecycle.drain import DrainState
-from app.observability.otel import setup_otel
-
-DRAIN_TIMEOUT_S = float(os.environ.get("DRAIN_TIMEOUT_S", "25"))
+from app.observability.logging import setup_logging
+from app.observability.tracing import build_langfuse_handler, flush_langfuse, setup_otel
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings = get_settings()          # validated here; a bad env fails the boot
+    setup_logging(settings)            # before anything else logs
     setup_otel(app)
-    await init_pool(os.environ["APP_DATABASE_URL"])
+    await init_pool(settings.app_database_url.get_secret_value())
 
-    async with build_checkpointer(os.environ["CHECKPOINTER_DATABASE_URL"]) as checkpointer:
-        model = ChatAnthropic(model_name="claude-sonnet-4-6")
-        app.state.orchestrator = build_orchestrator(model, checkpointer)
+    dsn = settings.checkpointer_database_url.get_secret_value()
+    async with build_checkpointer(dsn) as checkpointer:
+        model = ChatAnthropic(model_name=settings.model_name)
+        callbacks = [h for h in (build_langfuse_handler(settings),) if h is not None]
+        app.state.orchestrator = build_orchestrator(model, checkpointer, callbacks=callbacks)
         app.state.drain = DrainState()
+        logger.bind(model=settings.model_name, tracing=bool(callbacks)).info("harness ready")
 
         yield  # <-- the app serves traffic here
 
         # Shutdown: readyz starts returning 503 (draining=True inside
         # wait_empty), then we wait for in-flight turns. A timeout is not an
-        # error -- checkpointer resumability is the safety net
+        # error: checkpointer resumability is the safety net
         # (serving-topology.md).
-        finished = await app.state.drain.wait_empty(timeout=DRAIN_TIMEOUT_S)
+        finished = await app.state.drain.wait_empty(timeout=settings.drain_timeout_s)
         if not finished:
-            print(f"drain timeout {DRAIN_TIMEOUT_S}s reached; remaining turns continue from their checkpoint")
+            logger.bind(timeout_s=settings.drain_timeout_s).warning(
+                "drain timeout reached; remaining turns continue from their checkpoint"
+            )
 
+    await flush_langfuse()   # batched spans: flush before the process exits
     await close_pool()
 
 
@@ -352,7 +396,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from app.observability.otel import label_current_span_user
+from app.observability.tracing import label_current_span_user
 from app.orchestrator.interface import Scope
 
 _UNSCOPED_PATHS = {"/healthz", "/readyz"}
@@ -568,19 +612,34 @@ async def stream_turn(
     return StreamingResponse(event_source(), media_type="text/event-stream")
 ```
 
-## Observability: OTel + a user label
+## Observability: OTel spans plus Langfuse for the LLM layer
+
+Two questions need two answers, and they are not competitors. "Was the request
+slow, and where?" is service tracing, and OTel answers it. "What did the model
+actually receive, how many tokens did it cost, and which user paid?" is LLM
+tracing, and Langfuse answers it.
+
+They compose rather than duplicate, because **Langfuse v4 is built on
+OpenTelemetry**: its client imports `opentelemetry.trace`,
+`opentelemetry.context`, and `opentelemetry.sdk.trace.TracerProvider`
+(`langfuse/_client/client.py:32-34`, read from `langfuse==4.14.5`). `[code]`
+So a Langfuse generation is an OTel span, and running both is one pipeline
+rather than two.
 
 ```python
-"""The OTel setup -- a tracer provider + a user_id label on the active span.
+"""Tracing: an OTel tracer provider for the service, plus the Langfuse
+callback handler for the model layer.
 
-`enduser.id` [docs] is OpenTelemetry's official semantic convention attribute
-for per-span user identity (opentelemetry.io/docs/specs/semconv/
-general/attributes-registry/enduser/) -- used as-is here rather than a custom
-key, so any tracing backend (Tempo/Jaeger/Honeycomb) can filter/aggregate per
-user with no convention specific to this project.
+[code] CallbackHandler is langfuse.langchain.LangchainCallbackHandler, exported
+under the shorter name for backward compatibility. Its signature is
+(*, public_key=None, trace_context=None) and it resolves its client through
+get_client(), which reads LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY /
+LANGFUSE_HOST from the environment. Verified against langfuse==4.14.5.
 """
 from __future__ import annotations
 
+from langfuse import get_client
+from langfuse.langchain import CallbackHandler
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -598,13 +657,43 @@ def setup_otel(app) -> None:
     FastAPIInstrumentor.instrument_app(app)
 
 
+def build_langfuse_handler(settings) -> CallbackHandler | None:
+    """None when no key is configured: tracing is optional, and a missing key
+    must not fail the boot. The handler reads credentials from the environment
+    through get_client(), so nothing secret is passed here."""
+    if settings.langfuse_public_key is None:
+        return None
+    return CallbackHandler()
+
+
+async def flush_langfuse() -> None:
+    """Call at shutdown, BEFORE the process exits. Spans are batched, so
+    without this the last turns of a deploy are never sent."""
+    client = get_client()
+    client.flush()
+    client.shutdown()
+
+
 def label_current_span_user(user_id: str) -> None:
-    """Called from ScopeMiddleware once user_id is resolved -- the single
-    point adding a user label to the active span, called inside the request
-    span FastAPIInstrumentor already opened."""
-    span = trace.get_current_span()
-    span.set_attribute("enduser.id", user_id)
+    """Called from ScopeMiddleware once user_id is resolved. `enduser.id`
+    [docs] is OpenTelemetry's official semantic convention attribute for
+    per-span user identity, so any backend can filter by it without a
+    convention specific to this project."""
+    trace.get_current_span().set_attribute("enduser.id", user_id)
 ```
+
+**Attaching the user and the session to a Langfuse trace is done through run
+metadata, not through the constructor.** The handler reads three keys off the
+run's `metadata`: `langfuse_user_id`, `langfuse_session_id`, and
+`langfuse_tags` (`langfuse/langchain/CallbackHandler.py:496-514`). `[code]`
+That is why the orchestrator passes them in the config it hands to
+`.astream()`, alongside `thread_id`.
+
+Cost attribution then comes for free at the layer that already parses it:
+Langfuse extracts token usage per generation span and carries a per-span
+`cost_details` field, which is the mechanism `concepts/cost-control.md`
+§Per-step cost attribution describes. One turn produces one trace; each model
+call inside it is a generation with its own tokens and cost.
 
 ## `/healthz` and `/readyz`
 
@@ -768,6 +857,20 @@ spec:
                 secretKeyRef:
                   name: harness-db
                   key: checkpointer-url
+            # Optional: absent keys disable tracing instead of failing the boot
+            # (config.py types them as SecretStr | None).
+            - name: LANGFUSE_PUBLIC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: harness-langfuse
+                  key: public-key
+                  optional: true
+            - name: LANGFUSE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: harness-langfuse
+                  key: secret-key
+                  optional: true
           readinessProbe:
             httpGet:
               path: /readyz
@@ -815,14 +918,116 @@ to microservices), not repeated here.
 
 ## Config & secrets
 
-`app/config.py` (not quoted in full - its shape is a standard
-`pydantic-settings` read from env vars) holds `APP_DATABASE_URL`,
-`CHECKPOINTER_DATABASE_URL`, `DRAIN_TIMEOUT_S`, and the model credentials.
-Those values come from a Kubernetes `Secret` (see `env[].valueFrom.secretKeyRef`
-in the manifest above) and are never hardcoded or committed to the repo - this
-is one of the nine production-readiness gate conditions below, mentioned here
-because its wiring genuinely lives in `config.py` + the manifest, while the
-condition's full definition stays solely in `blueprint-template.md`.
+Every setting is read **once**, typed, and validated at startup. No
+`os.environ` lookup is scattered through the app, so a missing or malformed
+value fails at boot with the field name rather than at the first request that
+happens to need it.
+
+```python
+"""Typed settings. pydantic-settings reads the environment and an optional
+.env, so config becomes one validated object instead of os.environ calls
+spread across modules.
+
+Secrets are SecretStr: their repr is '**********', so a stray log line or an
+exception dump cannot leak a DSN. Call .get_secret_value() at the exact point
+of use and nowhere else.
+"""
+from __future__ import annotations
+
+from functools import lru_cache
+
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    # Required: absence is a boot failure, which is the point.
+    app_database_url: SecretStr
+    checkpointer_database_url: SecretStr
+
+    # Pinned explicitly, never a floating alias (guardrails.md point 6).
+    model_name: str = "claude-sonnet-4-6"
+
+    drain_timeout_s: float = 25.0
+    log_level: str = "INFO"
+    log_json: bool = True
+
+    # Optional: absent keys disable tracing rather than failing the boot.
+    langfuse_public_key: SecretStr | None = None
+    langfuse_secret_key: SecretStr | None = None
+    langfuse_host: str = "https://cloud.langfuse.com"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Cached so the object is built once per process. Import this, not the
+    class, so tests can override the cache in one place."""
+    return Settings()
+```
+
+Field names map to environment variables case-insensitively, so
+`app_database_url` is set by `APP_DATABASE_URL`. Those values come from a
+Kubernetes `Secret` (see `env[].valueFrom.secretKeyRef` in the manifest above)
+and are never hardcoded or committed. That is one of the nine
+production-readiness gate conditions, mentioned here because its wiring
+genuinely lives in `config.py` plus the manifest, while the condition's full
+definition stays solely in `blueprint-template.md`.
+
+## Logging
+
+`print()` is not logging. Structured records with a level, a timestamp, and
+bound context are what make an incident searchable.
+
+```python
+"""loguru setup, plus the part most adoptions forget: uvicorn, httpx and the
+langchain stack all log through the stdlib logging module. Without the
+intercept below you get two formats in one stream and lose half the records.
+"""
+from __future__ import annotations
+
+import logging
+import sys
+
+from loguru import logger
+
+
+class InterceptHandler(logging.Handler):
+    """Route stdlib logging records into loguru, preserving level and caller."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+        frame, depth = logging.currentframe(), 2
+        while frame and frame.f_code.co_filename == logging.__file__:
+            frame = frame.f_back
+            depth += 1
+        logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+
+def setup_logging(settings) -> None:
+    logger.remove()
+    logger.add(
+        sys.stderr,
+        level=settings.log_level,
+        serialize=settings.log_json,   # JSON lines, for a log pipeline
+        backtrace=False,
+        diagnose=False,                # SECURITY: diagnose=True dumps local
+                                       # variable values into tracebacks, which
+                                       # is how a DSN or a token ends up in
+                                       # logs. Never enable it in production.
+    )
+    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+    for name in ("uvicorn", "uvicorn.access", "uvicorn.error", "httpx"):
+        logging.getLogger(name).handlers = [InterceptHandler()]
+```
+
+Bind context rather than formatting it into the message, so a log pipeline can
+filter on it: `logger.bind(turn_id=turn_id, user_id=scope.user_id).info(...)`.
+The same discipline as `enduser.id` on a span, one layer up.
 
 ## Guardrails: the installation points, not a re-listing
 

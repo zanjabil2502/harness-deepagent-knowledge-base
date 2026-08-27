@@ -62,20 +62,31 @@ built the object yourself two lines earlier.
 | Your own code, one layer handing to the next | `@dataclass(frozen=True)` | it is already valid; validating it again is CPU per construction with nothing to catch |
 | A spec that must stay a plain dict for the SDK | `TypedDict` | the SDK reads it as a dict; a model would have to be dumped back anyway |
 
-Both codebases this KB reads converge on that split independently.
-`deepagents` validates with Pydantic exactly where a model supplies the data
-(`GraderResponse` for grader output, the async-subagent tool schemas) and uses
+`deepagents` follows that split: Pydantic exactly where a model supplies the
+data (`GraderResponse` for grader output, the async-subagent tool schemas),
 frozen dataclasses for its own profile objects
-(`profiles/harness/harness_profiles.py:82,191,482`). `scaffolds/_base.md` does
-the same: `CreateTurnRequest(BaseModel)` for the HTTP body, `Scope` and
-`TurnEvent` as frozen dataclasses. `[code]`
+(`profiles/harness/harness_profiles.py:82,191,482`). `[code]`
 
-The cost is concrete rather than theoretical. `_base.md` constructs one
-`TurnEvent` per streamed chunk, so hundreds per turn. Making that a
-`BaseModel` runs validation hundreds of times per turn over data the process
-built itself, which is the rank-4 waste §3 below argues against. Making
-`CreateTurnRequest` a dataclass instead would drop validation exactly where a
-malformed client payload should be rejected.
+**`scaffolds/_base.md` deliberately does not**, and the reason is worth
+knowing before you copy either choice. Its `Scope` and `TurnEvent` are
+`BaseModel` with `model_config = ConfigDict(frozen=True)`, not frozen
+dataclasses, so that one model type covers the whole API boundary: the same
+class validates, serialises through `model_dump_json()`, and can generate a
+schema, with no second representation to keep in step.
+
+The cost of that choice is real and is written into the scaffold rather than
+hidden: `_base.md` constructs one `TurnEvent` per streamed chunk, so hundreds
+per turn, and each construction validates data the process built itself. That
+is rank-4 work by §3 below. Two things make it acceptable there: the payload is
+five small fields, and `TurnEvent.model_construct(**fields)` skips validation
+on a hot path while keeping the same type and the same serialisation. If your
+value object is large, or built in a tight loop, weigh it again rather than
+inheriting the decision.
+
+The inverse mistake is the expensive one. Making `CreateTurnRequest` a
+dataclass would drop validation exactly where a malformed client payload must
+be rejected, and nothing downstream would notice until the bad value reached a
+query.
 
 One nuance worth knowing before you convert anything for `response_format`:
 `langchain` accepts **a Pydantic model, a dataclass, or a TypedDict**, and
@@ -203,6 +214,21 @@ Two pieces of evidence that this is not merely a preference:
 The rule that follows: **a new dependency has to name what the stdlib cannot
 do.** "It is more convenient" is not that. Every dependency is a version to
 track, a supply chain to trust, and a container layer to ship.
+
+Four that clear that bar for a harness, and what each is asked to justify:
+
+| Dependency | What the stdlib cannot do | Where the scaffold uses it |
+|---|---|---|
+| `pydantic` | validate and coerce untrusted input against a declared type, and produce a JSON schema from it | boundary models |
+| `pydantic-settings` | read env and `.env` into a typed object, failing at boot on a missing field instead of at first use | `config.py` |
+| `loguru` | structured records with bound context and JSON output without the stdlib `logging` boilerplate | `observability/logging.py` |
+| `langfuse` | LLM-aware spans: token usage and cost per generation, grouped into one trace per turn | `observability/tracing.py` |
+
+`logging` is the honest borderline case: the stdlib module can do everything
+`loguru` does, with more configuration. What it cannot do is stay out of your
+way, which is why the scaffold still has to bridge stdlib records into loguru
+rather than replacing them, since uvicorn and the LangChain stack log through
+`logging` whatever you choose.
 
 ### 5. Refactoring moves
 
