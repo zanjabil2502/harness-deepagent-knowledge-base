@@ -329,6 +329,12 @@ turn one until a **new thread** starts. Memory written in a conversation
 is for the *next* conversation, not the current one. `[inferred]` from the
 skip guard and the durable channel above.
 
+Every claim in this section is exercised by
+[`../recipes/06_memory_lifecycle.py`](../recipes/06_memory_lifecycle.py),
+which loads memory through a real `StoreBackend`, rewrites the file, re-runs
+`before_agent` to show the skip guard fire, and exits 0 with no credentials
+configured.
+
 ### Durability and scope are the backend's job
 
 Nothing in `MemoryMiddleware` decides how long memory lives; the backend

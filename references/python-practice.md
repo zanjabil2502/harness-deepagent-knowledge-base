@@ -249,7 +249,7 @@ level down, in the language.
 A refactor that also renames, reformats, and reorders is unreviewable, and its
 review is where a real regression hides.
 
-**Verify by construction, the cheapest real check.** The five scripts in
+**Verify by construction, the cheapest real check.** The six scripts in
 `references/recipes/` build a real agent, and in `05_orchestrator_wiring.py`
 its surrounding settings, logging and tracing wiring, printing a summary
 without ever calling a model. Construction alone proves that every API name, signature, and

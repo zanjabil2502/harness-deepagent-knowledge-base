@@ -207,7 +207,7 @@ references/
 ├── deepagents/              construction: lifecycle, middleware, extension
 │   └── graph/               points, per-archetype, conformance, API, AST graph
 ├── scaffolds/               _base + 7 archetype deltas + serving + tag skills
-├── recipes/                 5 runnable scripts, verified by construction
+├── recipes/                 6 runnable scripts, verified by construction
 ├── upstream/                verbatim vendor documentation snapshots
 ├── blueprint-template.md    the output contract of building mode
 ├── review-template.md       the output contract of reviewing mode
