@@ -249,9 +249,10 @@ level down, in the language.
 A refactor that also renames, reformats, and reorders is unreviewable, and its
 review is where a real regression hides.
 
-**Verify by construction, the cheapest real check.** The four scripts in
-`references/recipes/` build a real agent and print a summary without ever
-calling a model. Construction alone proves that every API name, signature, and
+**Verify by construction, the cheapest real check.** The five scripts in
+`references/recipes/` build a real agent, and in `05_orchestrator_wiring.py`
+its surrounding settings, logging and tracing wiring, printing a summary
+without ever calling a model. Construction alone proves that every API name, signature, and
 parameter exists, because a wrong parameter raises immediately. Adopt the same
 gate for a refactor: if the thing still constructs and its one runnable check
 passes, the change is at least type-correct and import-correct.

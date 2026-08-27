@@ -11,7 +11,7 @@
       "source": "./",
       "displayName": "Agent Harness Engineering KB",
       "description": "Agent harness engineering knowledge base on top of deepagents - four modes: looking up (a dictionary of terms & symbols), weighing (archetypes, trade-offs), building (a blueprint then a scaffold), and reviewing (auditing an existing project against the KB, findings only).",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "author": {
         "name": "zanjabila"
       },

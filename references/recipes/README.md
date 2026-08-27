@@ -15,9 +15,16 @@ uv run python 01_minimal_agent.py
 uv run python 02_custom_middleware.py
 uv run python 03_subagents.py
 uv run python 04_custom_backend.py
+uv run python 05_orchestrator_wiring.py
 ```
 
 ## Verification rule
+
+Scripts 01 to 04 cover `create_deep_agent` itself: the default stack, custom
+middleware and permissions, subagents, and a composite backend. Script 05
+covers the wiring around it that `scaffolds/_base.md` specifies: typed settings
+that fail at boot, frozen Pydantic models at the boundary, structured logging,
+and a tracing handler that stays absent when no credential is set.
 
 Every script **always** builds a real agent - `create_deep_agent(...)`,
 real middleware, a real backend, and (where relevant) real subagent
@@ -26,10 +33,10 @@ name, signature, and parameter it uses genuinely exists: a wrong parameter
 makes construction raise, and the failure is immediately visible.
 
 Construction *is* the verification, and it **needs no credentials at
-all**. The four scripts deliberately never call a model: no
+all**. The five scripts deliberately never call a model: no
 `agent.invoke(...)`, no environment variable is read, nothing touches the
 network. This skill as a whole never asks for an API key.
 
-All four must exit with `exit 0` in any environment, including CI with no
+All five must exit with `exit 0` in any environment, including CI with no
 credentials whatsoever. That is what is verified - **not** that a model
 was actually called.

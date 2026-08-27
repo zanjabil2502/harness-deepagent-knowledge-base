@@ -975,6 +975,11 @@ production-readiness gate conditions, mentioned here because its wiring
 genuinely lives in `config.py` plus the manifest, while the condition's full
 definition stays solely in `blueprint-template.md`.
 
+Every claim in this section and the two below it is exercised by
+[`../recipes/05_orchestrator_wiring.py`](../recipes/05_orchestrator_wiring.py),
+which constructs the settings object, the frozen boundary models, the logging
+setup and the tracing handler, and exits 0 with no credentials configured.
+
 ## Logging
 
 `print()` is not logging. Structured records with a level, a timestamp, and

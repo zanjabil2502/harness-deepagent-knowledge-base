@@ -2,4 +2,13 @@
 name = "harness-kb-recipes"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["deepagents"]
+dependencies = [
+    # Pinned explicitly, not left to the lock alone: check_kb.py verifies the
+    # md5 of 53 deepagents source files against the AST graph manifest, so a
+    # silent version bump would invalidate every file:line citation in the KB.
+    "deepagents==0.7.8",
+    # Recipe 05 only: the scaffold's boundary, config, logging and tracing deps.
+    "pydantic-settings",
+    "loguru",
+    "langfuse",
+]
