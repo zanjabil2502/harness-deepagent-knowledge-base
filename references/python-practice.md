@@ -47,8 +47,42 @@ The four shapes, and when each is right:
 | `@dataclass(frozen=True)` | a value object passed between layers, never mutated in place | the profile classes (`profiles/harness/harness_profiles.py:82,191,482`) |
 | `Literal[...]` | a closed set of strings that is not worth an `Enum` | `FileType` (`backends/utils.py:27`), `ToolScope` (`middleware/_fs_interrupt.py:31`), `GraderVerdict` (`middleware/rubric.py:64`) |
 | `typing.Protocol` | a seam you own, where implementers should not have to inherit | `Orchestrator` in `scaffolds/_base.md` |
+| `pydantic.BaseModel` | anything arriving from outside that must be **validated**: model output, tool arguments, HTTP bodies, config from env or YAML | `GraderResponse` (`middleware/rubric.py:260`), the five async-subagent tool schemas (`middleware/async_subagents.py:138-164`) |
 
-`[code]` for the middle three, read from the installed `deepagents==0.7.8`.
+`[code]` for all of these, read from the installed `deepagents==0.7.8`.
+
+**Pydantic or `dataclass` is not a style preference, it is a boundary
+question.** Pydantic runs validation at construction; that cost is the point
+when the data came from somewhere you do not control, and pure waste when you
+built the object yourself two lines earlier.
+
+| Where the value comes from | Use | Because |
+|---|---|---|
+| A model's output, a tool call's arguments, an HTTP body, a YAML or env config | `pydantic.BaseModel` | the data is untrusted, and a wrong shape must fail loudly at the edge rather than three layers in |
+| Your own code, one layer handing to the next | `@dataclass(frozen=True)` | it is already valid; validating it again is CPU per construction with nothing to catch |
+| A spec that must stay a plain dict for the SDK | `TypedDict` | the SDK reads it as a dict; a model would have to be dumped back anyway |
+
+Both codebases this KB reads converge on that split independently.
+`deepagents` validates with Pydantic exactly where a model supplies the data
+(`GraderResponse` for grader output, the async-subagent tool schemas) and uses
+frozen dataclasses for its own profile objects
+(`profiles/harness/harness_profiles.py:82,191,482`). `scaffolds/_base.md` does
+the same: `CreateTurnRequest(BaseModel)` for the HTTP body, `Scope` and
+`TurnEvent` as frozen dataclasses. `[code]`
+
+The cost is concrete rather than theoretical. `_base.md` constructs one
+`TurnEvent` per streamed chunk, so hundreds per turn. Making that a
+`BaseModel` runs validation hundreds of times per turn over data the process
+built itself, which is the rank-4 waste §3 below argues against. Making
+`CreateTurnRequest` a dataclass instead would drop validation exactly where a
+malformed client payload should be rejected.
+
+One nuance worth knowing before you convert anything for `response_format`:
+`langchain` accepts **a Pydantic model, a dataclass, or a TypedDict**, and
+validates all three through `TypeAdapter`. What it does not validate is a raw
+JSON Schema `dict`, which silently makes `handle_errors` inert. See
+[`concepts/structured-output.md`](concepts/structured-output.md) §In
+deepagents for the quoted docstring.
 
 **A correction worth knowing, because the name misleads.** `BackendProtocol`
 is **not** a `typing.Protocol`. It is declared `class BackendProtocol(abc.ABC)`
@@ -220,6 +254,12 @@ because nothing calls it.
   agent serving many users, async is not an optimisation but the architecture;
   for a single-user CLI it is overhead. `concepts/serving-topology.md` decides
   which one you are.
+- **Pydantic vs `dataclass`.** Pydantic buys validation, coercion, and a
+  JSON schema for free, at the price of a dependency and validation cost on
+  every construction. That trade is obviously worth it at a trust boundary and
+  obviously not worth it for a value your own code just built. The failure
+  mode of choosing wrongly runs both ways: unvalidated input accepted at the
+  edge, or CPU burned validating what was already valid.
 - **`frozen=True` vs a mutable dict.** Frozen value objects make accidental
   mutation impossible and are hashable; they also mean building a new object
   to change one field. For values crossing layers, that constraint is the
@@ -232,6 +272,9 @@ read as part of it:
 
 - Specs that travel as dicts are `TypedDict`, not classes
   (`SubAgent`, `CompiledSubAgent`, `AsyncSubAgent`).
+- Schemas the model fills in are `pydantic.BaseModel`: grader output and the
+  async-subagent tool arguments. Match that, and let a tool's `args_schema`
+  do the validating rather than checking arguments inside the handler.
 - Closed string sets are `Literal`, not `Enum` (`FsToolName`, `ToolScope`).
 - Profiles are `@dataclass(frozen=True)`.
 - Backends extend `BackendProtocol`, an `abc.ABC` with concrete defaults, so
