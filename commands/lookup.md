@@ -1,5 +1,5 @@
 ---
-description: Look up one harness term or deepagents symbol — its meaning, or where it is defined in source
+description: Look up one harness term or deepagents symbol - its meaning, or where it is defined in source
 argument-hint: [term or symbol, e.g. fail-deferred or CompositeBackend]
 ---
 
@@ -14,7 +14,7 @@ $ARGUMENTS
 3. If it is a `deepagents` symbol, give the `file:line` from the graph, then
    read that location in
    `references/recipes/.venv/lib/python*/site-packages/deepagents/` to state
-   the real signature — the graph gives the address, the source gives the
+   the real signature - the graph gives the address, the source gives the
    parameters. Never recite a signature from memory.
 4. If it is in neither, say so plainly rather than inventing a definition.
 

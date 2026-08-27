@@ -1,4 +1,4 @@
-# `deepagents` — middleware
+# `deepagents` - middleware
 
 Middleware is `deepagents`' primary *extension point*. This file: what is
 built in, which lifecycle stage each one hooks into, their ordering, and
@@ -29,7 +29,7 @@ skills+memory+interrupt_on:
 ```
 
 The formal structure: **base stack** → *user middleware* → **tail stack**.
-`[code]` — `deepagents/graph.py` lines 817-876 (assembly), 361-406 (the
+`[code]` - `deepagents/graph.py` lines 817-876 (assembly), 361-406 (the
 docstring's official ordering).
 
 | Slot | Contents | Condition |
@@ -40,7 +40,7 @@ docstring's official ordering).
 | base | `SummarizationMiddleware` | always |
 | base | `PatchToolCallsMiddleware` | always |
 | base | `AsyncSubAgentMiddleware` | any `AsyncSubAgent` exists |
-| — | **user middleware** | `middleware=[...]` |
+| - | **user middleware** | `middleware=[...]` |
 | tail | `HarnessProfile.extra_middleware` | the profile has entries |
 | tail | `_ToolExclusionMiddleware` | the profile has `excluded_tools` |
 | tail | `AnthropicPromptCachingMiddleware` (+Bedrock/Fireworks when installed) | always |
@@ -49,7 +49,7 @@ docstring's official ordering).
 
 Note: `_ToolExclusionMiddleware` is `append`ed **after** the user
 middleware merge (`graph.py` lines 892-893), so its effective position is
-dead last — further back than the table above suggests. The source comment
+dead last - further back than the table above suggests. The source comment
 is explicit: "so excluded tool names are stripped last and cannot be
 restored by a custom `wrap_model_call`".
 
@@ -67,9 +67,9 @@ restored by a custom `wrap_model_call`".
 | `AnthropicPromptCachingMiddleware` | (langchain-anthropic) | Installs cache breakpoints; `unsupported_model_behavior="ignore"` makes it a no-op on other providers | `middleware/_prompt_caching.py:42` |
 | `_ToolExclusionMiddleware` (private) | `wrap_model_call` | Removes tool names in `HarnessProfile.excluded_tools` from `request.tools` | `middleware/_tool_exclusion.py:32` |
 | `HumanInTheLoopMiddleware` (langchain) | `after_model` | `interrupt()` before the tool runs | `langchain/agents/middleware/human_in_the_loop.py:219` |
-| `RubricMiddleware` | `before_agent`, `after_agent` | Grades the transcript against a rubric, forcing another iteration on failure — **not** in the default stack | `middleware/rubric.py:522,573` |
-| `SummarizationToolMiddleware` | `wrap_model_call` | A `compact_conversation` tool the model calls itself — **not** in the default stack | `middleware/summarization.py:1793,2110` |
-| `TodoListMiddleware` (langchain, **not** `deepagents`) | `after_model` | The `write_todos` tool plus `PlanningState.todos` state — **not** in the default stack | `langchain/agents/middleware/todo.py` |
+| `RubricMiddleware` | `before_agent`, `after_agent` | Grades the transcript against a rubric, forcing another iteration on failure - **not** in the default stack | `middleware/rubric.py:522,573` |
+| `SummarizationToolMiddleware` | `wrap_model_call` | A `compact_conversation` tool the model calls itself - **not** in the default stack | `middleware/summarization.py:1793,2110` |
+| `TodoListMiddleware` (langchain, **not** `deepagents`) | `after_model` | The `write_todos` tool plus `PlanningState.todos` state - **not** in the default stack | `langchain/agents/middleware/todo.py` |
 
 ## Dangerous interactions
 
@@ -82,7 +82,7 @@ of ordering bugs:
 | `after_model`, `after_agent` | **Sequential, REVERSED order** | `m[-1]` runs first |
 | `wrap_model_call`, `wrap_tool_call` | **Onion, `m[0]` = outermost** | `m[-1]`, closest to the model/tool, gets the last word on `request` |
 
-`[code]` — `langchain/agents/factory.py` line 1793 (`add_edge("model",
+`[code]` - `langchain/agents/factory.py` line 1793 (`add_edge("model",
 m[-1].after_model)`), line 349 (`for h in reversed(handlers[:-2])`, with
 the comment "first in list becomes outermost layer"), lines 1758-1790 (the
 `before_*` chain).
@@ -94,20 +94,20 @@ Otherwise the filter sees `request.tools` before the new tools arrive and
 filters nothing. This is exactly why `_ToolExclusionMiddleware` is
 `append`ed after every merge. If you write your own filtering middleware
 and install it through `middleware=[...]`, it lands **before** the tail
-stack — deep enough to filter base stack tools, but **not** the tools a
+stack - deep enough to filter base stack tools, but **not** the tools a
 profile's `extra_middleware` adds.
 
 ### 2. `MemoryMiddleware` vs the prompt-caching middleware
 
 The installed order is `AnthropicPromptCachingMiddleware` **then**
-`MemoryMiddleware`. This is deliberate — the source comment (`graph.py`
+`MemoryMiddleware`. This is deliberate - the source comment (`graph.py`
 lines 856-858): profiles and caching are placed before memory "so that
 memory updates (which change the system prompt) don't invalidate the
 Anthropic prompt cache prefix". Reversing the order (e.g. by installing
 your own `MemoryMiddleware()` through `middleware=[...]`, which lands
 **before** the tail stack) moves content that changes every session into
 the cached prefix → a cache miss every time `AGENTS.md` changes. The cost
-is a token bill, not a crash — so no test will ever detect it.
+is a token bill, not a crash - so no test will ever detect it.
 
 ### 3. `SummarizationMiddleware` vs middleware that reads `state["messages"]`
 
@@ -115,23 +115,23 @@ The `deepagents` version **deliberately does not mutate**
 `state["messages"]`; compaction applies only to `request.messages` inside
 `wrap_model_call` and is tracked in the private `_summarization_event`
 field. `after_model`/`after_agent` middleware reading `state["messages"]`
-therefore still sees the **full** transcript, not the compacted version —
+therefore still sees the **full** transcript, not the compacted version -
 good for replay/eval, misleading if used to estimate how many tokens were
 actually sent.
 By contrast, plain `langchain.agents.middleware.SummarizationMiddleware`
 rewrites state through `before_model` plus
 `RemoveMessage(REMOVE_ALL_MESSAGES)`. Mixing the two = history rewritten
 twice.
-`[code]` — `middleware/summarization.py` lines 1636-1668 (the
+`[code]` - `middleware/summarization.py` lines 1636-1668 (the
 "Non-mutating message state" docstring).
 
 ### 4. `PatchToolCallsMiddleware` vs other `before_agent` middleware
 
 `PatchToolCallsMiddleware.before_agent` returns
-`{"messages": [RemoveMessage(REMOVE_ALL_MESSAGES), *patched]}` — **all**
+`{"messages": [RemoveMessage(REMOVE_ALL_MESSAGES), *patched]}` - **all**
 history is rewritten. `before_agent` middleware that ran **earlier** and
 appended messages will see those messages rewritten too (they survive,
-because `patched_messages` copies everything) — but middleware relying on
+because `patched_messages` copies everything) - but middleware relying on
 message object identity or IDs may be surprised. `SkillsMiddleware` runs
 before `PatchToolCalls`; `MemoryMiddleware` runs after.
 
@@ -140,9 +140,9 @@ before `PatchToolCalls`; `MemoryMiddleware` runs after.
 Because `create_deep_agent` places it at the end of the tail stack, it is
 the **earliest** executed `after_model`. Custom `after_model` middleware
 wanting to see or edit tool calls *before* a human approves them would
-have to sit **even further back** than HITL — and that is impossible
+have to sit **even further back** than HITL - and that is impossible
 through `middleware=[...]` (which lands before the tail). What about
-`HarnessProfile.extra_middleware`? Also no — that too comes before HITL.
+`HarnessProfile.extra_middleware`? Also no - that too comes before HITL.
 The only official path is `interrupt_on` with `InterruptOnConfig.when` (a
 per-tool-call predicate) or a callable `description`.
 
@@ -167,7 +167,7 @@ through `ToolNode`. Two direct consequences of its position in the **user
 middleware slot**:
 
 - It is **outside** `_ToolExclusionMiddleware` (which is `append`ed last),
-  so it reads `request.tools` **before** exclusion runs — a tool removed
+  so it reads `request.tools` **before** exclusion runs - a tool removed
   by `HarnessProfile.excluded_tools` can still enter its allowlist.
 - It is **earlier** than `HumanInTheLoopMiddleware` in the tail, so
   `interrupt_on` still gates the code execution tool itself, but not a
@@ -175,7 +175,7 @@ middleware slot**:
 
 The general rule: middleware that **adds a calling path**, rather than
 merely adding or filtering tools, must be evaluated against the entire
-tail stack — not just against its neighbours in `middleware=[...]`. The
+tail stack - not just against its neighbours in `middleware=[...]`. The
 details are in
 [`../concepts/code-orchestration.md`](../concepts/code-orchestration.md)
 §In deepagents.
@@ -185,13 +185,13 @@ details are in
 Three behaviours invisible from `create_deep_agent`'s signature that
 determine whether `HarnessProfile.excluded_middleware` actually binds.
 
-### The slot identity rule — one principle, two behaviours
+### The slot identity rule - one principle, two behaviours
 
 `deepagents` matches middleware by **exact identity**, not inheritance.
 Class entries match on exact type, string entries on
 `AgentMiddleware.name`.
 
-`[code]` — `_excluded_middleware.py:90` (`_apply_excluded_middleware`),
+`[code]` - `_excluded_middleware.py:90` (`_apply_excluded_middleware`),
 whose docstring states: *"Class entries match on exact type (not
 `isinstance`), mirroring the slot-identity semantics of `_merge_middleware`
 so a subclass introduced by the caller is preserved when the profile
@@ -199,13 +199,13 @@ excludes the base class."*
 
 This is the **same** rule that governs replacing built-in middleware
 through the `middleware=` parameter (`graph.py:201`,
-`_apply_custom_middleware`) — and that is why anti-pattern #1 in
+`_apply_custom_middleware`) - and that is why anti-pattern #1 in
 [`extension-points.md`](extension-points.md) happens: a renamed subclass
 silently **fails** to replace the built-in middleware, because its name
 differs.
 
-Two seemingly unrelated behaviours — exclusion skipping subclasses, custom
-middleware failing to replace — are consequences of one rule. If you rely
+Two seemingly unrelated behaviours - exclusion skipping subclasses, custom
+middleware failing to replace - are consequences of one rule. If you rely
 on inheritance for either, you are wrong about both.
 
 ### The filter runs twice per stack
@@ -216,11 +216,11 @@ middleware is inserted:
 
 ```
 _apply_excluded_middleware(...)    # graph.py:877
-_apply_custom_middleware(...)      # graph.py:883 — the user inserts here
-_apply_excluded_middleware(...)    # graph.py:884 — filtered again
+_apply_custom_middleware(...)      # graph.py:883 - the user inserts here
+_apply_excluded_middleware(...)    # graph.py:884 - filtered again
 ```
 
-`[code]` — `graph.py:877-889`. The same pattern applies to tools:
+`[code]` - `graph.py:877-889`. The same pattern applies to tools:
 `_ToolExclusionMiddleware` is deliberately appended **dead last**, with
 the reason written in source (`graph.py:890-893`): *"Tool exclusion runs
 after custom middleware so excluded tool names are stripped last and
@@ -237,7 +237,7 @@ repeatedly across four scopes (main, declarative subagents, GP subagent):
 | 2 | `_apply_excluded_middleware` (`:90`) | Filter one stack, **recording what it matched** into a shared accumulator set |
 | 3 | `_verify_excluded_middleware_coverage` (`:168`) | After every stack is filtered, ensure each entry matched **somewhere** |
 
-`[code]` — 15 call sites in `graph.py` (`:607` validate main;
+`[code]` - 15 call sites in `graph.py` (`:607` validate main;
 `:688,693,704,710` subagents; `:769,779` GP subagent; `:877,884,903`
 main).
 
@@ -245,7 +245,7 @@ Phase 3 exists because the `matched_classes`/`matched_names` sets are
 **shared across all `_apply` calls** rather than checked per stack. Its
 docstring gives both sides of the reason: *"An entry that matched nothing
 is almost always a typo or stale profile"*, and *"Per-stack checking would
-be too strict — a profile legitimately targets middleware only one stack
+be too strict - a profile legitimately targets middleware only one stack
 carries."*
 
 The practical consequence:
@@ -255,7 +255,7 @@ discovered only in production.
 
 ## `artifacts_root`: where middleware writes, and who decides
 
-Two built-in middlewares write to the backend unbidden — and to **three**
+Two built-in middlewares write to the backend unbidden - and to **three**
 prefixes, not one. None of this is visible from any `create_deep_agent`
 signature.
 
@@ -267,7 +267,7 @@ self._large_tool_results_prefix = f"{_root}/large_tool_results"
 self._media_prefix              = f"{self._history_path_prefix}/media"
 ```
 
-`[code]` — `middleware/summarization.py:598-603`.
+`[code]` - `middleware/summarization.py:598-603`.
 
 | Prefix | Contents | Written by |
 |---|---|---|
@@ -276,7 +276,7 @@ self._media_prefix              = f"{self._history_path_prefix}/media"
 | `<root>/large_tool_results/` | Tool output too large for context | `summarization.py:601` |
 
 `FilesystemMiddleware` writes to the **same** directories through its
-message eviction path — `[code]` `middleware/filesystem.py:1705` (the
+message eviction path - `[code]` `middleware/filesystem.py:1705` (the
 prefix), `:3324,3350` (the writes). So two different middlewares share one
 artifact namespace.
 
@@ -287,13 +287,13 @@ this determines whether the artifacts above are scoped per user:
 
 | Backend | `artifacts_root` | Consequence |
 |---|---|---|
-| A plain backend (`StoreBackend`, `FilesystemBackend`, …) | `"/"` — the `else` branch at `:598` | Artifacts land at that backend's root. For `StoreBackend(namespace=...)` that means **inside the user's namespace** → automatically scoped |
+| A plain backend (`StoreBackend`, `FilesystemBackend`, …) | `"/"` - the `else` branch at `:598` | Artifacts land at that backend's root. For `StoreBackend(namespace=...)` that means **inside the user's namespace** → automatically scoped |
 | `CompositeBackend` | `self.artifacts_root`, default `"/"` (`backends/composite.py:212,235`) | Artifacts follow the `routes` rules. If `/conversation_history/` and `/large_tool_results/` are **not** routed explicitly, both fall to `default` |
 
 The easily missed consequence: composing
 `CompositeBackend(default=StateBackend(), routes={"/memories/": StoreBackend(namespace=...)})`
 makes `/memories/` durable and scoped, but **conversation summaries still
-fall to `StateBackend`** — ephemeral, lost every turn. A namespaced
+fall to `StateBackend`** - ephemeral, lost every turn. A namespaced
 backend does not mean every artifact is namespaced; what decides is
 whether `routes` covers the prefixes above.
 
@@ -307,7 +307,7 @@ override only the hooks you need. The relevant class attributes:
 `state_schema`, `tools`, `name` (a property, defaulting to
 `__class__.__name__`), `trace_policy`.
 
-A minimal example that genuinely runs — limiting how many times one tool
+A minimal example that genuinely runs - limiting how many times one tool
 name may be called consecutively with identical arguments (the "agent
 spinning in place" case `ToolCallLimitMiddleware` doesn't catch, because
 that one counts total calls rather than repetitions):
@@ -356,7 +356,7 @@ agent = create_deep_agent(
 What makes this example idiomatic:
 
 - It uses `wrap_tool_call` rather than wrapping tool functions one by one.
-- It returns a `ToolMessage` with status `error` rather than raising — the
+- It returns a `ToolMessage` with status `error` rather than raising - the
   model gets feedback and can change course, matching the
   `ShellAllowListMiddleware` pattern in
   `libs/code/deepagents_code/agent.py` (the maintainers' repo), which does
@@ -374,8 +374,8 @@ count in `state_schema` rather than on `self`.
 
 For simple cases there are also decorators: `@before_agent`,
 `@before_model`, `@after_model`, `@after_agent`, `@wrap_model_call`,
-`@wrap_tool_call`, `@dynamic_prompt` — all from
-`langchain.agents.middleware`. `[code]` —
+`@wrap_tool_call`, `@dynamic_prompt` - all from
+`langchain.agents.middleware`. `[code]` -
 `langchain/agents/middleware/types.py` lines 934-2175.
 
 ## Sources

@@ -1,11 +1,11 @@
-# `deepagents` — handlers & hooks
+# `deepagents` - handlers & hooks
 
 The available intercept points, what each one may change, what it
 **cannot**, and the official error-handling patterns.
 
 Every hook here comes from `langchain.agents.middleware.AgentMiddleware`;
-`deepagents` adds no new hook types — it only assembles middleware that
-uses them. `[code]` — `langchain/agents/middleware/types.py` lines
+`deepagents` adds no new hook types - it only assembles middleware that
+uses them. `[code]` - `langchain/agents/middleware/types.py` lines
 385-740.
 
 ## Hook table
@@ -21,28 +21,28 @@ uses them. `[code]` — `langchain/agents/middleware/types.py` lines
 
 On async variants: if a middleware implements only the sync version and
 the graph runs through `ainvoke`, `create_agent` still installs it via
-`RunnableCallable`, but for `wrap_*` a `NotImplementedError` can surface —
+`RunnableCallable`, but for `wrap_*` a `NotImplementedError` can surface -
 `factory.py` deliberately collects middleware having **either** sync or
 async so that taking the wrong path fails visibly rather than silently.
-`[code]` — `langchain/agents/factory.py` lines 1040-1060.
+`[code]` - `langchain/agents/factory.py` lines 1040-1060.
 
 ## Human-in-the-loop
 
 Two paths, both ending at `HumanInTheLoopMiddleware`:
 
-1. `create_deep_agent(interrupt_on={...})` — explicit, per tool name.
+1. `create_deep_agent(interrupt_on={...})` - explicit, per tool name.
 2. `create_deep_agent(permissions=[FilesystemPermission(..., mode="interrupt")])`
-   — `_build_interrupt_on_from_permissions` synthesises `interrupt_on`
+   - `_build_interrupt_on_from_permissions` synthesises `interrupt_on`
    entries with a `when` predicate that evaluates the path per call.
 
 The two are merged by `_merge_fs_interrupt_on`; user entries win per tool
 name. If the merged result is empty, the middleware is **not installed at
-all**. `[code]` — `deepagents/graph.py` lines 182-198, 871-876;
+all**. `[code]` - `deepagents/graph.py` lines 182-198, 871-876;
 `deepagents/middleware/_fs_interrupt.py`.
 
 ### The shape of `InterruptOnConfig`
 
-`[code]` — `langchain/agents/middleware/human_in_the_loop.py` lines 51,
+`[code]` - `langchain/agents/middleware/human_in_the_loop.py` lines 51,
 146-215.
 
 | Field | Type | Notes |
@@ -60,7 +60,7 @@ all**. `[code]` — `deepagents/graph.py` lines 182-198, 871-876;
 A LangGraph interrupt means the run **stops** and the checkpointer records
 its position. Continuing means
 `invoke(Command(resume=HITLResponse(...)), config)` with the same
-`thread_id`. Without a `checkpointer`, `interrupt_on` is useless — there
+`thread_id`. Without a `checkpointer`, `interrupt_on` is useless - there
 is nowhere to store the pause point.
 
 ⚠️ Inheritance: a declarative `SubAgent` inherits top-level
@@ -82,7 +82,7 @@ wrapper unhandled by design"). What officially handles them:
 | Retry with backoff | `ToolRetryMiddleware` | `max_retries=2`, `retry_on=`, `on_failure="continue"\|"error"\|callable`, `backoff_factor=2.0`, `initial_delay=1.0`, `max_delay=60.0`, `jitter=True` |
 | Refuse before execution | your own `wrap_tool_call`, returning `ToolMessage(status="error")` | the maintainer's `ShellAllowListMiddleware` pattern |
 
-`[code]` — `langchain/agents/middleware/tool_error.py` lines 75-105,
+`[code]` - `langchain/agents/middleware/tool_error.py` lines 75-105,
 `tool_retry.py` lines 133-175.
 
 ### The model fails / times out
@@ -90,12 +90,12 @@ wrapper unhandled by design"). What officially handles them:
 | Need | Middleware | Key configuration |
 |---|---|---|
 | Retry the model call | `ModelRetryMiddleware` | `max_retries=2`, `retry_on=`, `on_failure="continue"\|"error"\|callable`, same backoff as tools |
-| Fall back to another model | `ModelFallbackMiddleware` | `ModelFallbackMiddleware(first_model, *additional_models)` — tried in order |
+| Fall back to another model | `ModelFallbackMiddleware` | `ModelFallbackMiddleware(first_model, *additional_models)` - tried in order |
 | Context overflow | already handled by deepagents' `SummarizationMiddleware`: `ContextOverflowError` is caught, history is compacted, and the request is retried | `create_summarization_middleware(...)` |
 
-Pure network timeouts are not a middleware concern — configure them on the
+Pure network timeouts are not a middleware concern - configure them on the
 model constructor (`ChatAnthropic(default_request_timeout=...,
-max_retries=...)` — the alias `timeout` is also accepted).
+max_retries=...)` - the alias `timeout` is also accepted).
 
 ### Budget exhausted
 
@@ -107,26 +107,26 @@ max_retries=...)` — the alias `timeout` is also accepted).
 
 `recursion_limit` is overridden through
 `agent.with_config({"recursion_limit": N})` or
-`agent.invoke(..., config={"recursion_limit": N})` — which is what the
+`agent.invoke(..., config={"recursion_limit": N})` - which is what the
 maintainers use in `examples/better-harness/better_harness/agent.py` and
 in `libs/code/deepagents_code/agent.py` (`.with_config({**config,
-"recursion_limit": effective_recursion_limit})`). `[code]` — repo
+"recursion_limit": effective_recursion_limit})`). `[code]` - repo
 `langchain-ai/deepagents` commit `23b83ad`.
 
 ⚠️ The `9_999` default is not a safeguard; in practice it means
 "unlimited". Every deployment must lower it explicitly.
 
 `ToolCallLimitMiddleware` counts the **number** of calls, not identical
-repetitions. There is no built-in "spinning in place" detection — see the
+repetitions. There is no built-in "spinning in place" detection - see the
 example in [`middleware.md`](middleware.md).
 
 ### Human interruption (cancel/kill)
 
 There is no "stop all runs" API in `deepagents`. What exists:
 
-- `interrupt()` (HITL) — a cooperative pause awaiting
+- `interrupt()` (HITL) - a cooperative pause awaiting
   `Command(resume=...)`.
-- Cancelling the asyncio task or killing the process — leaves dangling
+- Cancelling the asyncio task or killing the process - leaves dangling
   tool calls in the checkpoint. `PatchToolCallsMiddleware.before_agent`
   cleans them up on the next run with a synthetic `ToolMessage` reading
   "was cancelled - another message came in before it could be completed".
@@ -134,30 +134,30 @@ There is no "stop all runs" API in `deepagents`. What exists:
 - A fleet-level kill switch is the responsibility of the orchestrator/
   queue above `deepagents`.
 
-`[code]` — `deepagents/middleware/patch_tool_calls.py` lines 30-45.
+`[code]` - `deepagents/middleware/patch_tool_calls.py` lines 30-45.
 
 ### A subagent fails
 
 If `subagent_type` is unknown, the `task` tool returns an ordinary error
 **string** ("we cannot invoke subagent X ... the only allowed types are
-...") rather than an exception — the model can try another name.
+...") rather than an exception - the model can try another name.
 If a `CompiledSubAgent` returns state without a `messages` key,
 `_return_command_with_state_update` **raises `ValueError`** and the run
-fails. `[code]` — `deepagents/middleware/subagents.py` lines 474-482, 549
+fails. `[code]` - `deepagents/middleware/subagents.py` lines 474-482, 549
 (sync path) and 577 (async path).
 
 ## What cannot be intercepted
 
-- **The contents of the HTTP request to the provider** — that belongs to
+- **The contents of the HTTP request to the provider** - that belongs to
   the `BaseChatModel` object.
 - **Tool call ordering.** There is no "tool B must follow tool A" hook.
   `PatchToolCallsMiddleware` is often mistaken for an ordering enforcer;
   it only patches missing `ToolMessage`s. Ordering can only be enforced
   through prompt instructions, or a `wrap_tool_call` that refuses calls
-  violating the order — neither of which is a structural guarantee.
-- **Removing `FilesystemMiddleware`/`SubAgentMiddleware`** —
+  violating the order - neither of which is a structural guarantee.
+- **Removing `FilesystemMiddleware`/`SubAgentMiddleware`** -
   `HarnessProfile.excluded_middleware` refuses with a `ValueError`.
-- **Making `after_model` run after HITL** — HITL is always first in that
+- **Making `after_model` run after HITL** - HITL is always first in that
   phase (see [`middleware.md`](middleware.md) §5).
 
 ## Sources

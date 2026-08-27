@@ -1,4 +1,4 @@
-> **Provenance**: derived from the `deepagents 0.7.8` source — the same
+> **Provenance**: derived from the `deepagents 0.7.8` source - the same
 > version documented in `references/systems/deepagents.md` and pinned in
 > `references/recipes/uv.lock`. Pure AST extraction (zero LLM tokens).
 > Regenerate when the version bumps; see README §The deepagents source graph.
@@ -539,7 +539,7 @@ Cohesion: 0.67
 Nodes (3): AsyncSubAgentState, AgentState, State extension for async subagent task tracking.
 
 ## Knowledge Gaps
-- **8 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **8 thin communities (<3 nodes) omitted from report** - run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_

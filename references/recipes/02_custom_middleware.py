@@ -4,11 +4,11 @@ Demonstrates: adding `TodoListMiddleware` (from
 `langchain.agents.middleware`, **not** part of `create_deep_agent`'s default
 stack) through the `middleware=[...]` parameter, and installing a
 `FilesystemPermission` with `mode="interrupt"` to hold every `write_file`
-outside `/scratch/` for human approval — without touching `interrupt_on`
+outside `/scratch/` for human approval - without touching `interrupt_on`
 manually, because a `mode="interrupt"` rule generates its own entries
 automatically through `_build_interrupt_on_from_permissions`.
 
-Archetypes served: the General Task Agent (03) — explicit planning is its
+Archetypes served: the General Task Agent (03) - explicit planning is its
 primary distinguishing axis (see
 `references/archetypes/03-general-task-agent.md`, the "Building this with
 deepagents" section: "TodoListMiddleware ... must be added explicitly").

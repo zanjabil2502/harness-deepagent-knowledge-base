@@ -9,13 +9,13 @@ queried/redacted per row; compaction replacing the original message content
 directly (the transcript is lost too, not just the context trimmed); a
 network retry on one turn creating a second turn because there is no
 idempotency key; and one table missing its `user_id` column so it leaks
-between users — a certainty in a codebase that lives long enough (§8.2).
+between users - a certainty in a codebase that lives long enough (§8.2).
 
 The DDL below is the direct answer: pasteable into `psql` as-is.
 
 ## Pattern
 
-The `CREATE TABLE` order already follows FK dependency order — run it top to
+The `CREATE TABLE` order already follows FK dependency order - run it top to
 bottom.
 
 ```sql
@@ -23,7 +23,7 @@ bottom.
 -- Extensions
 -- ============================================================
 CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- gen_random_uuid()
--- CREATE EXTENSION IF NOT EXISTS vector;  -- pgvector, optional — only if
+-- CREATE EXTENSION IF NOT EXISTS vector;  -- pgvector, optional - only if
 --                                          -- memory embeddings are stored in
 --                                          -- Postgres, see memory_entries.
 
@@ -185,7 +185,7 @@ CREATE TABLE memory_entries (
 CREATE INDEX memory_entries_user_idx ON memory_entries (user_id, updated_at DESC);
 ```
 
-### Row-Level Security — scope enforcement, not a manual `WHERE` (§8.2)
+### Row-Level Security - scope enforcement, not a manual `WHERE` (§8.2)
 
 ```sql
 -- The app MUST set this session variable per connection/transaction BEFORE any query:
@@ -271,45 +271,45 @@ CREATE TABLE checkpoints (
 
 Why they aren't part of this application schema: those tables are migrated
 and owned by the checkpointer library itself, not by the application's
-migrations — changing their shape (e.g. adding a `user_id` column) risks
+migrations - changing their shape (e.g. adding a `user_id` column) risks
 breaking on a library update. The `thread_id` in that table is **equated by
-convention** with `conversations.id` (not an FK — different subsystem,
+convention** with `conversations.id` (not an FK - different subsystem,
 different migration), and its scoping is enforced at the application level (a
 thread is only requested for a `conversation_id` that passed the
 `conversations` RLS), not by native Postgres RLS on the checkpoint tables
-themselves. This is an honestly reported gap rather than a hidden one — see
+themselves. This is an honestly reported gap rather than a hidden one - see
 `session-state.md` for why a checkpointer isn't the product's database.
 
 ## Trade-offs
 
 - **A persisted `active_leaf_id` pointer vs a recursive resolution
-  algorithm** — the alternative not chosen: store the tree as-is and compute
+  algorithm** - the alternative not chosen: store the tree as-is and compute
   the active path whenever needed through an explicit per-node rule (e.g.
   "at each branch point, the child with the largest `created_at` wins,
   recursively from the root"). That avoids an extra column plus the app's
   obligation to keep it in sync, but recursion per render is more expensive
   for deep trees, and "the newest child wins at each branch point" can still
   be wrong when a user edits two different branches then returns to the
-  first — that rule needs supplementing with "which branch was last chosen"
+  first - that rule needs supplementing with "which branch was last chosen"
   state at every point, which ends up being a per-node pointer anyway, only
   more complex than one pointer per conversation. We chose a single pointer
   (`active_leaf_id`) because its resolution is trivial (one column, one
   UPDATE per fork/switch) and unambiguous.
 - **The junction table (`compaction_event_messages`) carrying its own
   `user_id`** even though it could be reached through a JOIN to
-  `messages`/`compaction_events`. `[ours]` — vanilla: RLS through a subquery
+  `messages`/`compaction_events`. `[ours]` - vanilla: RLS through a subquery
   (`message_id IN (SELECT id FROM messages WHERE user_id = ...)`), which
   isn't sargable and is slower on large tables. We chose a direct scope
   column plus the redundancy trade-off (it must be written consistently in
   the same transaction as the insert) for the sake of a cheap RLS policy
   uniform across every table.
-- **`version INT` vs a timestamp as the version** — discussed in
+- **`version INT` vs a timestamp as the version** - discussed in
   `artifacts-and-canvas.md`, relevant here too because the same pattern
   could apply to `memory_entries` if a change history of memory facts is
-  needed (the schema above deliberately adds no versioning to memory —
+  needed (the schema above deliberately adds no versioning to memory -
   YAGNI until there is a real need for "the history of how this memory
   changed").
-- **Soft delete vs hard delete at this layer** — the schema above uses
+- **Soft delete vs hard delete at this layer** - the schema above uses
   `ON DELETE CASCADE` (hard) down from `conversations`; if legal retention
   needs tombstones, change it to `deleted_at TIMESTAMPTZ` plus a filter in
   the RLS policy. The full trade-off is in `retention-and-deletion.md`.
@@ -317,53 +317,53 @@ themselves. This is an honestly reported gap rather than a hidden one — see
   is a deliberate trade-off: keeping the checkpointer schema consistent with
   the upstream library vs uniform scope enforcement. If stricter
   multi-tenant isolation is needed at this layer, the alternative is a
-  custom checkpointer adding its own scope column — not done here because
+  custom checkpointer adding its own scope column - not done here because
   deepagents passes the checkpointer through unchanged (see `In deepagents`
   below), so changing it means stepping outside the contract the application
   injected.
 
 ## In deepagents
 
-The `checkpointer` and `store` used to fill the tables above (indirectly —
+The `checkpointer` and `store` used to fill the tables above (indirectly -
 through the `thread_id = conversation_id` convention, not an FK) are passed
 through **unchanged** by `deepagents` to `langchain.agents.create_agent`;
-`deepagents` never builds a checkpointer/store of its own. `[code]` — see
+`deepagents` never builds a checkpointer/store of its own. `[code]` - see
 [`../systems/deepagents.md`](../systems/deepagents.md) §5
 (`deepagents/graph.py` lines 546-553, 922-931). So the
 `messages`/`tool_calls`/`compaction_events` schema above is purely the
-responsibility of the application calling `create_deep_agent` — no part of
+responsibility of the application calling `create_deep_agent` - no part of
 `deepagents` writes to these tables.
 
 ## Sources
 
 - `[code]` LibreChat `packages/data-schemas/src/schema/toolCall.ts`
   (`danny-avila/LibreChat`, read through
-  `raw.githubusercontent.com/danny-avila/LibreChat/main/...`) — real
+  `raw.githubusercontent.com/danny-avila/LibreChat/main/...`) - real
   precedent for "tool calls as a separate collection/table" referencing
   `messageId`/`conversationId`, with `blockIndex`/`partIndex` for ordering
   within one message (mapped to the `sequence` column in `tool_calls` above,
   an `[ours]` naming simplification).
-- `[code]` LibreChat `packages/data-schemas/src/schema/message.ts` — its
+- `[code]` LibreChat `packages/data-schemas/src/schema/message.ts` - its
   `parentMessageId` line confirms the tree pattern through a per-row parent
   pointer (not a list), and its indexed `tenantId` column sitting alongside
   a schema that still runs single-tenant is real precedent for "the scope
   column is `user_id` today, `tenant_id` is the migration path" in §8.2.
-  `[ours]` — the schema above deliberately doesn't copy the `tenant_id`
+  `[ours]` - the schema above deliberately doesn't copy the `tenant_id`
   column now: §8.2 asks for a scope object at the application level, not a
   DB column, so adding a column used nowhere is YAGNI until multi-tenancy is
   genuinely built (the later migration is simply `ALTER TABLE ... ADD COLUMN
   tenant_id`, demanding no table redesign).
-- `[code]` Open WebUI `backend/open_webui/models/chats.py` — `Chat.chat =
+- `[code]` Open WebUI `backend/open_webui/models/chats.py` - `Chat.chat =
   Column(JSON)`: the entire message tree (`parentId`/`childrenIds`/`currentId`)
   lives in **one JSON column per chat**, not normalised SQL rows. This
   contrasts directly with the `[ours]` choice above (normalised `messages`
-  rows with a `parent_id` FK) — Open WebUI's vanilla is one JSON blob per
+  rows with a `parent_id` FK) - Open WebUI's vanilla is one JSON blob per
   conversation. We chose normalised rows because we need first-class
   per-message tool calls and per-row RLS, neither of which is obtainable
   from the contents of a JSON blob.
-- `[docs]` LangGraph — the `checkpoints`/`writes` schema and the
+- `[docs]` LangGraph - the `checkpoints`/`writes` schema and the
   `BaseCheckpointSaver` contract, cited via Context7 from
   `docs.langchain.com/oss/python/langgraph/checkpointers`.
-- `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §5 — for
+- `[code]` [`../systems/deepagents.md`](../systems/deepagents.md) §5 - for
   the "In deepagents" section (a tier-1 reference already verified in Task
   3, cited here without re-reading the source).

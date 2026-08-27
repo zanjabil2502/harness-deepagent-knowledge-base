@@ -1,6 +1,6 @@
 ---
 name: tag-diagram
-description: Emit structure and process as a ```mermaid block so the app renders a real diagram instead of describing boxes in prose. Use for flows, state machines, sequences, entity relationships, and hierarchies — including requests phrased as diagram, alur, bagan, flowchart, arsitektur, or 図.
+description: Emit structure and process as a ```mermaid block so the app renders a real diagram instead of describing boxes in prose. Use for flows, state machines, sequences, entity relationships, and hierarchies - including requests phrased as diagram, alur, bagan, flowchart, arsitektur, or 図.
 ---
 
 # Emit structure as a `mermaid` block
@@ -12,12 +12,12 @@ and those relationships are hard to follow in sentences: branching flows, the
 order of messages between components, state transitions, entity
 relationships, hierarchies.
 
-Don't use it for a simple ordered list — a numbered list reads more easily and
+Don't use it for a simple ordered list - a numbered list reads more easily and
 costs less. Don't use it for quantitative data; that is `tag-chart`.
 
 ## The shape
 
-A fenced block with the info string `mermaid` — not `diagram`. That tag is
+A fenced block with the info string `mermaid` - not `diagram`. That tag is
 already a de facto standard and renderers everywhere recognise it.
 
 ````
@@ -34,7 +34,7 @@ flowchart TD
 ````
 
 (The example's labels are Indonesian on purpose while its node IDs stay
-language-neutral — the rule below.)
+language-neutral - the rule below.)
 
 The most frequently used kinds: `flowchart` (flows and branching),
 `sequenceDiagram` (the order of messages between actors), `stateDiagram-v2`
@@ -66,5 +66,5 @@ and timelines. Mixing them within one answer disorients the reader.
 
 ## After the block
 
-One or two sentences pointing at **the path that matters** — which branch is
+One or two sentences pointing at **the path that matters** - which branch is
 the common one, where the decision sits. Not a re-listing of every node.

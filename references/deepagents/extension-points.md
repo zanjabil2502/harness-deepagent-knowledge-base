@@ -1,4 +1,4 @@
-# `deepagents` — extension points
+# `deepagents` - extension points
 
 ## The hard rule
 
@@ -7,7 +7,7 @@
 
 Custom code at the wrong layer usually **still runs**. That is the
 problem: it passes tests, passes review, and only looks wrong once
-built-in behaviour is silently bypassed — a tool you thought was
+built-in behaviour is silently bypassed - a tool you thought was
 restricted is still installed, a permission you thought was enforced is
 never consulted, a prompt cache you thought was active misses every
 session. All of them fail with no error.
@@ -69,7 +69,7 @@ middleware=[MyFS(tools=["read_file"])]     → delete, edit_file, execute, glob,
   (subclass, different class name)           grep, ls, read_file, task, write_file
 ```
 
-The restriction on the third line **vanishes without a trace** — no
+The restriction on the third line **vanishes without a trace** - no
 warning, no error.
 
 **The official way**: pass an **instance of the original class** with
@@ -83,13 +83,13 @@ agent = create_deep_agent(
 )
 ```
 
-For per-subagent, put the same instance in `spec["middleware"]` — the
+For per-subagent, put the same instance in `spec["middleware"]` - the
 `SubAgent` docstring says so explicitly: *"To restrict filesystem tools,
 include a `FilesystemMiddleware(tools=...)` instance here."*
 To hide a tool from **every** stack at once, use
 `HarnessProfile(excluded_tools=frozenset({"execute", "delete"}))`.
 
-`[code]` — `deepagents/graph.py` lines 201-235
+`[code]` - `deepagents/graph.py` lines 201-235
 (`_apply_custom_middleware`); `deepagents/middleware/subagents.py` lines
 62-66; `deepagents/middleware/filesystem.py` lines 1714-1744.
 
@@ -112,7 +112,7 @@ tools = [audited(search), audited(fetch), audited(publish)]
 
 **Why it's wrong**: three problems at once. (a) Middleware's built-in
 tools (`read_file`, `write_file`, `execute`, `task`) never pass through
-this wrapper — precisely the riskiest tools are missed. (b) The wrapper
+this wrapper - precisely the riskiest tools are missed. (b) The wrapper
 loses `tool_call_id`, so it cannot return a correct `ToolMessage`. (c)
 Every new tool must be remembered and wrapped; the ones forgotten fail
 silently.
@@ -127,13 +127,13 @@ class AuditMiddleware(AgentMiddleware):
         return handler(request)
 ```
 
-For errors and retries, don't write anything yourself —
+For errors and retries, don't write anything yourself -
 `ToolErrorMiddleware(on_error=...)` and
 `ToolRetryMiddleware(max_retries=..., backoff_factor=...)` already exist.
 The maintainers themselves use the `wrap_tool_call` path for this
 (`ShellAllowListMiddleware`, `libs/code/deepagents_code/agent.py:774`).
 
-`[code]` — `deepagents/middleware/filesystem.py` line 3471;
+`[code]` - `deepagents/middleware/filesystem.py` line 3471;
 `langchain/agents/middleware/tool_error.py:75`, `tool_retry.py:133`.
 
 ### 3. Writing your own `while` loop to bound step count
@@ -181,12 +181,12 @@ Use `.with_config` when the bound belongs to the agent, `config=` when it
 differs per invocation.
 
 The exception that **is** a legitimate outer loop: the Ralph pattern
-(`examples/ralph_mode/`) — each iteration deliberately starts from a
+(`examples/ralph_mode/`) - each iteration deliberately starts from a
 **fresh thread with empty context**, with the filesystem as memory between
 iterations. That isn't a step bound, it's a context strategy. An outer
 loop whose only purpose is "bound the step count" has no such reason.
 
-`[code]` — `deepagents/graph.py` lines 935-944;
+`[code]` - `deepagents/graph.py` lines 935-944;
 `langchain/agents/middleware/model_call_limit.py:126`; repo
 `langchain-ai/deepagents` commit `23b83ad`.
 
@@ -209,7 +209,7 @@ very file being "protected".
 
 **The official way**: `permissions=[FilesystemPermission(...)]`. Rules are
 evaluated in order (first match wins), apply to every built-in filesystem
-tool, and `mode="interrupt"` automatically wires into HITL — including for
+tool, and `mode="interrupt"` automatically wires into HITL - including for
 bulk tools (`ls`/`glob`/`grep`) whose search subtree intersects the rule's
 pattern.
 
@@ -221,13 +221,13 @@ permissions = [
 ```
 
 ⚠️ Its limit is real and must be known: `permissions` does **not** apply
-to the `execute` tool — `FilesystemMiddleware.__init__` in fact **raises
+to the `execute` tool - `FilesystemMiddleware.__init__` in fact **raises
 `NotImplementedError`** if `permissions` is combined with a
 `SandboxBackendProtocol` backend whose paths aren't scoped to a route. For
 shell-capable backends, permission enforcement must live at another layer
 (a command allow-list through `wrap_tool_call`, or the sandbox itself).
 
-`[code]` — `deepagents/middleware/filesystem.py` lines 384-417, 1691-1700;
+`[code]` - `deepagents/middleware/filesystem.py` lines 384-417, 1691-1700;
 `deepagents/middleware/_fs_interrupt.py` lines 20-46.
 
 ### 5. Copy-pasting `create_deep_agent` to change the stack
@@ -236,7 +236,7 @@ shell-capable backends, permission enforcement must live at another layer
 `my_agent.py`, then deleting or swapping a few middleware lines, because
 "there's no parameter for removing X".
 
-**Why it's wrong**: once copied, the agent stops following the library —
+**Why it's wrong**: once copied, the agent stops following the library -
 bug fixes, new middleware, and tail-stack ordering changes no longer
 arrive. And `_REQUIRED_MIDDLEWARE` exists precisely to prevent agents that
 "silently degrade"; a manual copy loses that protection.
@@ -257,7 +257,7 @@ register_harness_profile(
 ```
 
 A profile applies to the main agent **and** declarative subagents **and**
-the GP subagent all at once — a reach `middleware=[...]` cannot achieve.
+the GP subagent all at once - a reach `middleware=[...]` cannot achieve.
 Registration merges, so several modules may layer onto it.
 
 ⚠️ `excluded_middleware` refuses `FilesystemMiddleware` and
@@ -267,7 +267,7 @@ profile). To remove the `task` tool, use
 `general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)`
 plus passing no synchronous subagents.
 
-`[code]` — `deepagents/graph.py` lines 238-265;
+`[code]` - `deepagents/graph.py` lines 238-265;
 `deepagents/profiles/harness/harness_profiles.py` lines 483-700 (the
 `HarnessProfile` fields), 977-1026 (`register_harness_profile`).
 
@@ -296,7 +296,7 @@ Genuinely new storage = a new `BackendProtocol` implementation, not a
 module beside it. `StoreBackend`'s `namespace` is the only official
 per-user scoping *hook*.
 
-`[code]` — `deepagents/backends/composite.py` lines 180-240;
+`[code]` - `deepagents/backends/composite.py` lines 180-240;
 `deepagents/backends/store.py` lines 89-120;
 `deepagents/middleware/filesystem.py` lines 1602-1614 (the docstring
 example).
@@ -304,7 +304,7 @@ example).
 ## A note: two meanings of the word "middleware"
 
 The scaffold [`../scaffolds/_base.md`](../scaffolds/_base.md) has a
-`ScopeMiddleware`, and that is **not** an `AgentMiddleware` — it is a
+`ScopeMiddleware`, and that is **not** an `AgentMiddleware` - it is a
 `starlette.middleware.base.BaseHTTPMiddleware`, an HTTP layer resolving
 identity from the request before the agent is called at all. Two different
 things with the same name. The hard rule above applies only to
@@ -329,5 +329,5 @@ things with the same name. The hard rule above applies only to
 Runtime verification `[code]` for anti-pattern #1: three agents were built
 (`default`, `FilesystemMiddleware(tools=[...])`, and a subclass with a
 different class name), then
-`sorted(agent.nodes["tools"].bound.tools_by_name)` was compared — the
+`sorted(agent.nodes["tools"].bound.tools_by_name)` was compared - the
 result is exactly the table in anti-pattern #1.

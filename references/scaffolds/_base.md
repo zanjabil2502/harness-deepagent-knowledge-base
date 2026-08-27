@@ -1,10 +1,10 @@
 # The base scaffold (`_base`)
 
 A specification plus verified snippets for an **archetype-agnostic**
-production-grade project structure — not a template repo to `cp -r`
+production-grade project structure - not a template repo to `cp -r`
 (design §3 of the project's internal spec, which isn't shipped in the repo).
 Each of the seven files in `deltas/` writes **only** its difference from this
-file — read `_base.md` first; the deltas don't repeat its contents.
+file - read `_base.md` first; the deltas don't repeat its contents.
 
 Its assumptions follow this KB's global constraints: multi-user (`user_id`)
 today with multi-tenancy as a migration path; cloud and on-prem; Python +
@@ -41,7 +41,7 @@ pyproject.toml
 uv.lock
 ```
 
-There are no separate `executor/`/`retrieval/` folders — the reason is in the
+There are no separate `executor/`/`retrieval/` folders - the reason is in the
 next section: two of the three seams are already provided by `deepagents`
 itself, so creating new directories to repeat them would be duplication, not
 structure.
@@ -55,15 +55,15 @@ boundaries:
 
 | Boundary | Interface | Who provides it |
 |---|---|---|
-| **The orchestrator** | `Orchestrator` (a Protocol, `orchestrator/interface.py`) | `_base` itself — `deepagents` does **not** provide this seam (see the `[ours]` quotation in the code below) |
-| **The tool executor** | `SandboxBackendProtocol` | Already provided by `deepagents` — installed through the `backend=` parameter |
-| **Retrieval / durable state** | `StoreBackend`/`CompositeBackend` (`namespace=...`) | Already provided by `deepagents` — installed through the `backend=` parameter |
+| **The orchestrator** | `Orchestrator` (a Protocol, `orchestrator/interface.py`) | `_base` itself - `deepagents` does **not** provide this seam (see the `[ours]` quotation in the code below) |
+| **The tool executor** | `SandboxBackendProtocol` | Already provided by `deepagents` - installed through the `backend=` parameter |
+| **Retrieval / durable state** | `StoreBackend`/`CompositeBackend` (`namespace=...`) | Already provided by `deepagents` - installed through the `backend=` parameter |
 
-`[code]` — the last two rows are cited from `../systems/deepagents.md`
+`[code]` - the last two rows are cited from `../systems/deepagents.md`
 §Filesystem backend and `../concepts/serving-topology.md` §In deepagents: only
 `StoreBackend`, `CompositeBackend`, and `ContextHubBackend` have an explicit
 scoping *hook*; `StateBackend`/`FilesystemBackend`/`LocalShellBackend` don't.
-`_base` doesn't rewrite `deepagents`' backend contract as a new interface —
+`_base` doesn't rewrite `deepagents`' backend contract as a new interface -
 that would duplicate an existing definition. The only seam `_base` writes
 itself is the **Orchestrator**, because it is the only one of the three that
 `deepagents` deliberately leaves undecided (see `## In deepagents` in
@@ -135,7 +135,7 @@ class Orchestrator(Protocol):
         ...
 ```
 
-The default implementation wraps `create_deep_agent` — this is the safe
+The default implementation wraps `create_deep_agent` - this is the safe
 baseline each archetype delta starts from and **replaces**
 `create_deep_agent(...)` parameters in, rather than rewriting the class:
 
@@ -208,16 +208,16 @@ class DeepAgentsOrchestrator:
 ```
 
 `_base` deliberately installs no `tools=`, `subagents=`, `interrupt_on=`, or
-`memory=` — those are all per-archetype decisions, see `deltas/01..07.md`.
+`memory=` - those are all per-archetype decisions, see `deltas/01..07.md`.
 The baseline backend (`StoreBackend`, with no `execute`) deliberately doesn't
-support code execution either — an archetype needing `execute` (Workspace
+support code execution either - an archetype needing `execute` (Workspace
 Agent, Generative Builder, Computer-Use Agent) swaps this backend explicitly
 in its own delta rather than silently inheriting code execution from the
 baseline.
 
 ### The binding: `app/api/deps.py`
 
-`Orchestrator` is a Protocol — something has to decide which concrete
+`Orchestrator` is a Protocol - something has to decide which concrete
 implementation is used, and the route (`api/routes/turns.py`) must receive it
 through `Depends(...)` rather than reaching into `request.app.state` directly.
 `deps.py` is that single point:
@@ -255,13 +255,13 @@ def get_orchestrator(request: Request) -> Orchestrator:
 than constructing `DeepAgentsOrchestrator(...)` directly) and puts the result
 in `app.state.orchestrator`; the route takes it through
 `Depends(get_orchestrator)`. Migrating to a separate service (`serving.md`
-§Migrating) means changing `build_orchestrator()`'s body — one function, one
-file — not tracing through `main.py`/`turns.py`.
+§Migrating) means changing `build_orchestrator()`'s body - one function, one
+file - not tracing through `main.py`/`turns.py`.
 
 ## FastAPI, async-first
 
 All I/O (LLM calls, checkpoint writes, Postgres queries) uses
-`async`/`await` — deepagents/langgraph are already async-native
+`async`/`await` - deepagents/langgraph are already async-native
 (`.astream()`, `AsyncPostgresSaver`), so a synchronous handler here would
 only block the event loop for something that should be pure IO-wait (exactly
 `resource-profiling.md`'s argument: the LLM call phase barely uses CPU, and
@@ -332,7 +332,7 @@ app = create_app()
 
 ## The scope middleware: `user_id` + RLS
 
-The only point reading identity from the request — everything below it
+The only point reading identity from the request - everything below it
 receives `Scope` as an explicit parameter and never re-reads a header/token
 itself:
 
@@ -380,7 +380,7 @@ def _extract_user_id(request: Request) -> str | None:
     return request.headers.get("x-user-id") or None
 ```
 
-Postgres RLS (its DDL already executed and audited — see
+Postgres RLS (its DDL already executed and audited - see
 `../concepts/persistence-schema.md`, **unchanged here**) needs
 `SET LOCAL app.current_user_id` in **every** new transaction, not once per
 pooled connection:
@@ -434,7 +434,7 @@ async def db_session(scope: Scope) -> AsyncIterator[AsyncConnection]:
 ```
 
 The `deepagents` filesystem backend is namespaced per `user_id` through
-`_build_backend(scope)` in `deepagents_orchestrator.py` (above) — the same
+`_build_backend(scope)` in `deepagents_orchestrator.py` (above) - the same
 scope with two different enforcements (Postgres RLS for application tables,
 `StoreBackend.namespace` for agent files), both derived from the single
 `Scope` object `ScopeMiddleware` resolves rather than from two sources of
@@ -688,7 +688,7 @@ class DrainState:
             return False
 ```
 
-It is installed through four interlocking parts — if one is missing, the drain
+It is installed through four interlocking parts - if one is missing, the drain
 is an empty promise: (1) `lifecycle/drain.py` above counts the in-flight turn
 gauge, (2) `api/routes/turns.py` calls `drain.start_turn()`/`end_turn()`
 around each turn's execution, (3) `main.py`'s lifespan calls `wait_empty()` at
@@ -807,7 +807,7 @@ spec:
       targetPort: 8000
 ```
 
-This manifest deliberately contains **no** HPA/KEDA — the per-component
+This manifest deliberately contains **no** HPA/KEDA - the per-component
 scaling signals (in-flight turns for the orchestrator, queue depth for the
 tool executor, etc.) and the concrete `ScaledObject` configuration belong to
 `../concepts/scaling.md` and `serving.md` (§Migrating from a modular monolith
@@ -815,11 +815,11 @@ to microservices), not repeated here.
 
 ## Config & secrets
 
-`app/config.py` (not quoted in full — its shape is a standard
+`app/config.py` (not quoted in full - its shape is a standard
 `pydantic-settings` read from env vars) holds `APP_DATABASE_URL`,
 `CHECKPOINTER_DATABASE_URL`, `DRAIN_TIMEOUT_S`, and the model credentials.
 Those values come from a Kubernetes `Secret` (see `env[].valueFrom.secretKeyRef`
-in the manifest above) and are never hardcoded or committed to the repo — this
+in the manifest above) and are never hardcoded or committed to the repo - this
 is one of the nine production-readiness gate conditions below, mentioned here
 because its wiring genuinely lives in `config.py` + the manifest, while the
 condition's full definition stays solely in `blueprint-template.md`.
@@ -827,20 +827,20 @@ condition's full definition stays solely in `blueprint-template.md`.
 ## Guardrails: the installation points, not a re-listing
 
 The six enforcement points and their concrete middleware table are already
-pinned down in full in `../concepts/guardrails.md` — **not repeated here**.
+pinned down in full in `../concepts/guardrails.md` - **not repeated here**.
 All this scaffold needs to know is **where** each point is installed in the
 directory tree above:
 
 | Point (`guardrails.md`) | Installed in |
 |---|---|
 | 1. Input, 4. Output | The `middleware=[...]` parameter when `create_deep_agent(...)` is called in `deepagents_orchestrator.py` |
-| 2. Retrieval/context | Inside the custom retrieval tool's implementation (absent from `_base` — an archetype with retrieval tools adds it in its delta) |
-| 3. Tool/action | The `interrupt_on=`/`permissions=` parameters of `create_deep_agent(...)`, an `undo_*` tool, or `args_schema` validation — differing per archetype, see `deltas/*.md` |
+| 2. Retrieval/context | Inside the custom retrieval tool's implementation (absent from `_base` - an archetype with retrieval tools adds it in its delta) |
+| 3. Tool/action | The `interrupt_on=`/`permissions=` parameters of `create_deep_agent(...)`, an `undo_*` tool, or `args_schema` validation - differing per archetype, see `deltas/*.md` |
 | 5. Loop | `ToolCallLimitMiddleware`/`ModelCallLimitMiddleware` in that same `middleware=[...]` |
-| 6. System | An explicit `model=` parameter (already in `_base` — `ChatAnthropic(model_name="claude-sonnet-4-6")`, not a floating alias) |
+| 6. System | An explicit `model=` parameter (already in `_base` - `ChatAnthropic(model_name="claude-sonnet-4-6")`, not a floating alias) |
 
 The `_base` baseline installs only point 6 (pinning the model). Points
-1/3/4/5 are deliberately empty in the baseline — see each archetype's
+1/3/4/5 are deliberately empty in the baseline - see each archetype's
 `## Building this with deepagents` (`../archetypes/*.md`) for the concrete
 per-delta decisions.
 
@@ -848,6 +848,6 @@ per-delta decisions.
 
 The 9-condition checklist exists **solely** in
 [`../blueprint-template.md`](../blueprint-template.md#production-readiness-checklist)
-— not copied here, so there can never be two copies that diverge once spec
+- not copied here, so there can never be two copies that diverge once spec
 §12 changes. **This scaffold must not be declared finished until all nine
 items there are ticked.**

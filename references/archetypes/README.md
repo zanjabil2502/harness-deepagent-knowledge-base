@@ -15,7 +15,7 @@ archetype file carries the harness consequences that position forces.
 | Domain surface | General or vertical |
 | Interface | CLI / IDE / canvas / chat / embedded API |
 
-The primary cut for initial classification: **artifact × blast radius** —
+The primary cut for initial classification: **artifact × blast radius** -
 those two axes alone separate 6 of the 7 archetypes.
 
 ## The 7 archetypes
@@ -32,21 +32,21 @@ those two axes alone separate 6 of the 7 archetypes.
 
 ## Hybrid matrix
 
-Hybrids are normal — most real products combine two archetypes rather than
+Hybrids are normal - most real products combine two archetypes rather than
 being one pure type. Record the combination explicitly; don't force a
 single label.
 
 | System | Combination | Why |
 |---|---|---|
-| Cursor | 1 (Workspace) + 5 (In-App Copilot) | Edits the local repo through bash/file tools (1) while also offering a chat panel that answers from a codebase index without editing anything (5) — two different modes of human control in one product. `[inferred]` |
-| Manus | 3 (General Task) + 7 (Computer-Use) | Accepts a broad mission and delegates through explicit planning (3), but executes through a sandboxed browser — look at the page, click, verify (7). `[inferred]` |
-| Replit Agent | 2 (Generative Builder) + 1 (Workspace Agent) | Starts from nothing like a Generative Builder (building a new app in a sandbox), but once the app exists its workspace persists — shell, git, and files across sessions like a Workspace Agent. `[inferred]` |
+| Cursor | 1 (Workspace) + 5 (In-App Copilot) | Edits the local repo through bash/file tools (1) while also offering a chat panel that answers from a codebase index without editing anything (5) - two different modes of human control in one product. `[inferred]` |
+| Manus | 3 (General Task) + 7 (Computer-Use) | Accepts a broad mission and delegates through explicit planning (3), but executes through a sandboxed browser - look at the page, click, verify (7). `[inferred]` |
+| Replit Agent | 2 (Generative Builder) + 1 (Workspace Agent) | Starts from nothing like a Generative Builder (building a new app in a sandbox), but once the app exists its workspace persists - shell, git, and files across sessions like a Workspace Agent. `[inferred]` |
 
 ## The deployment dimension is orthogonal
 
 The seven archetypes above answer **"what kind of assistant is this"**.
-The question **"how is it served"** — local single-user CLI vs multi-user
-service on K8s, one process vs distributed, synchronous vs streaming — is
+The question **"how is it served"** - local single-user CLI vs multi-user
+service on K8s, one process vs distributed, synchronous vs streaming - is
 a different and independent axis. A Workspace Agent can be a local CLI
 (Aider) or a multi-user service (Claude Code as part of a managed
 product); it stays archetype 1 in both cases.
@@ -55,6 +55,6 @@ product); it stays archetype 1 in both cases.
 archetype taxonomy and place it under `references/concepts/` in the
 Runtime field (`serving-topology.md`, `scaling.md`). The vanilla approach
 common to AI product taxonomies is to mix the two (e.g. making "CLI agent"
-vs "hosted agent" categories in their own right) — we diverge because that
+vs "hosted agent" categories in their own right) - we diverge because that
 explodes 7 archetypes into dozens of variants that differ only in how they
 are served, not in their harness contract.

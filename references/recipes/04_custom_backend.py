@@ -1,19 +1,19 @@
 """04 - Custom backend: a CompositeBackend mixing ephemeral + per-user durable.
 
 Demonstrates: `CompositeBackend(default=StateBackend(), routes={"/memories/":
-StoreBackend(namespace=...)})` — files outside `/memories/` stay ephemeral
+StoreBackend(namespace=...)})` - files outside `/memories/` stay ephemeral
 (living in LangGraph state, gone when the thread ends), while files under
 `/memories/` are written through a `StoreBackend` scoped per user by a
 `namespace` factory (`lambda rt: (user_id, "memories")`). This is the official
 hybrid pattern shown in `FilesystemMiddleware`'s docstring and the
 `deepagents` documentation, not a construction of our own.
 
-Archetypes served: the In-App Copilot (05) and the General Task Agent (03) —
+Archetypes served: the In-App Copilot (05) and the General Task Agent (03) -
 both need some files to survive across sessions (memory/artifacts) while
 others may be discarded once the session ends.
 
 Concepts illustrated: `## Filesystem backend` in
-`references/systems/deepagents.md` — only `StoreBackend`/`CompositeBackend`
+`references/systems/deepagents.md` - only `StoreBackend`/`CompositeBackend`
 (routing into one) has an explicit scoping *hook* (`namespace`) for
 multi-user isolation; a plain `StateBackend` doesn't.
 """

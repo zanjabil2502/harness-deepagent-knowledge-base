@@ -1,5 +1,5 @@
 ---
-description: Weigh an agent idea — what kind of system it is, the trade-offs, what already exists
+description: Weigh an agent idea - what kind of system it is, the trade-offs, what already exists
 argument-hint: [an idea, question, or hunch about an agent you are considering]
 ---
 
@@ -15,7 +15,7 @@ Its route is deliberately *not* the diagnostic procedure:
    like this, and read the relevant T2 file's distinguishing character before
    claiming novelty.
 3. Read the `## Problem` and `## Trade-offs` sections of the concepts the idea
-   actually touches — not every concept. In archetype files read
+   actually touches - not every concept. In archetype files read
    `## Example systems` and `## Common pitfalls`.
 
 In this mode the explanation **is** the output. Stopping without a blueprint

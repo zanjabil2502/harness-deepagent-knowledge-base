@@ -1,21 +1,21 @@
 """03 - Subagents: delegating through the `task` tool to a narrow research subagent.
 
-Demonstrates: `subagents=[SubAgent, ...]` on `create_deep_agent` — a
+Demonstrates: `subagents=[SubAgent, ...]` on `create_deep_agent` - a
 declarative subagent with `tools` narrower than the main agent's (only
 `web_search_stub`, with no broad filesystem access), invoked through the
 `task` tool `SubAgentMiddleware` builds automatically. The `ToolMessage`
 content returning to the main agent is the subagent's last non-empty
 `AIMessage` text, or its `structured_response` serialised to JSON when that
-field is set — not the subagent's final `messages` state copied raw, and not
+field is set - not the subagent's final `messages` state copied raw, and not
 its whole working transcript.
 
-Archetypes served: Research/Analyst (04) — the research subagent pattern with
+Archetypes served: Research/Analyst (04) - the research subagent pattern with
 a narrow search tool, exactly as referenced by
 `references/archetypes/04-research-agent.md`'s "Building this with
 deepagents" section (`examples/deep_research/research_agent.ipynb`).
 
 Concepts illustrated: `## 4. Delegation` in
-`references/systems/deepagents.md` — the `SubAgent` spec (a dict), the
+`references/systems/deepagents.md` - the `SubAgent` spec (a dict), the
 automatic addition of the `general-purpose` subagent alongside a custom one,
 and how a delegation's result returns as the `task` tool's `ToolMessage`.
 """

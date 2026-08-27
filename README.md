@@ -309,7 +309,7 @@ To add a T3 entry, add one row to the **Tier 3** table in
 [`references/systems/INDEX.md`](references/systems/INDEX.md):
 
 ```
-| <Name> | <Archetype, or "Infrastructure — ..."> | T3 | <one line of distinguishing character> | <its multilingual design status, or "Not applicable"> | `[code]`/`[docs]`/`[inferred]` |
+| <Name> | <Archetype, or "Infrastructure - ..."> | T3 | <one line of distinguishing character> | <its multilingual design status, or "Not applicable"> | `[code]`/`[docs]`/`[inferred]` |
 ```
 
 The rules:

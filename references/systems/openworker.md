@@ -8,7 +8,7 @@ Tier **T2**. Source read from a `git clone --depth 1` of the
 
 ## Archetype
 
-**General Task Agent (03)** at its core, but a **four-way** hybrid — the most of
+**General Task Agent (03)** at its core, but a **four-way** hybrid - the most of
 any system in this index. Its artifacts are documents/spreadsheets/reports as
 finished files (**Generative Builder 02**), it acts on SaaS objects through 25+
 connectors (**In-App Copilot 05**), it touches the terminal and local files
@@ -17,7 +17,7 @@ connectors (**In-App Copilot 05**), it touches the terminal and local files
 
 Blast radius: the operator's machine **plus** the SaaS data it connects to. Human
 control: approval per consequential action. Interface: a desktop GUI, Slack
-mentions, and a scheduler. **Single-operator** — the README states it explicitly:
+mentions, and a scheduler. **Single-operator** - the README states it explicitly:
 *"designed for a single operator"*. `[docs]` README
 
 ## 1. Loop shape
@@ -44,7 +44,7 @@ sent verbatim. That state is persisted with the session
 
 This canonical/outbound separation is equivalent to the transcript vs model
 context separation in
-[`../concepts/session-state.md`](../concepts/session-state.md) — arrived at
+[`../concepts/session-state.md`](../concepts/session-state.md) - arrived at
 independently, and here the boundary is one explicit index.
 
 ## 3. Tool surface
@@ -64,7 +64,7 @@ verifies hashes (`_verify`, `:227`), and resolves paths (`resolve`, `:171`), wit
 
 One form of delegation: a read-only **explorer subagent**
 (`coworker/tools/subagent.py:79`, `build_explorer_engine` at `:42`). Its tool
-docstring states its own contract — broad read-only research with *"its own fresh
+docstring states its own contract - broad read-only research with *"its own fresh
 context window"*, returning **only the final report**, and *"the intermediate file
 reads never touch your context"*. Independent `explore` calls run in parallel when
 requested together. `[code]`
@@ -78,7 +78,7 @@ clean summary, not a transcript.
 Sessions are persisted along with their compaction state (`sessions.py:37-39`).
 More interesting is **durable resume for approvals**: an inbox item stores its
 `tool_call_id` (`coworker/inbox.py:77`, `coworker/engine.py:55`) and `add_approval`
-is **idempotent over `(session_id, tool_call_id)`** (`inbox.py:142`) — its comment
+is **idempotent over `(session_id, tool_call_id)`** (`inbox.py:142`) - its comment
 states *"a durable resume re-raises the same prompt"*. So if the process dies
 while awaiting approval, its coroutine is lost but its request survives, and a
 re-run raises the same prompt rather than a duplicate. `[code]`
@@ -92,14 +92,14 @@ Independent convergence on the same shape.
 
 Four risk classes as an enum (`coworker/risk.py:18-23`): `READ` (no side effects,
 always allowed), `WRITE_LOCAL` (path-scoped + mode-gated), `EXEC` (mode-gated),
-and `EXTERNAL` — whose comment calls itself *"the unattended Inbox hook"*.
+and `EXTERNAL` - whose comment calls itself *"the unattended Inbox hook"*.
 `is_consequential()` (`:56-58`) states the rule: anything other than `READ` enters
 the permission engine. `[code]`
 
 The approver is a **strategy swapped per session mode**, not a branch inside the
 engine. An unattended session uses `inbox_approver` (`coworker/inbox.py:387`)
 whose docstring states: *"routes a permission request to the Inbox and suspends
-until resolved"* — an `await store.wait(item.id)` (`:362-371`) **with no
+until resolved"* - an `await store.wait(item.id)` (`:362-371`) **with no
 timeout**. `ApprovalOutcome` (`engine.py:31-37`) has five values: `ONCE`,
 `ALWAYS_TOOL`, `ALWAYS_COMMAND`, `READONLY_SESSION`, `DENY`. `[code]`
 
@@ -123,7 +123,7 @@ WRITE_TOOLS / SHELL_TOOL, **as data**"*. `[code]`
 
 This is the same shape recommended in
 [`../concepts/policy-as-data.md`](../concepts/policy-as-data.md): a code-verifiable
-rule lives as a table rather than a sentence in a prompt — with enforcement at the
+rule lives as a table rather than a sentence in a prompt - with enforcement at the
 permission engine boundary. Which tool gets called remains model judgement; what
 is data-driven is its **risk class**, not the routing. `[inferred]`
 
@@ -136,7 +136,7 @@ is data-driven is its **risk class**, not the routing. `[inferred]`
   `coworker/agent.py:505-515`, `coworker/compaction.py:86-94`,
   `coworker/sessions.py:37-39`, `coworker/tools/subagent.py:42,79-100`,
   `coworker/toolchain.py:171,227`, `tests/test_unattended.py:22-60`.
-- `[docs]` The repo README — its open beta status, the single-operator claim, the
+- `[docs]` The repo README - its open beta status, the single-operator claim, the
   list of 25+ connectors, and the desktop app + local agent server architecture
   (on top of `aisuite`).
 - `[docs]` The GitHub API: 14,948 stars, Python, MIT, created 2026-07-20.

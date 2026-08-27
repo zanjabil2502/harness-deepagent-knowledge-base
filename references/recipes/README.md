@@ -19,9 +19,9 @@ uv run python 04_custom_backend.py
 
 ## Verification rule
 
-Every script **always** builds a real agent — `create_deep_agent(...)`,
+Every script **always** builds a real agent - `create_deep_agent(...)`,
 real middleware, a real backend, and (where relevant) real subagent
-config — then prints a construction summary. That alone proves every API
+config - then prints a construction summary. That alone proves every API
 name, signature, and parameter it uses genuinely exists: a wrong parameter
 makes construction raise, and the failure is immediately visible.
 
@@ -31,5 +31,5 @@ all**. The four scripts deliberately never call a model: no
 network. This skill as a whole never asks for an API key.
 
 All four must exit with `exit 0` in any environment, including CI with no
-credentials whatsoever. That is what is verified — **not** that a model
+credentials whatsoever. That is what is verified - **not** that a model
 was actually called.

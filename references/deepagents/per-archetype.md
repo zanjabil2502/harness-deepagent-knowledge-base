@@ -1,11 +1,11 @@
-# `deepagents` per archetype — the correct construction
+# `deepagents` per archetype - the correct construction
 
 For each archetype in [`../archetypes/`](../archetypes/README.md): which
 middleware, which backend, which subagents, which loop bounds, which
 handlers. This joins archetype rationale to concrete API; the full
 rationale is not repeated here.
 
-Read [`extension-points.md`](extension-points.md) first — every
+Read [`extension-points.md`](extension-points.md) first - every
 construction below is subject to the hard rule there. Every divergence
 labelled `[ours]` is recorded in [`conformance.md`](conformance.md).
 
@@ -23,19 +23,19 @@ labelled `[ours]` is recorded in [`conformance.md`](conformance.md).
 
 ---
 
-## 01 — Workspace Agent
+## 01 - Workspace Agent
 
 **Backend**: `LocalShellBackend(root_dir="<repo>", virtual_mode=True)`.
 `virtual_mode` confines file operations to `root_dir` but does **not**
-restrict `execute()` — the backend's own docstring says so. `[code]` —
+restrict `execute()` - the backend's own docstring says so. `[code]` -
 `deepagents/backends/local_shell.py` lines 26-105.
 
 **Middleware**: the default stack suffices. Add `TodoListMiddleware()`
 only when the repo task is long and multi-step; it isn't required.
 
-**Subagents**: not used by default — not a divergence; 5 of the 10
+**Subagents**: not used by default - not a divergence; 5 of the 10
 `create_deep_agent` calls in the maintainers' `examples/` also pass no
-synchronous subagents. `[code]` — repo `langchain-ai/deepagents` commit
+synchronous subagents. `[code]` - repo `langchain-ai/deepagents` commit
 `23b83ad`, see [`conformance.md`](conformance.md) D-01.
 
 **Gate**: `interrupt_on={"execute": True, "write_file": True,
@@ -45,7 +45,7 @@ synchronous subagents. `[code]` — repo `langchain-ai/deepagents` commit
 ⚠️ Don't use `permissions=` with this backend: `FilesystemMiddleware`
 **raises `NotImplementedError`** for `permissions` plus a
 `SandboxBackendProtocol` backend whose paths aren't scoped to a route.
-`[code]` — `deepagents/middleware/filesystem.py` lines 1691-1700. There
+`[code]` - `deepagents/middleware/filesystem.py` lines 1691-1700. There
 are two official ways out:
 
 1. Per-tool `interrupt_on`, or a `wrap_tool_call` command allow-list (the
@@ -57,10 +57,10 @@ are two official ways out:
    does (lines 548-565, 623-638): a `LangSmithSandbox` default, with
    `/raw/`, `/wiki/`, `/log.md`, `/AGENTS.md` routed to
    `FilesystemBackend(root_dir=workspace)`, and `permissions` touching
-   only those four prefixes. `[code]` — repo `langchain-ai/deepagents`
+   only those four prefixes. `[code]` - repo `langchain-ai/deepagents`
    commit `23b83ad`.
 
-**Loop bound**: `.with_config({"recursion_limit": 150})` — enough for a
+**Loop bound**: `.with_config({"recursion_limit": 150})` - enough for a
 long editing session, far below the `9_999` default.
 
 ```python
@@ -75,7 +75,7 @@ agent = create_deep_agent(
 
 ---
 
-## 02 — Generative Builder
+## 02 - Generative Builder
 
 **Backend**: the sandbox family.
 `DaytonaSandbox(sandbox=Daytona().create(), timeout=300)` from the
@@ -83,10 +83,10 @@ agent = create_deep_agent(
 `LangSmithSandbox(sandbox)`. For deployment through the `deepagents` CLI,
 `agent.json`:
 `{"backend": {"type": "sandbox", "sandbox_config": {"scope": "thread",
-"policy_ids": [...]}}}` — the `sandbox_config` key is verified in
+"policy_ids": [...]}}}` - the `sandbox_config` key is verified in
 `libs/cli/deepagents_cli/deploy/project.py` and
 `libs/cli/tests/unit_tests/deploy/test_project.py` lines 219-249.
-`[code]` — repo `langchain-ai/deepagents` commit `23b83ad`.
+`[code]` - repo `langchain-ai/deepagents` commit `23b83ad`.
 
 **Middleware**: the default stack. `FilesystemMiddleware` automatically
 exposes `execute` because a sandbox backend implements
@@ -103,7 +103,7 @@ deliberately ungated (`[ours]` D-02).
 **Persistence**: no `checkpointer`/`store` for single-use sessions. If the
 artifact must survive, add a durable route:
 `CompositeBackend(default=sandbox_backend, routes={"/exports/": StoreBackend(namespace=...)})`
-— an explicit choice, not a default.
+- an explicit choice, not a default.
 
 **Loop bound**: a loose `recursion_limit` (e.g. 300) because
 build-preview iterations really are numerous; the real bound comes from
@@ -112,17 +112,17 @@ than step count.
 
 ---
 
-## 03 — General Task Agent
+## 03 - General Task Agent
 
 **Backend**: `CompositeBackend(default=StateBackend(), routes={"/memories/":
-StoreBackend(namespace=lambda rt: (user_id, "memories"))})` — everyday
+StoreBackend(namespace=lambda rt: (user_id, "memories"))})` - everyday
 work ephemeral, persistent memory durable and scoped per user. This is the
 hybrid pattern that `FilesystemMiddleware`'s own docstring demonstrates.
 
 **Middleware**:
-- `TodoListMiddleware()` through `middleware=[...]` — explicit planning is
+- `TodoListMiddleware()` through `middleware=[...]` - explicit planning is
   this archetype's distinguishing feature, and this middleware is **not**
-  part of `create_deep_agent`'s default stack. `[code]` — runtime
+  part of `create_deep_agent`'s default stack. `[code]` - runtime
   verification: the default stack is `FilesystemMiddleware,
   SubAgentMiddleware, SummarizationMiddleware, PatchToolCallsMiddleware,
   AnthropicPromptCachingMiddleware`; the only place `TodoListMiddleware`
@@ -131,7 +131,7 @@ hybrid pattern that `FilesystemMiddleware`'s own docstring demonstrates.
 - `ModelCallLimitMiddleware(thread_limit=..., exit_behavior="end")`.
 
 **Subagents**: several declarative `SubAgent`s with different `tools` and
-`model` per subtask — exactly the pattern in
+`model` per subtask - exactly the pattern in
 `examples/nvidia_deep_agent/src/agent.py` (researcher + data-processor)
 and `examples/content-builder-agent/`.
 
@@ -139,19 +139,19 @@ and `examples/content-builder-agent/`.
 actions that leave the system (sending email, calling a third-party API).
 
 **Loop bound**: `ModelCallLimitMiddleware` for budget, plus a guard
-against identical repeated tool calls (`[ours]` D-03) —
+against identical repeated tool calls (`[ours]` D-03) -
 `ToolCallLimitMiddleware` counts total calls, not repetitions, so it
 doesn't catch an agent spinning in place.
 
 ---
 
-## 04 — Research/Analyst
+## 04 - Research/Analyst
 
 **Backend**: `StateBackend` suffices for a single research session; step
 up to `CompositeBackend` with a durable route if the report must survive.
 
 **Middleware**: the default stack. The built-in `SummarizationMiddleware`
-matters here — large search results are automatically evicted to
+matters here - large search results are automatically evicted to
 `/large_tool_results/` by `FilesystemMiddleware` before they flood
 context.
 
@@ -175,7 +175,7 @@ agent = create_deep_agent(
 )
 ```
 
-**Gate**: none — this archetype is read-only against the outside world.
+**Gate**: none - this archetype is read-only against the outside world.
 
 **Output**: `response_format=<report schema>` to force the output shape.
 ⚠️ `response_format` validates the **shape**, not the correctness of the
@@ -183,19 +183,19 @@ contents; hallucinated citations still pass. Post-hoc provenance
 validation is `[ours]` (D-04).
 
 **Loop bound**: explicit limits in the orchestrator prompt
-(`max_concurrent_research_units`, `max_researcher_iterations` — the
+(`max_concurrent_research_units`, `max_researcher_iterations` - the
 maintainers' pattern in `examples/deep_research/agent.py`) **plus**
 `ToolCallLimitMiddleware(tool_name="task", thread_limit=N)` as structural
 enforcement, because a prompt limit is only an instruction.
 
 ---
 
-## 05 — In-App Copilot
+## 05 - In-App Copilot
 
 **Tool surface**: `tools=[...]` containing thin wrappers around the host
 product's API endpoints. The built-in filesystem tools are irrelevant.
 
-**How to remove them** — two official paths, both far more appropriate
+**How to remove them** - two official paths, both far more appropriate
 than `permissions`:
 
 ```python
@@ -216,9 +216,9 @@ register_harness_profile(
 )
 ```
 
-`read_file` **must** appear in `FilesystemMiddleware(tools=[...])` —
+`read_file` **must** appear in `FilesystemMiddleware(tools=[...])` -
 otherwise `ValueError`. `FilesystemMiddleware` itself cannot be removed
-(`excluded_middleware` refuses it). `[code]` —
+(`excluded_middleware` refuses it). `[code]` -
 `deepagents/middleware/filesystem.py` lines 1670-1673;
 `deepagents/graph.py` lines 238-265.
 
@@ -230,17 +230,17 @@ synchronous subagents.
 host product, not in the agent.
 
 **Context**: `context_schema=` for per-call application state, not
-cross-session `memory=` — this archetype's horizon is short.
+cross-session `memory=` - this archetype's horizon is short.
 
 **Gate**: an `undo_<action>` tool invoked from the host UI rather than
 `interrupt_on` (`[ours]` D-05).
 
-**Loop bound**: a strict `recursion_limit` (e.g. 25) — a copilot that
+**Loop bound**: a strict `recursion_limit` (e.g. 25) - a copilot that
 thinks for a long time is a UX regression.
 
 ---
 
-## 06 — Workflow Agent
+## 06 - Workflow Agent
 
 **Loop shape**: `create_deep_agent(...)` as one node inside a larger
 LangGraph graph, or behind an event-triggered queue worker. `deepagents`
@@ -248,14 +248,14 @@ determines "what the LLM does when called", not "when it is called"
 (`[ours]` D-06).
 
 **Backend**: `StoreBackend(namespace=lambda rt: (tenant_id, "workflow"))`
-— durable and scoped; no interactive session is keeping it alive.
+- durable and scoped; no interactive session is keeping it alive.
 
 **Idempotency**: an application-injected `checkpointer` plus a `thread_id`
 derived from the event's idempotency key rather than random (`[ours]`
 D-06b). A retried event lands on the same checkpoint.
 
 **Gate**: `interrupt_on={"send_email": True}` still makes sense even with
-no real-time human — a LangGraph interrupt means the run **stops and
+no real-time human - a LangGraph interrupt means the run **stops and
 waits**, and approval can arrive asynchronously through a dashboard or
 Slack. This requires a durable `checkpointer`, not `MemorySaver`.
 
@@ -264,16 +264,16 @@ Slack. This requires a durable `checkpointer`, not `MemorySaver`.
 retrying manually.
 
 **Loop bound**: a strict `recursion_limit` plus
-`ModelCallLimitMiddleware(thread_limit=..., exit_behavior="error")` —
+`ModelCallLimitMiddleware(thread_limit=..., exit_behavior="error")` -
 `"error"` (not `"end"`) so an over-budget run appears as a failure on the
 dashboard rather than finishing silently.
 
-**Kill switch**: absent from `deepagents` (`[ours]` D-06c) — a database
+**Kill switch**: absent from `deepagents` (`[ours]` D-06c) - a database
 flag the worker checks before invoking the agent.
 
 ---
 
-## 07 — Computer-Use Agent
+## 07 - Computer-Use Agent
 
 **Tool surface**: custom
 `tools=[screenshot, click, type_text, scroll, verify_state]` mapping onto
@@ -281,7 +281,7 @@ an external browser driver. `deepagents` has no built-in computer-use
 tools.
 
 **Backend**: a sandbox backend for the browser session, equivalent to
-archetype 02 — a crashed or abused browser session must not touch other
+archetype 02 - a crashed or abused browser session must not touch other
 compute.
 
 **Gate**: `interrupt_on={"submit_form": True, "click": {"allowed_decisions":
@@ -292,9 +292,9 @@ clicked selector is on a risky list, not on every click.
 **Verification**: the `verify_state` tool must be called after every UI
 action, enforced through system prompt instructions (`[ours]` D-07).
 `deepagents` has **no** middleware that enforces tool call ordering.
-`PatchToolCallsMiddleware` is often assumed to do so — its role is only to
+`PatchToolCallsMiddleware` is often assumed to do so - its role is only to
 patch `ToolMessage`s for dangling/cancelled/malformed tool calls, not to
-enforce ordering. `[code]` —
+enforce ordering. `[code]` -
 `deepagents/middleware/patch_tool_calls.py` lines 14-45.
 
 Enforcement stronger than a prompt (though still not a structural
@@ -304,7 +304,7 @@ without a `verify_state` in between, returning
 `ShellAllowListMiddleware`.
 
 **Loop bound**: `ToolCallLimitMiddleware(tool_name="click",
-thread_limit=N, exit_behavior="end")` — the most brittle archetype, and
+thread_limit=N, exit_behavior="end")` - the most brittle archetype, and
 the one that most needs a hard per-action-tool bound.
 
 ## Sources

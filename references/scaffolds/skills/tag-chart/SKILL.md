@@ -1,6 +1,6 @@
 ---
 name: tag-chart
-description: Emit quantitative data as a validated ```chart JSON block so the app renders a real chart instead of describing numbers in prose. Use when the answer shows a trend over time, compares magnitudes across categories, or breaks a total into parts — including requests phrased as chart, grafik, diagram batang, gráfico, or 図表.
+description: Emit quantitative data as a validated ```chart JSON block so the app renders a real chart instead of describing numbers in prose. Use when the answer shows a trend over time, compares magnitudes across categories, or breaks a total into parts - including requests phrased as chart, grafik, diagram batang, gráfico, or 図表.
 ---
 
 # Emit quantitative data as a `chart` block
@@ -11,7 +11,7 @@ Use it when what matters is the **shape of the numbers** rather than their
 exact values: a trend over time, a comparison of magnitudes across categories,
 the composition of a total.
 
-Don't use it when the reader needs to read exact values — that is a table
+Don't use it when the reader needs to read exact values - that is a table
 (`tag-table`). Don't use it for one or two numbers; a sentence is clearer. If
 both are needed (the shape **and** the values), emit a chart then a table
 rather than a chart with a value label on every point.
@@ -64,7 +64,7 @@ For `pie`, use exactly **one** series; each `data` entry becomes one slice.
 
 ## The rules
 
-**Keys are language-neutral, labels follow the conversation's language** —
+**Keys are language-neutral, labels follow the conversation's language** -
 exactly as in `tag-table`. Changing language means changing `label`, never
 `key`.
 
@@ -81,10 +81,10 @@ itself (`12.4` with `"unit": "%"`), not `0.124`.
 is the absence of one, and a line diving to zero because the data hasn't
 arrived yet is a graphical lie.
 
-**Above ~200 data points, don't inline it** — aggregate first (per week, per
+**Above ~200 data points, don't inline it** - aggregate first (per week, per
 month), or store it as an artifact.
 
 ## After the block
 
-One or two sentences stating what the shape shows — the trend's direction, an
+One or two sentences stating what the shape shows - the trend's direction, an
 inflection point, a gap between series. Not a re-reading of the numbers.

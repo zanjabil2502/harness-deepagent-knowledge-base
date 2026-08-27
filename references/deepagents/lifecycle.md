@@ -1,4 +1,4 @@
-# `deepagents` — the lifecycle of one turn
+# `deepagents` - the lifecycle of one turn
 
 What happens from `agent.invoke({"messages": [...]})` to the final state,
 stage by stage, and where each stage can be intervened in officially.
@@ -6,7 +6,7 @@ stage by stage, and where each stage can be intervened in officially.
 `create_deep_agent` does not build its own graph: it assembles a
 middleware stack and then calls `langchain.agents.create_agent(...)`. So
 the lifecycle is `create_agent`'s lifecycle, with the middleware nodes
-`deepagents` assembles. `[code]` — `deepagents/graph.py` lines 922-944;
+`deepagents` assembles. `[code]` - `deepagents/graph.py` lines 922-944;
 `langchain/agents/factory.py` lines 1543-1830 (node and edge assembly).
 
 ## Flow diagram
@@ -82,7 +82,7 @@ the lifecycle is `create_agent`'s lifecycle, with the middleware nodes
                         └───────────┘
 ```
 
-`[code]` — `langchain/agents/factory.py`: `model_node` lines 1468-1489,
+`[code]` - `langchain/agents/factory.py`: `model_node` lines 1468-1489,
 `_execute_model_sync` lines 1441-1466, onion composition
 `_chain_model_call_handlers` lines 263-352 (with the explicit comment
 "first in list becomes outermost layer"), edge wiring lines 1675-1830.
@@ -93,16 +93,16 @@ lines 1817-1830.
 
 ## Stage by stage
 
-### 1. `before_agent` — once per run
+### 1. `before_agent` - once per run
 
 A graph node. Executed in middleware list order. In the default stack only
-`PatchToolCallsMiddleware` uses it — it patches synthetic `ToolMessage`s
+`PatchToolCallsMiddleware` uses it - it patches synthetic `ToolMessage`s
 for dangling/malformed tool calls in history, then **rewrites all
 `messages`** with `RemoveMessage(id=REMOVE_ALL_MESSAGES)` followed by its
 patched list. This is what stops a resume after a crash/cancel from being
 rejected by the provider. `SkillsMiddleware`, `MemoryMiddleware`, and
 `RubricMiddleware` also use this hook (loading the skill index /
-`AGENTS.md` contents / the rubric into state). `[code]` —
+`AGENTS.md` contents / the rubric into state). `[code]` -
 `deepagents/middleware/patch_tool_calls.py` lines 14-45; `skills.py` line
 928; `memory.py` line 274; `rubric.py` line 522.
 
@@ -110,7 +110,7 @@ rejected by the provider. `SkillsMiddleware`, `MemoryMiddleware`, and
 `@before_agent` decorator from `langchain.agents.middleware`. It can
 `jump_to` END.
 
-### 2. `before_model` — every loop iteration
+### 2. `before_model` - every loop iteration
 
 A graph node, list order. No `deepagents` middleware uses it. What uses it
 in `langchain`: `ModelCallLimitMiddleware` (with
@@ -118,7 +118,7 @@ in `langchain`: `ModelCallLimitMiddleware` (with
 
 **Intervention point**: the `before_model` hook, or `@before_model`.
 
-### 3. Prompt assembly & tool selection — inside the `model` node
+### 3. Prompt assembly & tool selection - inside the `model` node
 
 `ModelRequest` is created once with a statically assembled
 `system_message` (`USER` → `BASE` → `SUFFIX`) and
@@ -133,7 +133,7 @@ adjustment happens in the `wrap_model_call` chain:
   `SandboxBackendProtocol`), scrubs unsupported multimodal blocks, and
   evicts an enormous `HumanMessage` to the backend.
 - `SummarizationMiddleware` counts tokens and, past the threshold,
-  replaces history with a summary **for this request only** —
+  replaces history with a summary **for this request only** -
   `state["messages"]` is not mutated (it is tracked in the private
   `_summarization_event` field).
 - `_ToolExclusionMiddleware` sits last in the list = **innermost** = the
@@ -146,15 +146,15 @@ happen and `model_.invoke(messages)` get called.
 `@wrap_model_call` / `@dynamic_prompt`. The handler may be called several
 times (retry), or not at all (short-circuit).
 ⚠️ A `Command` with `goto`/`resume`/`graph` is **not supported** in
-`wrap_model_call` — `factory.py` lines 247-255 raise explicitly.
+`wrap_model_call` - `factory.py` lines 247-255 raise explicitly.
 
-### 4. `after_model` — reverse order
+### 4. `after_model` - reverse order
 
 A graph node. The **last** middleware in the list runs **first**.
 `HumanInTheLoopMiddleware` lives here: it reads `tool_calls` on the last
 `AIMessage` and calls `interrupt()` before the `tools` node gets to run.
 Because `create_deep_agent` always places `HumanInTheLoopMiddleware` at
-the end of the stack, it becomes the **first** `after_model` executed —
+the end of the stack, it becomes the **first** `after_model` executed -
 approval happens before any other `after_model` middleware sees the
 model's output.
 
@@ -169,22 +169,22 @@ and then checks the result's size; a result above
 `tool_token_limit_before_evict` is written to the backend and replaced by
 a preview plus a file reference.
 ⚠️ Exceptions from a tool (including `ToolException`) are **deliberately
-allowed through** by `FilesystemMiddleware` — to catch them, install
+allowed through** by `FilesystemMiddleware` - to catch them, install
 `ToolErrorMiddleware`/`ToolRetryMiddleware`.
-`[code]` — `deepagents/middleware/filesystem.py` lines 3471-3520.
+`[code]` - `deepagents/middleware/filesystem.py` lines 3471-3520.
 
 **Intervention point**: `wrap_tool_call` / `awrap_tool_call`, or
 `@wrap_tool_call`.
 
 ### 6. Writing state
 
-State is written through a node's return value — a `dict` update or
-`Command(update=...)` — and reduced by LangGraph channels. For `messages`,
+State is written through a node's return value - a `dict` update or
+`Command(update=...)` - and reduced by LangGraph channels. For `messages`,
 `DeepAgentState` uses
 `DeltaChannel(_messages_delta_reducer, snapshot_frequency=50)` so
 checkpoints grow O(N) rather than O(N²).
 Middleware that needs to write state from inside `wrap_model_call` uses
-`ExtendedModelResponse(model_response=..., command=...)` — not direct
+`ExtendedModelResponse(model_response=..., command=...)` - not direct
 mutation.
 
 **Intervention point**: a middleware's `state_schema` (the recommended
@@ -196,17 +196,17 @@ way), `create_deep_agent(state_schema=...)` (the global way), and
 The loop stops when the last `AIMessage` has no `tool_calls`
 (`_make_model_to_tools_edge` routes to `exit_node`). Besides that:
 
-- LangGraph's `recursion_limit` — default `9_999` from
+- LangGraph's `recursion_limit` - default `9_999` from
   `.with_config(...)` in `create_deep_agent`; **override through**
   `.with_config({"recursion_limit": N})` or
   `invoke(..., config={"recursion_limit": N})`.
-- `ModelCallLimitMiddleware` / `ToolCallLimitMiddleware` — `jump_to end`
+- `ModelCallLimitMiddleware` / `ToolCallLimitMiddleware` - `jump_to end`
   or raise, depending on `exit_behavior`.
-- A tool with `return_direct=True` — straight to `exit_node`.
-- `interrupt()` from HITL — the run stops and awaits
+- A tool with `return_direct=True` - straight to `exit_node`.
+- `interrupt()` from HITL - the run stops and awaits
   `Command(resume=...)`.
 
-### 8. `after_agent` — reverse order, once per run
+### 8. `after_agent` - reverse order, once per run
 
 `RubricMiddleware` uses it to grade the transcript against a rubric and,
 on failure, force another iteration.
@@ -224,7 +224,7 @@ What comes back: one `ToolMessage` holding the JSON-serialised
 `structured_response` (when present) or the text of the last non-empty
 `AIMessage`, **plus** a merge of the other non-excluded state keys into
 the parent's state.
-`[code]` — `deepagents/middleware/subagents.py` lines 251-268, 474-512,
+`[code]` - `deepagents/middleware/subagents.py` lines 251-268, 474-512,
 529-540.
 
 ## Sources
@@ -234,11 +234,11 @@ the parent's state.
 
 `[code]` files:
 
-- `langchain/agents/factory.py` — `create_agent`, `model_node`,
+- `langchain/agents/factory.py` - `create_agent`, `model_node`,
   `_execute_model_sync`, `_chain_model_call_handlers`,
   `_chain_tool_call_wrappers`, `_add_middleware_edge`, START/END wiring
-- `langchain/agents/middleware/types.py` — the `AgentMiddleware` contract
-- `deepagents/graph.py` — stack assembly and `.with_config`
+- `langchain/agents/middleware/types.py` - the `AgentMiddleware` contract
+- `deepagents/graph.py` - stack assembly and `.with_config`
 - `deepagents/middleware/patch_tool_calls.py`, `filesystem.py`,
   `summarization.py`, `subagents.py`, `skills.py`, `memory.py`,
   `rubric.py`, `_tool_exclusion.py`

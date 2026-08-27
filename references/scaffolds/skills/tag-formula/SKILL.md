@@ -1,6 +1,6 @@
 ---
 name: tag-formula
-description: Emit mathematical expressions as LaTeX in a ```math block so the app renders real notation instead of ASCII approximations. Use for equations, derivations, statistical formulas, and symbolic definitions — including requests phrased as rumus, formula, persamaan, matematika, fórmula, or 数式.
+description: Emit mathematical expressions as LaTeX in a ```math block so the app renders real notation instead of ASCII approximations. Use for equations, derivations, statistical formulas, and symbolic definitions - including requests phrased as rumus, formula, persamaan, matematika, fórmula, or 数式.
 ---
 
 # Emit mathematics as a `math` block
@@ -35,7 +35,7 @@ inline for a multi-level equation.
 its units. A formula with no symbol list can't be verified by the reader.
 
 **Variable names are language-neutral, their explanation follows the
-conversation's language.** Mathematical symbols are already universal — don't
+conversation's language.** Mathematical symbols are already universal - don't
 translate $x$ into $k$ because the language changed. What gets translated is
 only the explanatory prose and the content of `\text{…}`.
 

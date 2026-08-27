@@ -1,6 +1,6 @@
 """01 - Minimal deep agent: default middleware stack, no customization.
 
-Demonstrates: the most minimal `create_deep_agent(model, tools=[])` call — no
+Demonstrates: the most minimal `create_deep_agent(model, tools=[])` call - no
 explicit `backend`, `subagents`, `middleware`, `permissions`, or
 `interrupt_on`. It shows the default stack installed automatically: the
 filesystem tools (`ls`, `read_file`, `write_file`, `edit_file`, `glob`,
@@ -8,12 +8,12 @@ filesystem tools (`ls`, `read_file`, `write_file`, `edit_file`, `glob`,
 automatic compaction (`SummarizationMiddleware`), and
 `PatchToolCallsMiddleware`.
 
-Archetypes served: the baseline for all of them — this is the starting point
+Archetypes served: the baseline for all of them - this is the starting point
 before the backend/middleware/gates are adjusted per archetype (see the
 "Building this with deepagents" section of `references/archetypes/*.md`).
 
 Concepts illustrated: `## 2. Context` and `## 3. Tool surface` in
-`references/systems/deepagents.md` — the default `StateBackend` (ephemeral,
+`references/systems/deepagents.md` - the default `StateBackend` (ephemeral,
 thread-scoped) and the few-but-broad tool surface always present with no extra
 configuration.
 """
