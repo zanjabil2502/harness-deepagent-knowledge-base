@@ -211,8 +211,8 @@ references/
 ├── upstream/                verbatim vendor documentation snapshots
 ├── blueprint-template.md    the output contract of building mode
 ├── review-template.md       the output contract of reviewing mode
-├── python-practice.md       typing, async, efficiency, stdlib, refactor moves
-└── GLOSSARY.md              generated: 20 terms + 32 symbols
+├── python-practice.md       typing, naming, async, efficiency, stdlib, refactor
+└── GLOSSARY.md              generated: 20 terms + 37 symbols
 tools/                       check_kb.py, build_glossary.py, fetch_upstream_docs.py
 ```
 
@@ -265,7 +265,11 @@ field, and every file in all five has at least one `[code]` reference.
 - every `[ours]` claim appears in the conformance roster, checked both ways;
 - skill assets follow the Agent Skills spec, where violations are silent;
 - the AST graph still matches the installed `deepagents` source;
-- `GLOSSARY.md` is identical to a fresh rebuild.
+- `GLOSSARY.md` is identical to a fresh rebuild;
+- every name in `tools/`, `references/recipes/`, and every fenced `python`
+  block in the KB is PEP 8 shaped. Only the mechanical part is checked;
+  whether a name is English and means anything is a reviewer's call, and
+  `python-practice.md` section 6 states the rules for it.
 
 Run it from the repo root:
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """The KB structure validator. Run: python3 tools/check_kb.py"""
+import ast
 import hashlib
 import json
 import subprocess
@@ -7,8 +8,8 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-REF = ROOT / "references"
+REPO_ROOT = Path(__file__).resolve().parent.parent
+REFERENCES_DIR = REPO_ROOT / "references"
 
 # One heading per slot. The bilingual shim used during the translation to
 # English is gone now that every group is translated -- add an alternative
@@ -42,9 +43,9 @@ FRAMES = {
         ("## Sources",),
     ],
 }
-EXEMPT = {"README.md", "_template.md", "INDEX.md"}
-LABEL = re.compile(r"\[(code|docs|inferred|ours)\]")
-LINK = re.compile(r"\]\((?!https?:|mailto:)([^)#]+)")
+FRAME_EXEMPT = {"README.md", "_template.md", "INDEX.md"}
+LABEL_RE = re.compile(r"\[(code|docs|inferred|ours)\]")
+LINK_RE = re.compile(r"\]\((?!https?:|mailto:)([^)#]+)")
 SKILL_MAX_LINES = 150
 # The skill assets scaffolded into a project. Their limits aren't our taste:
 # the Agent Skills spec requires `name` to match the directory name and
@@ -56,21 +57,21 @@ SKILL_MAX_LINES = 150
 # source: once the package changes, `file.py:NNN` citations across the KB can
 # be off with no check failing. manifest.json stores each file's md5 at graph
 # build time, so drift can be proven rather than assumed.
-MANIFEST = REF / "deepagents" / "graph" / "manifest.json"
-DA_SRC = next(
-    iter(sorted(ROOT.glob("references/recipes/.venv/lib/python*/site-packages/deepagents"))),
+MANIFEST_PATH = REFERENCES_DIR / "deepagents" / "graph" / "manifest.json"
+DEEPAGENTS_SRC_DIR = next(
+    iter(sorted(REPO_ROOT.glob("references/recipes/.venv/lib/python*/site-packages/deepagents"))),
     None,
 )
-GLOSSARY = REF / "GLOSSARY.md"
-SKILL_ASSETS = REF / "scaffolds" / "skills"
+GLOSSARY_PATH = REFERENCES_DIR / "GLOSSARY.md"
+SKILL_ASSETS_DIR = REFERENCES_DIR / "scaffolds" / "skills"
 ASSET_MAX_LINES = 500
 ASSET_MAX_BYTES = 10 * 1024 * 1024
-FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n", re.S)
+FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---\n", re.S)
 
-OURS = re.compile(r"\[ours\]")
+OURS_RE = re.compile(r"\[ours\]")
 # An [ours] roster row in conformance.md: | n | `path:l1,l2,...` | ... |
-ROSTER_ROW = re.compile(r"^\|[^|]*\|\s*`([\w/\-.]+\.md):([\d,\s]+)`")
-ROSTER = REF / "deepagents" / "conformance.md"
+ROSTER_ROW_RE = re.compile(r"^\|[^|]*\|\s*`([\w/\-.]+\.md):([\d,\s]+)`")
+ROSTER_PATH = REFERENCES_DIR / "deepagents" / "conformance.md"
 # references/deepagents/ holds pointers (per-archetype.md) and meta
 # (conformance.md) about the label itself; the roster lists only substantive
 # claims outside this folder.
@@ -80,29 +81,37 @@ ROSTER_EXEMPT_DIR = "deepagents"
 # roster; its internal links also use the vendor site's absolute paths rather
 # than repo paths.
 UPSTREAM_DIR = "upstream"
+# PEP 8 shapes, checked over both real .py files and the ```python blocks the
+# scaffolds tell a reader to copy. Only mechanical rules live here: a name
+# being English or meaningful cannot be decided by a regex, and
+# python-practice.md section 6 carries those rules for a human reviewer.
+SNAKE_CASE_RE = re.compile(r"^_{0,2}[a-z][a-z0-9_]*_?$")
+PASCAL_CASE_RE = re.compile(r"^_?[A-Z][A-Za-z0-9]*$")
+UPPER_SNAKE_RE = re.compile(r"^_?[A-Z][A-Z0-9_]*$")
+PYTHON_BLOCK_RE = re.compile(r"```python\n(.*?)```", re.S)
 
 
-def authored(f):
+def is_authored(f):
     """KB files we wrote ourselves (not upstream copies)."""
-    return f.relative_to(REF).parts[0] != UPSTREAM_DIR
+    return f.relative_to(REFERENCES_DIR).parts[0] != UPSTREAM_DIR
 
 
-def check_frames(errs):
+def check_frames(errors):
     for group, heads in FRAMES.items():
-        folder = REF / group
+        folder = REFERENCES_DIR / group
         if not folder.is_dir():
-            errs.append(f"references/{group}/: the folder does not exist")
+            errors.append(f"references/{group}/: the folder does not exist")
             continue
         for f in sorted(folder.rglob("*.md")):
-            if f.name in EXEMPT:
+            if f.name in FRAME_EXEMPT:
                 continue
             txt = f.read_text(encoding="utf-8")
-            rel = f.relative_to(ROOT)
+            rel = f.relative_to(REPO_ROOT)
             for alts in heads:
                 if not any(h in txt for h in alts):
-                    errs.append(f"{rel}: missing section '{alts[0]}'")
-            if not LABEL.search(txt):
-                errs.append(f"{rel}: no source label [code]/[docs]/[inferred]")
+                    errors.append(f"{rel}: missing section '{alts[0]}'")
+            if not LABEL_RE.search(txt):
+                errors.append(f"{rel}: no source label [code]/[docs]/[inferred]")
 
 
 def tracked_files():
@@ -113,7 +122,7 @@ def tracked_files():
     everyone else -- a failure invisible until somebody clones.
     """
     try:
-        out = subprocess.run(["git", "ls-files", "-z"], cwd=ROOT,
+        out = subprocess.run(["git", "ls-files", "-z"], cwd=REPO_ROOT,
                              capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.SubprocessError):
         return None
@@ -122,52 +131,52 @@ def tracked_files():
     return set(out.stdout.split("\0")) - {""}
 
 
-def check_links(errs):
+def check_links(errors):
     tracked = tracked_files()
-    files = [ROOT / "SKILL.md", ROOT / "README.md"]
-    if REF.is_dir():
-        files += [f for f in sorted(REF.rglob("*.md")) if authored(f)]
+    files = [REPO_ROOT / "SKILL.md", REPO_ROOT / "README.md"]
+    if REFERENCES_DIR.is_dir():
+        files += [f for f in sorted(REFERENCES_DIR.rglob("*.md")) if is_authored(f)]
     for f in files:
         if not f.exists() or ".venv" in f.parts:
             continue
-        for m in LINK.finditer(f.read_text(encoding="utf-8")):
+        for m in LINK_RE.finditer(f.read_text(encoding="utf-8")):
             target = (f.parent / m.group(1).strip()).resolve()
             if not target.exists():
-                errs.append(f"{f.relative_to(ROOT)}: dead link -> {m.group(1)}")
+                errors.append(f"{f.relative_to(REPO_ROOT)}: dead link -> {m.group(1)}")
             elif tracked is not None and target.is_file():
                 try:
-                    rel = target.relative_to(ROOT).as_posix()
+                    rel = target.relative_to(REPO_ROOT).as_posix()
                 except ValueError:
                     continue
                 if rel not in tracked:
-                    errs.append(
-                        f"{f.relative_to(ROOT)}: link to an untracked file "
+                    errors.append(
+                        f"{f.relative_to(REPO_ROOT)}: link to an untracked file "
                         f"-> {m.group(1)} (alive here, dead for anyone cloning)"
                     )
 
 
-def check_skill_size(errs):
-    skill = ROOT / "SKILL.md"
+def check_skill_size(errors):
+    skill = REPO_ROOT / "SKILL.md"
     if not skill.exists():
-        errs.append("SKILL.md: does not exist")
+        errors.append("SKILL.md: does not exist")
         return
     n = len(skill.read_text(encoding="utf-8").splitlines())
     if n > SKILL_MAX_LINES:
-        errs.append(f"SKILL.md: {n} lines, the maximum is {SKILL_MAX_LINES}")
+        errors.append(f"SKILL.md: {n} lines, the maximum is {SKILL_MAX_LINES}")
 
 
-def check_ours_roster(errs):
+def check_ours_roster(errors):
     """Every `[ours]` must be listed in conformance.md's roster, where the
     vanilla alternative and the reason for diverging are recorded. Checked in
     both directions: a location the roster lists must genuinely contain
     `[ours]`, and every `[ours]` must be listed."""
-    if not ROSTER.exists():
-        errs.append(f"{ROSTER.relative_to(ROOT)}: the [ours] roster does not exist")
+    if not ROSTER_PATH.exists():
+        errors.append(f"{ROSTER_PATH.relative_to(REPO_ROOT)}: the [ours] roster does not exist")
         return
 
     rostered = set()
-    for line in ROSTER.read_text(encoding="utf-8").splitlines():
-        m = ROSTER_ROW.match(line)
+    for line in ROSTER_PATH.read_text(encoding="utf-8").splitlines():
+        m = ROSTER_ROW_RE.match(line)
         if not m:
             continue
         for n in m.group(2).split(","):
@@ -176,36 +185,36 @@ def check_ours_roster(errs):
                 rostered.add((m.group(1), int(n)))
 
     actual = set()
-    for f in sorted(REF.rglob("*.md")):
-        if not authored(f):
+    for f in sorted(REFERENCES_DIR.rglob("*.md")):
+        if not is_authored(f):
             continue
-        rel = f.relative_to(REF).as_posix()
+        rel = f.relative_to(REFERENCES_DIR).as_posix()
         for i, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
-            if OURS.search(line):
+            if OURS_RE.search(line):
                 actual.add((rel, i))
 
     for rel, n in sorted(rostered - actual):
-        errs.append(f"[ours] roster points at {rel}:{n}, which contains no [ours] (stale?)")
+        errors.append(f"[ours] roster points at {rel}:{n}, which contains no [ours] (stale?)")
     for rel, n in sorted(actual - rostered):
         if rel.split("/")[0] == ROSTER_EXEMPT_DIR:
             continue
-        errs.append(f"{rel}:{n}: [ours] not listed in conformance.md's roster")
+        errors.append(f"{rel}:{n}: [ours] not listed in conformance.md's roster")
 
 
-def check_skill_assets(errs):
+def check_skill_assets(errors):
     """Skill assets must follow the Agent Skills spec -- violations are silent."""
-    if not SKILL_ASSETS.is_dir():
+    if not SKILL_ASSETS_DIR.is_dir():
         return
-    for d in sorted(p for p in SKILL_ASSETS.iterdir() if p.is_dir()):
+    for d in sorted(p for p in SKILL_ASSETS_DIR.iterdir() if p.is_dir()):
         f = d / "SKILL.md"
-        rel = f.relative_to(ROOT)
+        rel = f.relative_to(REPO_ROOT)
         if not f.exists():
-            errs.append(f"{d.relative_to(ROOT)}/: no SKILL.md")
+            errors.append(f"{d.relative_to(REPO_ROOT)}/: no SKILL.md")
             continue
         txt = f.read_text(encoding="utf-8")
-        m = FRONTMATTER.match(txt)
+        m = FRONTMATTER_RE.match(txt)
         if not m:
-            errs.append(f"{rel}: no YAML frontmatter")
+            errors.append(f"{rel}: no YAML frontmatter")
             continue
         fm = {}
         for ln in m.group(1).splitlines():
@@ -215,78 +224,123 @@ def check_skill_assets(errs):
             if sep:
                 fm[k.strip()] = v.strip()
         if fm.get("name") != d.name:
-            errs.append(f"{rel}: name={fm.get('name')!r} does not match the directory {d.name!r}")
+            errors.append(f"{rel}: name={fm.get('name')!r} does not match the directory {d.name!r}")
         if not fm.get("description"):
-            errs.append(f"{rel}: frontmatter without a description")
+            errors.append(f"{rel}: frontmatter without a description")
         n = len(txt.splitlines())
         if n > ASSET_MAX_LINES:
-            errs.append(f"{rel}: {n} lines, the maximum is {ASSET_MAX_LINES}")
+            errors.append(f"{rel}: {n} lines, the maximum is {ASSET_MAX_LINES}")
         if len(txt.encode()) > ASSET_MAX_BYTES:
-            errs.append(f"{rel}: over 10 MB, it will be skipped during discovery")
+            errors.append(f"{rel}: over 10 MB, it will be skipped during discovery")
 
 
-def check_graph_sync(errs):
+def check_graph_sync(errors):
     """The AST graph must match the installed deepagents source."""
-    if not MANIFEST.exists():
-        errs.append("references/deepagents/graph/manifest.json: does not exist")
+    if not MANIFEST_PATH.exists():
+        errors.append("references/deepagents/graph/manifest.json: does not exist")
         return
-    if DA_SRC is None or not DA_SRC.is_dir():
+    if DEEPAGENTS_SRC_DIR is None or not DEEPAGENTS_SRC_DIR.is_dir():
         print("SKIPPED: the references/recipes/ venv does not exist; graph sync unchecked")
         return
-    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     for rel, meta in sorted(manifest.items()):
-        f = DA_SRC / rel
+        f = DEEPAGENTS_SRC_DIR / rel
         if not f.exists():
-            errs.append(f"graph: {rel} is in the graph but not in the installed source")
+            errors.append(f"graph: {rel} is in the graph but not in the installed source")
         elif hashlib.md5(f.read_bytes()).hexdigest() != meta.get("ast_hash"):
-            errs.append(
+            errors.append(
                 f"graph: {rel} changed since the graph was built -- "
                 "rebuild the graph and review the line citations pointing at this file"
             )
-    for f in sorted(DA_SRC.rglob("*.py")):
+    for f in sorted(DEEPAGENTS_SRC_DIR.rglob("*.py")):
         if "__pycache__" in f.parts:
             continue
-        rel = f.relative_to(DA_SRC).as_posix()
+        rel = f.relative_to(DEEPAGENTS_SRC_DIR).as_posix()
         if rel not in manifest:
-            errs.append(f"graph: {rel} is in the source but not yet in the graph")
+            errors.append(f"graph: {rel} is in the source but not yet in the graph")
 
 
-def check_glossary(errs):
+def check_glossary(errors):
     """GLOSSARY.md is generated; it must be identical to a rebuild."""
-    if not GLOSSARY.exists():
-        errs.append("references/GLOSSARY.md: not generated yet "
+    if not GLOSSARY_PATH.exists():
+        errors.append("references/GLOSSARY.md: not generated yet "
                     "(python3 tools/build_glossary.py)")
         return
-    sys.path.insert(0, str(ROOT / "tools"))
+    sys.path.insert(0, str(REPO_ROOT / "tools"))
     try:
         import build_glossary
     except ImportError:
-        errs.append("tools/build_glossary.py: cannot be imported")
+        errors.append("tools/build_glossary.py: cannot be imported")
         return
     for e in build_glossary.check_terms():
-        errs.append(f"GLOSSARY: {e}")
-    before = GLOSSARY.read_text(encoding="utf-8")
+        errors.append(f"GLOSSARY.md: {e}")
+    before = GLOSSARY_PATH.read_text(encoding="utf-8")
     if build_glossary.main() != 0:
-        errs.append("GLOSSARY: build_glossary failed")
+        errors.append("GLOSSARY.md: build_glossary failed")
         return
-    if GLOSSARY.read_text(encoding="utf-8") != before:
-        errs.append("references/GLOSSARY.md: stale -- a rebuild differs; "
+    if GLOSSARY_PATH.read_text(encoding="utf-8") != before:
+        errors.append("references/GLOSSARY.md: stale -- a rebuild differs; "
                     "commit the regenerated file")
 
 
+def naming_errors(tree, origin, line_offset=0):
+    """PEP 8 name-shape violations in one parsed module."""
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            kind, name, ok = "function", node.name, SNAKE_CASE_RE
+        elif isinstance(node, ast.ClassDef):
+            kind, name, ok = "class", node.name, PASCAL_CASE_RE
+        elif isinstance(node, ast.arg) and node.arg not in ("self", "cls"):
+            kind, name, ok = "argument", node.arg, SNAKE_CASE_RE
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            if SNAKE_CASE_RE.match(node.id) or UPPER_SNAKE_RE.match(node.id):
+                continue
+            kind, name, ok = "variable", node.id, SNAKE_CASE_RE
+        else:
+            continue
+        # `_` is the idiomatic throwaway, not a name.
+        if name != "_" and not ok.match(name):
+            found.append(f"{origin}:{line_offset + node.lineno}: "
+                         f"{kind} {name!r} is not PEP 8 shaped")
+    return found
+
+
+def check_naming(errors):
+    """Name shapes in tools/, recipes/, and every ```python block we wrote."""
+    tracked = tracked_files()
+    if tracked is None:
+        return  # no git; check_links already reports the missing listing
+    for rel in sorted(tracked):
+        if UPSTREAM_DIR in rel.split("/"):
+            continue
+        path = REPO_ROOT / rel
+        if rel.endswith(".py"):
+            errors += naming_errors(ast.parse(path.read_text(encoding="utf-8")), rel)
+        elif rel.endswith(".md"):
+            text = path.read_text(encoding="utf-8")
+            for m in PYTHON_BLOCK_RE.finditer(text):
+                try:
+                    tree = ast.parse(m.group(1))
+                except SyntaxError:
+                    continue  # a deliberate fragment, not a module
+                errors += naming_errors(tree, rel, text[:m.start()].count("\n") + 1)
+
+
 def main():
-    errs = []
-    check_frames(errs)
-    check_links(errs)
-    check_skill_size(errs)
-    check_ours_roster(errs)
-    check_skill_assets(errs)
-    check_graph_sync(errs)
-    check_glossary(errs)
-    for e in errs:
+    errors = []
+    check_frames(errors)
+    check_links(errors)
+    check_skill_size(errors)
+    check_ours_roster(errors)
+    check_skill_assets(errors)
+    check_graph_sync(errors)
+    check_glossary(errors)
+    check_naming(errors)
+    for e in errors:
         print("FAIL:", e)
-    print(f"\n{len(errs)} problems" if errs else "\nOK: all checks passed")
-    return 1 if errs else 0
+    print(f"\n{len(errors)} problems" if errors else "\nOK: all checks passed")
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":

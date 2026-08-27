@@ -58,7 +58,7 @@ Every stage above lands here:
 | **deepagents lifecycle - one turn's flow** | [deepagents/lifecycle.md](references/deepagents/lifecycle.md) |
 | **Middleware - ordering & dangerous interactions** | [deepagents/middleware.md](references/deepagents/middleware.md) |
 | **Extension points + anti-patterns** | [deepagents/extension-points.md](references/deepagents/extension-points.md) |
-| **Python practice: typing, async, efficiency, stdlib** | [python-practice.md](references/python-practice.md) |
+| **Python practice: typing, naming, async, efficiency, stdlib** | [python-practice.md](references/python-practice.md) |
 | **Construction per archetype** | [deepagents/per-archetype.md](references/deepagents/per-archetype.md) |
 | **Handlers & error patterns** | [deepagents/handlers.md](references/deepagents/handlers.md) |
 | **Best practices stated by the official documentation** | [deepagents/best-practices.md](references/deepagents/best-practices.md) |

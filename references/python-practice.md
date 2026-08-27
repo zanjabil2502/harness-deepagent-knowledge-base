@@ -261,6 +261,69 @@ Be honest about that method's limit: it cannot detect a stale value that is
 never exercised. A model id that no longer exists passes construction happily,
 because nothing calls it.
 
+### 6. Names, the boundary's other half
+
+A wrong type fails at the boundary. A wrong name fails in review, six months
+later, in someone else's head, and no checker catches it. That is why these
+rules are mechanical enough to apply without debate.
+
+**The name carries the kind when use alone will not reveal it.** A
+module-level constant is read far from where it is used, so its name has to do
+the work a type annotation does for a parameter:
+
+| Suffix | What it holds | Example |
+|---|---|---|
+| `_PATH` | one `Path` to a file | `MANIFEST_PATH` |
+| `_DIR` | one `Path` to a directory | `REFERENCES_DIR` |
+| `_URL` | a `str` holding a URL | `INDEX_URL` |
+| `_RE` | a compiled `re.Pattern` | `ROSTER_ROW_RE` |
+| `_MAX_LINES`, `_MAX_BYTES` | a limit, carrying its unit | `ASSET_MAX_BYTES` |
+
+This repo's own validator broke that rule until it was fixed: `TOKEN`,
+`LABEL`, `LINK`, `OURS` and `FRONTMATTER` were all compiled patterns named
+after the data they matched, sitting three lines away from `MANIFEST` and
+`GLOSSARY`, which were paths. Nothing failed; the file simply could not be
+skimmed.
+
+Local variables need none of this, because scope already does the job:
+`for f in files` inside a two-line comprehension beats
+`for markdown_file_path in ...`. **Name length tracks scope, not importance.**
+
+**A predicate answers a question, so it reads as one.** Across 1012 code
+symbols `deepagents` has exactly one, and still spells it that way:
+`def is_bedrock_model(model: str | BaseChatModel) -> bool` (`_models.py:122`).
+`[code]`
+
+**A family shares a suffix.** Seventeen classes defined in the package end in
+`Middleware`. The suffix is what lets you read `SummarizationMiddleware` in a
+stack trace and place it in the tail stack without opening a file. `[code]`
+
+**One word per concept, one concept per word.** Two near-synonyms doing
+different jobs in one module is the cheapest way to make code unreadable: a
+`get()` returning a body next to a `fetch()` returning `(name, error)` forces
+the reader to memorise an arbitrary distinction. Name them `http_get` and
+`fetch_page` and the distinction is in the name.
+
+**Do not abbreviate what you would then have to explain.** `DA_SRC` saves
+eleven characters and costs every new reader a lookup. The exceptions are the
+abbreviations the domain already owns, such as `url`, `id`, `json`, `db`, and
+the `ns` in `checkpoint_ns`; to the reader those are words, not abbreviations.
+
+**A name that promises the wrong thing is worse than a vague one.**
+`BackendProtocol` is an `abc.ABC`, not a `typing.Protocol`
+(`backends/protocol.py:378`), and section 1 above has to spend a paragraph
+undoing what the name implies. `[code]`
+
+**Identifiers are language-neutral; text a human reads is not.** This is the
+rule the `tag-table` and `tag-diagram` assets in
+[`scaffolds/skills/`](scaffolds/skills/README.md) teach, and it generalises
+well past their JSON: the column key stays `price` while its label becomes
+`Harga/bulan`, a flowchart node id stays `validate` while its bracket text is
+Indonesian. Code splits the same way. Function, class, variable, file and
+folder names are English; every string the user reads is in the user's
+language. Mixing the two produces the worst of both: a codebase no outside
+contributor can grep, and a product that reads like a translation.
+
 ## Trade-offs
 
 - **Strict typing vs velocity.** Types at every boundary make refactors safe

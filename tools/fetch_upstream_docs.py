@@ -14,35 +14,35 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-DEST = ROOT / "references" / "upstream" / "deepagents-docs"
-INDEX = "https://docs.langchain.com/oss/python/deepagents/llms.txt"
-PAGE = re.compile(r"https://docs\.langchain\.com/oss/python/deepagents/[^)\s]+\.md")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DEST_DIR = REPO_ROOT / "references" / "upstream" / "deepagents-docs"
+INDEX_URL = "https://docs.langchain.com/oss/python/deepagents/llms.txt"
+PAGE_URL_RE = re.compile(r"https://docs\.langchain\.com/oss/python/deepagents/[^)\s]+\.md")
 
 # These two index entries redirect to a canonical page and return HTML
 # through their index URL; fetch them from the canonical URL directly.
-OVERRIDE = {
+URL_OVERRIDES = {
     "changelog-py.md": "https://docs.langchain.com/oss/python/releases/changelog.md",
     "changelog-js.md": "https://docs.langchain.com/oss/javascript/releases/changelog.md",
 }
 
 
-def get(url: str) -> str:
+def http_get(url: str) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": "kb-fetch/1"})
     with urllib.request.urlopen(req, timeout=30) as r:
         return r.read().decode("utf-8")
 
 
-def fetch(url: str) -> tuple[str, str | None]:
+def fetch_page(url: str) -> tuple[str, str | None]:
     rel = url.rsplit("/deepagents/", 1)[1]
-    src = OVERRIDE.get(rel, url)
+    src = URL_OVERRIDES.get(rel, url)
     try:
-        body = get(src)
+        body = http_get(src)
     except (urllib.error.URLError, TimeoutError) as e:
         return rel, f"fetch failed: {e}"
     if "<!DOCTYPE" in body[:2000] or "<html" in body[:2000]:
         return rel, f"an HTML response, not markdown (a redirect?): {src}"
-    path = DEST / rel
+    path = DEST_DIR / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(body, encoding="utf-8")
     return rel, None
@@ -59,37 +59,37 @@ def citing_files(page: str) -> list[str]:
     name = Path(page).name
     needles = (f"`{name}` line", f"`{name}` baris")
     out = []
-    for f in sorted((ROOT / "references").rglob("*.md")):
-        if f.is_relative_to(DEST):
+    for f in sorted((REPO_ROOT / "references").rglob("*.md")):
+        if f.is_relative_to(DEST_DIR):
             continue
         txt = f.read_text(encoding="utf-8")
         if any(n in txt for n in needles):
-            out.append(f.relative_to(ROOT).as_posix())
+            out.append(f.relative_to(REPO_ROOT).as_posix())
     return out
 
 
 def main() -> int:
-    urls = sorted(set(PAGE.findall(get(INDEX))))
+    urls = sorted(set(PAGE_URL_RE.findall(http_get(INDEX_URL))))
     if not urls:
         print("FAIL: the index contains no .md page at all")
         return 1
 
-    DEST.mkdir(parents=True, exist_ok=True)
-    before = {f.relative_to(DEST).as_posix(): f.read_text(encoding="utf-8")
-              for f in DEST.rglob("*.md") if f.name != "README.md"}
+    DEST_DIR.mkdir(parents=True, exist_ok=True)
+    before = {f.relative_to(DEST_DIR).as_posix(): f.read_text(encoding="utf-8")
+              for f in DEST_DIR.rglob("*.md") if f.name != "README.md"}
     with ThreadPoolExecutor(max_workers=8) as pool:
-        results = list(pool.map(fetch, urls))
+        results = list(pool.map(fetch_page, urls))
 
     errs = [(rel, e) for rel, e in results if e]
     for rel, e in errs:
         print(f"FAIL: {rel}: {e}")
     print(f"\n{len(results) - len(errs)}/{len(results)} pages saved in "
-          f"{DEST.relative_to(ROOT)}")
+          f"{DEST_DIR.relative_to(REPO_ROOT)}")
     if errs:
         return 1
 
     changed = [rel for rel, _ in results if rel in before
-               and before[rel] != (DEST / rel).read_text(encoding="utf-8")]
+               and before[rel] != (DEST_DIR / rel).read_text(encoding="utf-8")]
     if not changed:
         print("No page changed.")
         return 0
