@@ -1,6 +1,6 @@
 {
   "name": "harness-deepagent-kb",
-  "description": "Knowledge base rekayasa harness agent di atas deepagents: 7 arketipe AI assistant, 30 concept ber-trade-off, konstruksi deepagents terverifikasi terhadap source, dan glosarium istilah & simbol.",
+  "description": "Agent harness engineering knowledge base on top of deepagents: 7 AI assistant archetypes, 30 concepts with stated trade-offs, deepagents construction verified against source, a review template for auditing existing projects, and a glossary of terms & symbols.",
   "owner": {
     "name": "zanjabila",
     "url": "https://github.com/zanjabil2502"
@@ -10,7 +10,7 @@
       "name": "agent-harness-kb",
       "source": "./",
       "displayName": "Agent Harness Engineering KB",
-      "description": "Knowledge base rekayasa harness agent di atas deepagents — tiga mode: mencari (kamus istilah & simbol), menimbang (arketipe, trade-off), membangun (blueprint lalu scaffold).",
+      "description": "Agent harness engineering knowledge base on top of deepagents — four modes: looking up (a dictionary of terms & symbols), weighing (archetypes, trade-offs), building (a blueprint then a scaffold), and reviewing (auditing an existing project against the KB, findings only).",
       "version": "1.0.0",
       "author": {
         "name": "zanjabila"

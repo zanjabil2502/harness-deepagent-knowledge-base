@@ -73,7 +73,7 @@ which one is active.
 ### Confirm it loads
 
 Start a new Claude Code session, then ask for something that fits one of the
-three modes in [`SKILL.md`](SKILL.md) §Three usage modes, e.g. *"what is
+four modes in [`SKILL.md`](SKILL.md) §Four usage modes, e.g. *"what is
 fail-deferred"* (looking up) or *"I want to build an agent that can edit files
 in a local repo, what kind is that"* (weighing). If the skill is active, the
 answer references files under `references/`.
@@ -116,12 +116,31 @@ python3 tools/check_kb.py     # the structural gate; must print "OK: all checks 
 
 ## How to use it
 
-There are three modes, described in [`SKILL.md`](SKILL.md) §Three usage
-modes: **looking up** (starting from one term or symbol, output: its meaning
-or where it is defined), **weighing** (starting from a question or an
-unformed idea, output: decisions with their reasons) and **building**
-(starting from a project description, output: a blueprint then a scaffold).
-The example below walks through building, whose path is the longest.
+There are four modes, described in [`SKILL.md`](SKILL.md) §Four usage modes:
+**looking up** (from one term or symbol → its meaning or where it is defined),
+**weighing** (from a question or unformed idea → decisions with their reasons),
+**building** (from a project description → a blueprint then a scaffold), and
+**reviewing** (from an existing codebase → findings, reported and never
+applied). The example below walks through building, whose path is the longest.
+
+### Commands
+
+Installed as a plugin, the modes also get typed entry points. The prefix is the
+**plugin** name (`agent-harness-kb`), not the marketplace name:
+
+| Command | Mode | Output |
+|---|---|---|
+| `/agent-harness-kb:lookup` | looking up | a term's meaning, or a symbol's `file:line` |
+| `/agent-harness-kb:brainstorm` | weighing | decisions with their reasons; no blueprint required |
+| `/agent-harness-kb:blueprint` | building | an archetype + a filled Harness Blueprint |
+| `/agent-harness-kb:review` | reviewing | findings with severity + `file:line` — **never edits** |
+| `/agent-harness-kb:refactor` | (follow-on) | applies fixes for findings; the only command that edits |
+| `/agent-harness-kb:evaluate` | building | an eval harness design for your agent |
+
+`review` and `refactor` are split deliberately: a review that silently rewrites
+code destroys the independent reading it exists to provide. The skill still
+activates on its own from its description — commands are for when you want to
+pick the mode yourself.
 
 ### An example: from a project description to a blueprint
 

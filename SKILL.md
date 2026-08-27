@@ -1,6 +1,6 @@
 ---
 name: agent-harness-kb
-description: Use when designing an agent harness or building on deepagents — loop shape, context engineering, tools & delegation, guardrails, and idiomatic deepagents construction. Three modes: looking up (a dictionary of terms and deepagents symbols to where they are defined), weighing (brainstorming directions, trade-offs, "what kind of system is this"), and building (a blueprint, then a scaffold). Focused on the harness itself; the serving and persistence layers are available but not the main path.
+description: Use when designing an agent harness, building on deepagents, or reviewing an agent project — loop shape, context engineering, tools & delegation, guardrails, and idiomatic deepagents construction. Four modes: looking up (a dictionary of terms and deepagents symbols to where they are defined), weighing (brainstorming directions, trade-offs, "what kind of system is this"), building (a blueprint, then a scaffold), and reviewing (auditing existing code against the KB, findings only). Focused on the harness itself; the serving and persistence layers are available but not the main path.
 ---
 
 # Agent Harness Engineering Knowledge Base
@@ -54,6 +54,7 @@ Every stage above lands here:
 | Concepts cross-check | the "5 `concepts/` fields" list below |
 | Systems cross-check | [systems/INDEX.md](references/systems/INDEX.md) |
 | Blueprint (the contract, output #1) | [blueprint-template.md](references/blueprint-template.md) |
+| **Review findings (the contract of reviewing mode)** | [review-template.md](references/review-template.md) |
 | **deepagents lifecycle — one turn's flow** | [deepagents/lifecycle.md](references/deepagents/lifecycle.md) |
 | **Middleware — ordering & dangerous interactions** | [deepagents/middleware.md](references/deepagents/middleware.md) |
 | **Extension points + anti-patterns** | [deepagents/extension-points.md](references/deepagents/extension-points.md) |
@@ -113,33 +114,37 @@ settled; opening them earlier drowns the harness decisions.
 - **Data** — [session-state](references/concepts/session-state.md), [persistence-schema](references/concepts/persistence-schema.md), [artifacts-and-canvas](references/concepts/artifacts-and-canvas.md), [retention-and-deletion](references/concepts/retention-and-deletion.md)
 - **Runtime** — [serving-topology](references/concepts/serving-topology.md), [resource-profiling](references/concepts/resource-profiling.md), [isolation-and-scoping](references/concepts/isolation-and-scoping.md), [sandboxing](references/concepts/sandboxing.md), [queueing-and-backpressure](references/concepts/queueing-and-backpressure.md), [scaling](references/concepts/scaling.md)
 
-## Three usage modes
+## Four usage modes
 
 The material is the same; what differs is **which parts you read** and what
-comes out. Every file's five-section frame encodes all three deliberately.
+comes out. Every file's five-section frame encodes all four deliberately.
 
-| | **Looking up** (the dictionary) | **Weighing** (brainstorming) | **Building** |
-|---|---|---|---|
-| Starts from | one term or symbol name | a question, a hunch, an idea with no shape yet | an existing project description |
-| Sections read | [`GLOSSARY.md`](references/GLOSSARY.md), then the canonical file it points to | `## Problem`, `## Trade-offs`; in archetypes: `## Example systems`, `## Common pitfalls`; `systems/INDEX.md` | `## Pattern`, `## In deepagents`; in archetypes: `## Harness consequences`, `## Building this with deepagents` |
-| Output | a term's meaning, or the `file:line` of a symbol's definition in source | decisions with their reasons and what was traded — not necessarily one blueprint | a Harness Blueprint, then a scaffold |
+| | **Looking up** (the dictionary) | **Weighing** (brainstorming) | **Building** | **Reviewing** (audit) |
+|---|---|---|---|---|
+| Starts from | one term or symbol name | a question, a hunch, an idea with no shape yet | an existing project description | an existing codebase |
+| Sections read | [`GLOSSARY.md`](references/GLOSSARY.md), then the canonical file it points to | `## Problem`, `## Trade-offs`; in archetypes: `## Example systems`, `## Common pitfalls`; `systems/INDEX.md` | `## Pattern`, `## In deepagents`; in archetypes: `## Harness consequences`, `## Building this with deepagents` | [`review-template.md`](references/review-template.md); `deepagents/extension-points.md` §Anti-patterns; `guardrails.md` §Six points; `deepagents/per-archetype.md` |
+| Output | a term's meaning, or the `file:line` of a symbol's definition in source | decisions with their reasons and what was traded — not necessarily one blueprint | a Harness Blueprint, then a scaffold | findings with severity + `file:line`, **reported, never applied** |
 
-**Looking up** is a lookup, not a flow. For the KB's own vocabulary (blast
-radius, fail-deferred, result contract) the glossary gives a one-line meaning
-plus the file that covers it in full; for `deepagents` symbols
-(`CompositeBackend`, `SubAgentMiddleware`) it gives their definition's location
-in source — derived from the AST graph, so parameters and signatures are read
-from the actual code rather than remembered.
+**Looking up** is a lookup, not a flow. The glossary gives a one-line meaning
+for the KB's own vocabulary (blast radius, fail-deferred, result contract) plus
+the file covering it in full; for `deepagents` symbols (`CompositeBackend`,
+`SubAgentMiddleware`) it gives the definition's location in source, derived
+from the AST graph rather than from memory.
 
 **Weighing** is for when the question is still "what kind of system is this
-really", "what follows if the loop works this way", or "has anyone built this
-already". Its route isn't the diagnostic procedure above — start from the 6
-axes as a menu of choices, `systems/INDEX.md` to see what exists, then the
-`## Trade-offs` of the relevant concept. In this mode the explanation **is**
-the output, and stopping without a blueprint is legitimate.
+really" or "has anyone built this already". Its route isn't the diagnostic
+procedure above — start from the 6 axes as a menu, `systems/INDEX.md` to see
+what exists, then the relevant concept's `## Trade-offs`. Here the explanation
+**is** the output, and stopping without a blueprint is legitimate.
 
 **Building** uses the diagnostic procedure above and ends at a blueprint, then
-a scaffold — in this mode the explanation isn't the output.
+a scaffold — here the explanation isn't the output.
 
-What comes out of weighing flows into building: a decision that already has a
-reason fills in a blueprint line without being weighed again.
+**Reviewing** runs the diagnostic procedure **backwards**: read the code, name
+the harness decisions it actually made, then compare those against what its
+archetype demands. Its output is findings, never edits — the fix is a separate,
+explicitly requested step. Details in
+[`review-template.md`](references/review-template.md).
+
+What comes out of weighing flows into building, and what reviewing finds flows
+into either — a finding with a stated reason fills a blueprint line unweighed.
