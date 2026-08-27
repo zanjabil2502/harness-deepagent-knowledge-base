@@ -20,10 +20,18 @@ it starts from findings rather than from suspicion.
    `references/deepagents/middleware.md` §Stack order and §Dangerous
    interactions. Composition is an onion; a fix in the wrong slot silently
    changes what gets filtered.
-4. Preserve behaviour that was a **reasoned deviation**. If the project stated
+4. For the language-level move, read `references/python-practice.md`
+   §Refactoring moves: delete the layer rather than improve the wrapper,
+   extract a `Protocol` rather than a base class, turn a stateless class into
+   a function, pass a parameter rather than subclass, hoist per-turn work into
+   the lifespan. Behaviour-preserving means the diff is boring: no renaming,
+   reformatting, or reordering riding along.
+5. Preserve behaviour that was a **reasoned deviation**. If the project stated
    a reason for diverging, do not "fix" it into conformance - raise it with
    the user instead.
-5. After each fix state what the reviewed code did before, what it does now,
-   and which KB section justifies the change.
+6. After each fix state what the reviewed code did before, what it does now,
+   and which KB section justifies the change. Verify by construction where you
+   can: if it still imports and constructs, the change is at least
+   type-correct and import-correct.
 
 Do not bundle unrelated cleanups into a harness fix. One finding, one change.

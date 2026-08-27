@@ -22,6 +22,12 @@ Follow the diagnostic procedure in `SKILL.md` in order:
 5. Then read `references/deepagents/per-archetype.md` for that archetype's
    correct construction, and `extension-points.md` before writing any custom
    code.
+6. Before writing the Python itself, read
+   `references/python-practice.md`: type the boundaries (`TypedDict` for
+   dict-shaped specs, `Literal` for closed sets, `Protocol` for a seam you
+   own), keep the event loop free (`asyncio.to_thread` for blocking calls,
+   every wait bounded), open expensive resources once in the lifespan, and
+   reach for the stdlib before adding a dependency.
 
 To go deeper on one axis afterwards, stay in this mode - re-read that axis's
 concept file and refine the blueprint row rather than starting a new document.

@@ -134,7 +134,7 @@ codebase built with no blueprint still has a process failure, and vice versa.
 | Grade | What it asks | Graded against |
 |---|---|---|
 | **Best process** | Were the harness decisions made *before* the code? Does every guardrail state policy + point + failure mode? Is there an eval harness, prompt/policy versioning, and a release gate? | `blueprint-template.md`, `concepts/evaluation.md`, `concepts/guardrails.md` |
-| **Best technical** | Is custom code sitting where an official hook exists? Is middleware order correct given onion composition? Do the documentation-stated practices hold? | `deepagents/extension-points.md`, `deepagents/middleware.md`, `deepagents/best-practices.md` |
+| **Best technical** | Is custom code sitting where an official hook exists? Is middleware order correct given onion composition? Do the documentation-stated practices hold? Is the Python itself sound: boundaries typed, the event loop never blocked, expensive resources opened once, stdlib before dependency? | `deepagents/extension-points.md`, `deepagents/middleware.md`, `deepagents/best-practices.md`, `python-practice.md` |
 | **Best implementation** | Is the construction the one this archetype demands? Are API signatures read from source rather than remembered? Are the parameters real? | `deepagents/per-archetype.md`, `deepagents/api-reference.md`, `deepagents/graph/` |
 
 **The rule that keeps this from becoming opinion:** a "best" verdict must cite

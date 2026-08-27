@@ -211,6 +211,7 @@ references/
 ├── upstream/                verbatim vendor documentation snapshots
 ├── blueprint-template.md    the output contract of building mode
 ├── review-template.md       the output contract of reviewing mode
+├── python-practice.md       typing, async, efficiency, stdlib, refactor moves
 └── GLOSSARY.md              generated: 20 terms + 32 symbols
 tools/                       check_kb.py, build_glossary.py, fetch_upstream_docs.py
 ```

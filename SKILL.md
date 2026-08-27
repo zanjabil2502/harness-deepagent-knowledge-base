@@ -58,6 +58,7 @@ Every stage above lands here:
 | **deepagents lifecycle - one turn's flow** | [deepagents/lifecycle.md](references/deepagents/lifecycle.md) |
 | **Middleware - ordering & dangerous interactions** | [deepagents/middleware.md](references/deepagents/middleware.md) |
 | **Extension points + anti-patterns** | [deepagents/extension-points.md](references/deepagents/extension-points.md) |
+| **Python practice: typing, async, efficiency, stdlib** | [python-practice.md](references/python-practice.md) |
 | **Construction per archetype** | [deepagents/per-archetype.md](references/deepagents/per-archetype.md) |
 | **Handlers & error patterns** | [deepagents/handlers.md](references/deepagents/handlers.md) |
 | **Best practices stated by the official documentation** | [deepagents/best-practices.md](references/deepagents/best-practices.md) |
@@ -126,10 +127,9 @@ comes out. Every file's five-section frame encodes all four deliberately.
 | Output | a term's meaning, or the `file:line` of a symbol's definition in source | decisions with their reasons and what was traded - not necessarily one blueprint | a Harness Blueprint, then a scaffold | findings with severity + `file:line`, **reported, never applied** |
 
 **Looking up** is a lookup, not a flow. The glossary gives a one-line meaning
-for the KB's own vocabulary (blast radius, fail-deferred, result contract) plus
-the file covering it in full; for `deepagents` symbols (`CompositeBackend`,
-`SubAgentMiddleware`) it gives the definition's location in source, derived
-from the AST graph rather than from memory.
+for the KB's vocabulary (blast radius, fail-deferred, result contract) plus the
+file covering it in full; for `deepagents` symbols it gives the definition's
+location in source, derived from the AST graph rather than from memory.
 
 **Weighing** is for when the question is still "what kind of system is this
 really" or "has anyone built this already". Its route isn't the diagnostic
