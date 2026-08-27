@@ -507,6 +507,32 @@ of them accuracy rather than structure. No KB pattern needs **removing** -
 every `no`/`variant` in the table has a written reason, whether in a D-xx
 entry or in its row's Notes column.
 
+## Version drift, corrected
+
+Separate from the audit residue above: a claim that was defensible when
+written and became wrong as the library moved. Recorded here because the
+whole value of a `file:line` KB is that a claim which changed can be shown
+to have changed, rather than quietly edited.
+
+**Claim** (`concepts/memory.md`, `systems/deepagents.md`): `MemoryMiddleware`
+injects `AGENTS.md` as static context once at session start, and
+`deepagents` therefore ships no extraction, conflict, update, or deletion
+of discrete facts.
+
+**Status against the installed `deepagents==0.7.8`**: half wrong. Loading
+is indeed once, though once per **thread**, not per session. But the
+middleware ships `MEMORY_SYSTEM_PROMPT`, a written curation policy that
+tells the model to write memory through `edit_file` and states explicit
+criteria for when to update and when not to, an instruction to treat
+memory as data rather than as system instructions, and a ban on storing
+credentials. Extraction is therefore answered; conflict and update still
+are not.
+
+**Corrected** 2026-08-27 in both files, with the mechanism, the
+once-per-thread consequence, and the narrower list of what genuinely still
+has to be built on top. Verified from the installed source and from the
+vendor documentation snapshot refreshed 2026-08-26.
+
 ## `[ours]` roster
 
 Built with this command, run from the repo root:

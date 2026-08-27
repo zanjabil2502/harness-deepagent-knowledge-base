@@ -212,7 +212,7 @@ references/
 ├── blueprint-template.md    the output contract of building mode
 ├── review-template.md       the output contract of reviewing mode
 ├── python-practice.md       typing, naming, async, efficiency, stdlib, refactor
-└── GLOSSARY.md              generated: 20 terms + 37 symbols
+└── GLOSSARY.md              generated: 23 terms + 37 symbols
 tools/                       check_kb.py, build_glossary.py, fetch_upstream_docs.py
 ```
 

@@ -85,10 +85,13 @@ The optional mechanisms:
   automatically on its own. `[code]` -
   `deepagents/middleware/summarization.py`.
 - **`memory=["./AGENTS.md", ...]`** on `create_deep_agent` triggers
-  `MemoryMiddleware`, which loads the `AGENTS.md` file's contents into the
-  system prompt at startup (not dynamic filesystem-as-memory, but static
-  context injected once at session start). `[code]` -
-  `deepagents/middleware/memory.py`.
+  `MemoryMiddleware`, which loads the configured memory files into the
+  system prompt through `before_agent` - once per **thread**, not once per
+  turn - and wraps them in a `MEMORY_SYSTEM_PROMPT` that instructs the model
+  to write memory back through `edit_file`. It is not static injection; see
+  [`../concepts/memory.md`](../concepts/memory.md) section "In deepagents"
+  for the mechanism and what follows from the once-per-thread load. `[code]`
+  - `deepagents/middleware/memory.py` lines 103-168, 274-306, 342-356.
 - **`AnthropicPromptCachingMiddleware`** is always added unconditionally (a
   no-op for non-Anthropic models) through `append_prompt_caching_middleware`;
   `BedrockPromptCachingMiddleware`/`FireworksPromptCachingMiddleware` are added
@@ -320,7 +323,7 @@ of any classifier module in the source read (see the full file list in
 | `AsyncSubAgent` | `TypedDict` | The remote/background subagent spec (Agent Protocol) |
 | `FilesystemMiddleware`, `FilesystemPermission`, `FsToolName` | classes/types | The filesystem tools + `execute` + permission rules |
 | `SubAgentMiddleware`, `AsyncSubAgentMiddleware` | classes | The `task` tool (synchronous) and the background tools (async) |
-| `MemoryMiddleware` | class | Loads `AGENTS.md` into the system prompt |
+| `MemoryMiddleware` | class | Loads memory files into the system prompt and carries the write policy |
 | `RubricMiddleware` | class | Self-eval iteration against a rubric (optional, not a default) |
 | `HarnessProfile`, `HarnessProfileConfig`, `register_harness_profile` | classes/functions | Per-model/provider behaviour profiles |
 | `ProviderProfile`, `register_provider_profile` | classes/functions | Per-provider model initialisation hooks |
@@ -345,7 +348,7 @@ The row order in this table follows the actual installation order (base stack
 | *(user middleware, `middleware=[...]`, inserted here)* | - | - |
 | `_ToolExclusionMiddleware` (private) | The tail stack, only when a profile has `excluded_tools` | Filters tool names from any middleware before they reach the model |
 | `AnthropicPromptCachingMiddleware` (+Bedrock/Fireworks conditionally) | Always, the tail stack | Provider-specific prompt caching, a no-op on other providers |
-| `MemoryMiddleware` | The main agent, only when `memory=[...]` is set | Injects `AGENTS.md`'s contents into the system prompt |
+| `MemoryMiddleware` | The main agent, only when `memory=[...]` is set | Injects the memory files into the system prompt, plus the policy telling the model when to write them |
 | `HumanInTheLoopMiddleware` (langchain) | Main/subagent, only when the merged `interrupt_on` is non-empty | A human approval pause before a tool executes |
 | `RubricMiddleware` | Not in the default stack - install manually through `middleware=[...]` | Re-iterates the answer against a rubric until it passes or `max_iterations` |
 | `TodoListMiddleware` (langchain, **not** `deepagents`') | Not in the default stack - install manually | Explicit planning (the `write_todos` tool) for multi-step tasks |
